@@ -10,12 +10,15 @@ export type Goal = {
   updated_at: string;
 };
 
+/** Pedagogical arc stages, in order. Each milestone's lessons follow this arc. */
+export type LessonKind = "read" | "teach" | "practice" | "apply" | "check" | "review";
+
 export type Lesson = {
   id: number;
   plan_item_id: number;
   title: string;
   objective: string;
-  kind: "reading" | "vocab" | "practice" | "quiz" | "lecture";
+  kind: LessonKind;
   order_index: number;
   status: "stub" | "queued" | "generating" | "ready" | "error";
   content: string;

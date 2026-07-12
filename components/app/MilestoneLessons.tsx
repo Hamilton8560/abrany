@@ -7,12 +7,14 @@ import Markdown from "./Markdown";
 import { ChevronDown, CheckIcon } from "@/components/icons";
 
 const KIND_LABEL: Record<Lesson["kind"], string> = {
-  reading: "Reading",
-  vocab: "Vocabulary",
+  read: "Read",
+  teach: "Lecture",
   practice: "Practice",
-  quiz: "Quiz",
-  lecture: "Lecture",
+  apply: "Apply",
+  check: "Self-check",
+  review: "Review",
 };
+const kindLabel = (k: string) => KIND_LABEL[k as Lesson["kind"]] ?? "Lesson";
 
 export default function MilestoneLessons({
   planItemId,
@@ -149,7 +151,7 @@ export default function MilestoneLessons({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium text-ink">{l.title}</p>
-                      <p className="text-[10.5px] text-muted">{KIND_LABEL[l.kind]}</p>
+                      <p className="text-[10.5px] text-muted">{kindLabel(l.kind)}</p>
                     </div>
                     <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
                   </li>
@@ -219,7 +221,7 @@ function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-              {KIND_LABEL[lesson.kind]}
+              {kindLabel(lesson.kind)}
             </p>
             <h3 className="mt-1 font-display text-[24px] font-extrabold uppercase leading-[1.05] text-ink">
               {lesson.title}

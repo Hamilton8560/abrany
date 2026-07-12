@@ -148,13 +148,15 @@ Rules:
 
 /* ── Expand a milestone into lesson stubs (cheap, structural) ── */
 
+import type { LessonKind } from "./repo";
+
 export type LessonStub = {
   title: string;
   objective: string;
-  kind: "reading" | "vocab" | "practice" | "quiz" | "lecture";
+  kind: LessonKind;
 };
 
-const KINDS = ["reading", "vocab", "practice", "quiz", "lecture"] as const;
+const KINDS = ["read", "teach", "practice", "apply", "check", "review"] as const;
 
 export async function expandMilestone(ctx: {
   goalTitle: string;
@@ -164,11 +166,28 @@ export async function expandMilestone(ctx: {
 }): Promise<LessonStub[]> {
   const system = `${COACH_SYSTEM}
 
-You are breaking ONE milestone into a short sequence of concrete, do-able LESSONS. Each lesson is small enough to complete in a single focus session.
+You are breaking ONE milestone into a short sequence of concrete, do-able LESSONS. Each lesson is small enough to complete in a single focus session. The lessons MUST follow a fixed learning arc, IN THIS ORDER:
+
+1. read     — a short, skimmable reference/overview that maps what's coming
+2. teach    — teach the "why" and "how" from first principles, with worked examples
+3. practice — guided drills/exercises the learner actually does, with answers
+4. apply    — use the skill in a real, novel context (produce/build/perform, not drill)
+5. check    — a low-stakes self-check quiz
+6. review   — an active-recall workout over the WHOLE milestone (spaced retrieval)
 
 Respond with ONLY a JSON object, no prose or fences:
-{ "lessons": [ { "title": "...", "objective": "one line: what you'll be able to do after", "kind": "reading|vocab|practice|quiz|lecture" } ] }
-Rules: 3 to 6 lessons, ordered. Choose the "kind" that best fits each lesson's subject (vocab for word lists, practice for problem sets, lecture for conceptual teaching, quiz for self-check, reading otherwise). Keep titles concrete (e.g. "Words 1-20: greetings & introductions", not "Vocabulary").`;
+{ "lessons": [ { "title": "...", "objective": "one line: what you'll be able to do after", "kind": "read|teach|practice|apply|check|review" } ] }
+First judge HOW this subject is learned and reshape the stages' MEANING (the arc order stays the same):
+- Hands-on skill (coding, language, math, electrical engineering, an instrument, PT technique): practice = drills/reps, apply = build or perform it.
+- Body of knowledge/ideas (geopolitics, history, a book's framework like "48 Laws of Power"): practice = summarize/argue/connect, apply = analyze a real case through the lens, check = explain it back.
+- Interpretive / values (Christianity, the Bible, philosophy): practice = reflect & discuss, apply = live it / journal, check = honest self-reflection (NOT a graded quiz).
+- Memorization-heavy (terminology, verses, anatomy, regulations): make review a spaced-recall workout and lean on it.
+- Exam-targeted (certifications): make check a mock aligned to the real assessment.
+
+Rules:
+- Follow the arc order above. Always include practice, apply, and check.
+- You MAY add ONE extra "practice" or "apply" lesson for skill-heavy topics; for a tiny milestone you MAY merge read+teach into a single "read". Never fewer than 4 or more than 7 lessons.
+- Keep titles concrete (e.g. "Words 1-20: greetings & introductions", not "Vocabulary").`;
 
   const raw = await complete({
     system,
@@ -197,7 +216,7 @@ Rules: 3 to 6 lessons, ordered. Choose the "kind" that best fits each lesson's s
       objective: (l.objective ?? "").toString().slice(0, 300),
       kind: (KINDS as readonly string[]).includes(l.kind as string)
         ? (l.kind as LessonStub["kind"])
-        : ("reading" as const),
+        : ("read" as const),
     }));
   if (!clean.length) throw new Error("Coach returned no lessons");
   return clean;
@@ -213,21 +232,25 @@ export async function generateLessonContent(ctx: {
   kind: LessonStub["kind"];
 }): Promise<string> {
   const kindGuide: Record<LessonStub["kind"], string> = {
-    vocab:
-      "Produce the actual vocabulary as a markdown table (term | meaning | example sentence). Include every item the title implies (e.g. 'Words 1-20' = 20 rows). End with a short 5-item self-quiz.",
+    read: "STAGE: READ — a short, skimmable overview that maps what's coming. Use headings and a compact list or table of the key items/ideas. This is orientation, not deep teaching. Keep it tight.",
+    teach:
+      "STAGE: TEACH — teach the concept from first principles with concrete worked examples and analogies (the why and how). For a hands-on skill, demonstrate the technique step by step. End with 3 key takeaways.",
     practice:
-      "Teach the method briefly, show 1-2 fully worked examples, then give 5-8 practice problems. Put all answers/solutions under a '## Answers' heading at the very end.",
-    quiz: "Write a 6-10 question self-check quiz. Put an '## Answer key' with brief explanations at the end.",
-    lecture:
-      "Write a clear, structured mini-lecture that teaches the concept from first principles with concrete examples and analogies. End with 3 key takeaways.",
-    reading:
-      "Write a focused, readable explainer that fully covers the lesson. Use headings, short paragraphs, and examples. End with 3 key takeaways.",
+      "STAGE: PRACTICE — active engagement the learner does themselves, ADAPTED TO THE SUBJECT: for a skill, 1-2 worked examples then 6-10 exercises/drills (vocab or conjugation tables for language; problem sets for math/EE); for a body of knowledge, prompts to summarize, argue, or connect the ideas; for an interpretive subject, reflection/discussion prompts. If there are exercises with objective answers, put them under a '## Answers' heading at the very end.",
+    apply:
+      "STAGE: APPLY — one realistic task that TRANSFERS the skill to a novel, real context: produce the language in a short dialogue, build a small thing (code), solve word problems, analyze a real case through the framework, or (for interpretive subjects) apply it to the learner's own life. Give clear instructions, a model/example answer, and a short checklist of what a strong result looks like.",
+    check:
+      "STAGE: CHECK — a low-stakes self-check. For skills/knowledge, a 6-10 question quiz with an '## Answer key' and brief explanations. For interpretive/values subjects, replace the quiz with honest self-reflection questions (no graded answers). For exam-targeted goals, mirror the real assessment's format.",
+    review:
+      "STAGE: REVIEW — an active-recall workout over the WHOLE milestone (spaced retrieval, not new material): 8-12 flashcard-style prompts (cover the answer, recall it) spanning everything covered, plus a short 'if you missed these, revisit…' guide.",
   };
 
   return complete({
     system: `${COACH_SYSTEM}
 
-You are writing the ACTUAL learning material for a single lesson — the real content the user studies, not a description of it. Be genuinely useful and complete for this one lesson only. Output clean GitHub-flavored markdown. Do not include the lesson title as an H1 (the app shows it). ${kindGuide[ctx.kind]}`,
+You are writing the ACTUAL learning material for a single lesson — the real content the user studies, not a description of it. Be genuinely useful and complete for this one lesson only. Output clean GitHub-flavored markdown. Do not include the lesson title as an H1 (the app shows it).
+
+First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose. ${kindGuide[ctx.kind]}`,
     maxTokens: 4096,
     temperature: 0.6,
     messages: [
