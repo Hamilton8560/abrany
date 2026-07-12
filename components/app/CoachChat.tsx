@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { Message } from "@/lib/repo";
 import { BrainGlyph, SendIcon } from "@/components/icons";
+import Markdown from "./Markdown";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -183,8 +184,10 @@ function Bubble({
       <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-accent/12 text-accent">
         <BrainGlyph className="size-4" />
       </span>
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-[18px] rounded-tl-[6px] bg-white/70 px-4 py-3 text-[14px] leading-relaxed text-ink">
-        {content || (streaming ? "" : "")}
+      <div className="max-w-[85%] rounded-[18px] rounded-tl-[6px] bg-white/70 px-4 py-3">
+        {content ? (
+          <Markdown>{content}</Markdown>
+        ) : null}
         {streaming && <span className="anim-bob ml-0.5 inline-block h-3.5 w-[2px] bg-accent align-middle" />}
       </div>
     </div>

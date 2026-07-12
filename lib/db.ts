@@ -78,11 +78,46 @@ function migrate(db: DatabaseSync) {
       value TEXT NOT NULL
     );
 
+    -- generated learning content: a milestone (plan_item) expands into lessons
+    CREATE TABLE IF NOT EXISTS lessons (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_item_id  INTEGER NOT NULL REFERENCES plan_items(id) ON DELETE CASCADE,
+      title         TEXT NOT NULL,
+      objective     TEXT NOT NULL DEFAULT '',
+      kind          TEXT NOT NULL DEFAULT 'reading',  -- reading|vocab|practice|quiz|lecture
+      order_index   INTEGER NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL DEFAULT 'stub',      -- stub|queued|generating|ready|error
+      content       TEXT NOT NULL DEFAULT '',
+      error         TEXT NOT NULL DEFAULT '',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- durable async job queue drained by the background worker
+    CREATE TABLE IF NOT EXISTS jobs (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      type       TEXT NOT NULL,                        -- generate_lesson | ...
+      payload    TEXT NOT NULL DEFAULT '{}',
+      status     TEXT NOT NULL DEFAULT 'queued',       -- queued|running|done|error
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      error      TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_plans_goal    ON plans(goal_id);
     CREATE INDEX IF NOT EXISTS idx_items_plan    ON plan_items(plan_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_goal ON sessions(goal_id);
     CREATE INDEX IF NOT EXISTS idx_messages_thr  ON messages(thread_id);
+    CREATE INDEX IF NOT EXISTS idx_lessons_item  ON lessons(plan_item_id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
   `);
+
+  // guarded column add: goals gain a parent (for decomposed "track" sub-goals)
+  const goalCols = db.prepare("PRAGMA table_info(goals)").all() as { name: string }[];
+  if (!goalCols.some((c) => c.name === "parent_goal_id")) {
+    db.exec("ALTER TABLE goals ADD COLUMN parent_goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE");
+  }
 }
 
 export function getDb(): DatabaseSync {

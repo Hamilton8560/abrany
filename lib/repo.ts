@@ -5,6 +5,32 @@ export type Goal = {
   title: string;
   description: string;
   status: "active" | "done" | "archived";
+  parent_goal_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Lesson = {
+  id: number;
+  plan_item_id: number;
+  title: string;
+  objective: string;
+  kind: "reading" | "vocab" | "practice" | "quiz" | "lecture";
+  order_index: number;
+  status: "stub" | "queued" | "generating" | "ready" | "error";
+  content: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Job = {
+  id: number;
+  type: string;
+  payload: string;
+  status: "queued" | "running" | "done" | "error";
+  attempts: number;
+  error: string;
   created_at: string;
   updated_at: string;
 };
@@ -51,7 +77,9 @@ export type Message = {
 
 export function listGoals(): Goal[] {
   return getDb()
-    .prepare("SELECT * FROM goals WHERE status != 'archived' ORDER BY status='done', updated_at DESC")
+    .prepare(
+      "SELECT * FROM goals WHERE status != 'archived' AND parent_goal_id IS NULL ORDER BY status='done', updated_at DESC",
+    )
     .all() as Goal[];
 }
 
@@ -59,10 +87,16 @@ export function getGoal(id: number): Goal | undefined {
   return getDb().prepare("SELECT * FROM goals WHERE id = ?").get(id) as Goal | undefined;
 }
 
-export function createGoal(title: string, description = ""): Goal {
+export function getChildGoals(parentId: number): Goal[] {
+  return getDb()
+    .prepare("SELECT * FROM goals WHERE parent_goal_id = ? AND status != 'archived' ORDER BY id")
+    .all(parentId) as Goal[];
+}
+
+export function createGoal(title: string, description = "", parentGoalId: number | null = null): Goal {
   const info = getDb()
-    .prepare("INSERT INTO goals (title, description) VALUES (?, ?)")
-    .run(title, description);
+    .prepare("INSERT INTO goals (title, description, parent_goal_id) VALUES (?, ?, ?)")
+    .run(title, description, parentGoalId);
   return getGoal(Number(info.lastInsertRowid))!;
 }
 
@@ -206,4 +240,122 @@ export function addMessage(threadId: number, role: "user" | "assistant", content
   return getDb()
     .prepare("SELECT * FROM messages WHERE id = ?")
     .get(Number(info.lastInsertRowid)) as Message;
+}
+
+/* ── Lessons (generated learning content) ──────────────────── */
+
+export function listLessons(planItemId: number): Lesson[] {
+  return getDb()
+    .prepare("SELECT * FROM lessons WHERE plan_item_id = ? ORDER BY order_index, id")
+    .all(planItemId) as Lesson[];
+}
+
+export function getLesson(id: number): Lesson | undefined {
+  return getDb().prepare("SELECT * FROM lessons WHERE id = ?").get(id) as Lesson | undefined;
+}
+
+export function planItemWithContext(planItemId: number):
+  | { item: PlanItem; plan: Plan; goal: Goal }
+  | undefined {
+  const db = getDb();
+  const item = db.prepare("SELECT * FROM plan_items WHERE id = ?").get(planItemId) as
+    | PlanItem
+    | undefined;
+  if (!item) return undefined;
+  const plan = db.prepare("SELECT * FROM plans WHERE id = ?").get(item.plan_id) as Plan | undefined;
+  if (!plan) return undefined;
+  const goal = db.prepare("SELECT * FROM goals WHERE id = ?").get(plan.goal_id) as Goal | undefined;
+  if (!goal) return undefined;
+  return { item, plan, goal };
+}
+
+export function createLessonStubs(
+  planItemId: number,
+  stubs: { title: string; objective?: string; kind?: Lesson["kind"] }[],
+): Lesson[] {
+  const db = getDb();
+  const ins = db.prepare(
+    "INSERT INTO lessons (plan_item_id, title, objective, kind, order_index) VALUES (?, ?, ?, ?, ?)",
+  );
+  stubs.forEach((s, i) => ins.run(planItemId, s.title, s.objective ?? "", s.kind ?? "reading", i));
+  return listLessons(planItemId);
+}
+
+export function setLessonStatus(id: number, status: Lesson["status"], error = ""): void {
+  getDb()
+    .prepare("UPDATE lessons SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
+}
+
+export function setLessonContent(id: number, content: string): void {
+  getDb()
+    .prepare(
+      "UPDATE lessons SET content = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
+    )
+    .run(content, id);
+}
+
+/* ── Jobs (durable async queue) ────────────────────────────── */
+
+export function enqueueJobRow(type: string, payload: object): Job {
+  const info = getDb()
+    .prepare("INSERT INTO jobs (type, payload) VALUES (?, ?)")
+    .run(type, JSON.stringify(payload));
+  return getDb().prepare("SELECT * FROM jobs WHERE id = ?").get(Number(info.lastInsertRowid)) as Job;
+}
+
+/** Atomically claim up to `n` queued jobs (marks them running). */
+export function claimJobs(n: number): Job[] {
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id LIMIT ?")
+    .all(n) as Job[];
+  const claim = db.prepare(
+    "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = datetime('now') WHERE id = ? AND status = 'queued'",
+  );
+  const claimed: Job[] = [];
+  for (const r of rows) {
+    const res = claim.run(r.id);
+    if (Number(res.changes) > 0) claimed.push({ ...r, status: "running", attempts: r.attempts + 1 });
+  }
+  return claimed;
+}
+
+export function finishJob(id: number, status: "done" | "error", error = ""): void {
+  getDb()
+    .prepare("UPDATE jobs SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
+}
+
+export function requeueJob(id: number, error: string): void {
+  getDb()
+    .prepare("UPDATE jobs SET status = 'queued', error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(error, id);
+}
+
+/** Reset jobs stuck in 'running' (from a crash/restart) back to 'queued', and
+ *  reset their lessons off transient states so the worker can retry them. */
+export function recoverOrphanedJobs(): void {
+  const db = getDb();
+  const orphans = db.prepare("SELECT * FROM jobs WHERE status = 'running'").all() as Job[];
+  for (const j of orphans) {
+    db.prepare("UPDATE jobs SET status = 'queued', updated_at = datetime('now') WHERE id = ?").run(j.id);
+    try {
+      const { lessonId } = JSON.parse(j.payload) as { lessonId?: number };
+      if (lessonId) {
+        db.prepare(
+          "UPDATE lessons SET status = 'queued', updated_at = datetime('now') WHERE id = ? AND status = 'generating'",
+        ).run(lessonId);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function countQueuedJobs(): number {
+  const r = getDb()
+    .prepare("SELECT COUNT(*) c FROM jobs WHERE status IN ('queued','running')")
+    .get() as { c: number };
+  return r.c;
 }

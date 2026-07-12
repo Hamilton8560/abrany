@@ -5,16 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import type { Goal, Plan, PlanItem } from "@/lib/repo";
-import { CheckIcon, TargetIcon } from "@/components/icons";
+import { ArrowRight, CheckIcon, TargetIcon } from "@/components/icons";
+import MilestoneLessons from "@/components/app/MilestoneLessons";
 
 type FullPlan = Plan & { items: PlanItem[] };
-type GoalResp = { goal: Goal; plan: FullPlan | null };
+type GoalResp = { goal: Goal; plan: FullPlan | null; children: Goal[] };
 
 export default function GoalDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [goal, setGoal] = useState<Goal | null>(null);
   const [plan, setPlan] = useState<FullPlan | null>(null);
+  const [children, setChildren] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     const d = await api<GoalResp>(`/api/goals/${id}`);
     setGoal(d.goal);
     setPlan(d.plan);
+    setChildren(d.children ?? []);
     setLoading(false);
   }, [id]);
 
@@ -70,6 +73,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   if (loading) return <p className="text-[14px] text-muted">Loading…</p>;
   if (!goal) return <p className="text-[14px] text-muted">Goal not found.</p>;
 
+  const isUmbrella = children.length > 0;
   const doneCount = plan?.items.filter((i) => i.status === "done").length ?? 0;
   const total = plan?.items.length ?? 0;
   const progress = total ? Math.round((doneCount / total) * 100) : 0;
@@ -142,7 +146,41 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
         </div>
       </header>
 
+      {/* umbrella: this goal was too broad, so it's split into tracks */}
+      {isUmbrella && (
+        <section className="glass rounded-[var(--radius-card-lg)] p-6">
+          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
+            Tracks — start anywhere
+          </h2>
+          <p className="mt-1.5 text-[13.5px] text-muted">
+            This is a big one, so your coach split it into standalone tracks. Open one to build its
+            plan and lessons.
+          </p>
+          <div className="mt-4 flex flex-col gap-2.5">
+            {children.map((c, i) => (
+              <Link
+                key={c.id}
+                href={`/app/goals/${c.id}`}
+                className="group flex items-center gap-3.5 rounded-[14px] bg-white/55 px-4 py-3.5 transition-colors hover:bg-white/85"
+              >
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent/12 text-[12px] font-bold text-accent">
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14.5px] font-semibold text-ink">{c.title}</p>
+                  {c.description && (
+                    <p className="truncate text-[12.5px] text-muted">{c.description}</p>
+                  )}
+                </div>
+                <ArrowRight className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* plan */}
+      {!isUmbrella && (
       <section className="glass rounded-[var(--radius-card-lg)] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
@@ -226,6 +264,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                       {item.detail && (
                         <p className="mt-1 text-[13px] leading-snug text-muted">{item.detail}</p>
                       )}
+                      <MilestoneLessons planItemId={item.id} milestoneTitle={item.title} />
                     </div>
                   </li>
                 );
@@ -234,6 +273,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }
