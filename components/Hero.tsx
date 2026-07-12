@@ -11,6 +11,7 @@ import {
   Gauge,
   Sparkline,
 } from "./icons";
+import LiquidGlass from "./LiquidGlass";
 
 const container: Variants = {
   hidden: {},
@@ -78,19 +79,22 @@ function Avatars() {
 
 function CardActiveLearners() {
   return (
-    <div className="glass flex items-center gap-[10px] rounded-[16px] py-[11px] pl-[14px] pr-[16px]">
-      <Avatars />
-      <div className="leading-none">
-        <p className="text-[15px] font-semibold text-ink">544+</p>
-        <p className="mt-[2px] text-[10px] text-muted">Active Learners</p>
+    <LiquidGlass radius={16} bezel={14} scale={24}>
+      <div className="flex items-center gap-[10px] py-[11px] pl-[14px] pr-[16px]">
+        <Avatars />
+        <div className="leading-none">
+          <p className="text-[15px] font-semibold text-ink">544+</p>
+          <p className="mt-[2px] text-[10px] text-muted">Active Learners</p>
+        </div>
       </div>
-    </div>
+    </LiquidGlass>
   );
 }
 
 function CardSessions() {
   return (
-    <div className="glass flex w-[180px] flex-col gap-3 rounded-[18px] px-4 py-[15px]">
+    <LiquidGlass radius={18} bezel={16} scale={30}>
+      <div className="flex w-[180px] flex-col gap-3 px-4 py-[15px]">
       <div className="flex items-center gap-3">
         <Gauge size={56} />
         <div className="leading-none">
@@ -112,13 +116,15 @@ function CardSessions() {
           <p className="mt-[2px] text-[9px] text-muted">avg score</p>
         </div>
       </div>
-    </div>
+      </div>
+    </LiquidGlass>
   );
 }
 
 function CardNeuralInsights() {
   return (
-    <div className="glass flex w-[186px] flex-col gap-[10px] rounded-[18px] px-[14px] py-[13px]">
+    <LiquidGlass radius={18} bezel={16} scale={30}>
+      <div className="flex w-[186px] flex-col gap-[10px] px-[14px] py-[13px]">
       <div className="flex items-center gap-[10px]">
         <span
           className="size-[34px] rounded-[10px]"
@@ -133,7 +139,8 @@ function CardNeuralInsights() {
         </div>
       </div>
       <Sparkline className="h-[34px] w-full text-accent" />
-    </div>
+      </div>
+    </LiquidGlass>
   );
 }
 

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight } from "./icons";
+import LiquidGlass from "./LiquidGlass";
 
 /* ───────────────────────────────────────────────────────────
    BRAIN JOURNEY — scroll-scrubbed fly-through.
@@ -161,9 +162,15 @@ function GhostNumeral({ n, className = "" }: { n: string; className?: string }) 
 function FeaturePanel({ beat }: { beat: Beat }) {
   const dark = beat.variant === "dark";
   return (
-    <div
-      className={`${dark ? "glass-dark" : "glass"} w-[min(430px,86vw)] rounded-[20px] p-[26px]`}
+    <LiquidGlass
+      radius={20}
+      bezel={22}
+      scale={54}
+      blur={8}
+      variant={dark ? "dark" : "light"}
+      className="w-[min(430px,86vw)]"
     >
+      <div className="p-[26px]">
       <div className="flex items-center gap-1 text-[13px]">
         <span className={`font-semibold ${dark ? "text-white" : "text-ink"}`}>
           {beat.n}
@@ -202,7 +209,8 @@ function FeaturePanel({ beat }: { beat: Beat }) {
         Train this
         <ArrowRight className="size-[14px] transition-transform duration-300 group-hover:translate-x-0.5" />
       </a>
-    </div>
+      </div>
+    </LiquidGlass>
   );
 }
 

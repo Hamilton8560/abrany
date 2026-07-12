@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Logo } from "./Nav";
 import { ArrowRight, XIcon, InstagramIcon, LinkedInIcon } from "./icons";
+import LiquidGlass from "./LiquidGlass";
 
 const LINKS = ["Features", "Pricing", "Trainers", "Method", "Journal", "Contact"];
 
@@ -33,8 +34,10 @@ export default function Footer() {
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-80px" }}
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        className="glass relative mx-auto max-w-[1280px] rounded-[24px] p-8 md:p-12"
+        className="relative mx-auto max-w-[1280px]"
       >
+        <LiquidGlass radius={24} bezel={26} scale={40} className="w-full">
+        <div className="p-8 md:p-12">
         {/* CTA row */}
         <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
           <h2 className="font-display font-extrabold text-ink [font-size:clamp(28px,4vw,44px)] [line-height:1.05] [letter-spacing:-0.01em]">
@@ -83,6 +86,8 @@ export default function Footer() {
           <p>© 2026 Abrany. All rights reserved.</p>
           <p>Privacy · Terms · Cookies</p>
         </div>
+        </div>
+        </LiquidGlass>
       </motion.div>
     </footer>
   );

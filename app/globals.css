@@ -80,6 +80,74 @@ body {
   backdrop-filter: blur(30px);
 }
 
+/* ── liquid glass (SVG-displacement refractive glass) ───────── */
+.lg {
+  position: relative;
+  isolation: isolate;
+}
+.lg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.lg-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.lg-light {
+  /* opaque enough for crisp text, still refractive at the rim */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.82) 0%,
+    rgba(255, 255, 255, 0.62) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.85),
+    inset -1px -1px 1px rgba(255, 255, 255, 0.35),
+    inset 0 0 24px rgba(255, 255, 255, 0.18),
+    0 16px 40px rgba(27, 36, 54, 0.14);
+}
+.lg-dark {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 27, 40, 0.6) 0%,
+    rgba(20, 27, 40, 0.4) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.24),
+    inset -1px -1px 1px rgba(255, 255, 255, 0.07),
+    0 18px 46px rgba(12, 17, 28, 0.42);
+}
+/* specular: soft top-left rim highlight */
+.lg-specular {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      120% 80% at 22% 12%,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0) 42%
+    );
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+.lg-content {
+  position: relative;
+  z-index: 2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lg-surface {
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+  }
+}
+
 /* ── brain compositing: multiply kills the near-white field,
       keeps the soft smoke edges + glowing veins ─────────────── */
 .brain-blend {
