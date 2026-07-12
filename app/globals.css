@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   ABRANY design tokens — transcribed from Figma (single source).
+   Colors confirmed via Figma variables:
+   ink #1b2436 · muted #5c6675 · accent(glow) #ff4326 · brain-muted #b7c3d4
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  --color-ink: #1b2436;
+  --color-muted: #5c6675;
+  --color-brain-muted: #b7c3d4;
+  --color-accent: #ff4326;
+  --color-accent-2: #ff8a3d;
+  --color-up: #2fbf5b;
+  --color-line: #d9e0ea;
+  --color-surface: #ffffff;
+
+  /* page background gradient stops */
+  --color-bg-top: #f2f6fb;
+  --color-bg-mid: #e8eef6;
+  --color-bg-bot: #d8e2ee;
+
+  --font-display: var(--font-archivo);
+  --font-sans: var(--font-inter);
+
+  --radius-card: 18px;
+  --radius-card-lg: 20px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 14px 34px 0 rgba(27, 36, 54, 0.12);
+  --shadow-cta: 0 12px 28px 0 rgba(27, 36, 54, 0.14);
+  --shadow-brain: 0 26px 55px 0 rgba(26, 36, 54, 0.22);
+  --shadow-glow: 0 8px 34px 0 rgba(255, 66, 38, 0.45);
+
+  /* motion */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── base ─────────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100%;
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  background: linear-gradient(
+    180deg,
+    var(--color-bg-top) 0%,
+    var(--color-bg-mid) 55%,
+    var(--color-bg-bot) 100%
+  );
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+/* ── glass surfaces (from Figma card spec) ─────────────────── */
+.glass {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(255, 255, 255, 0.34) 100%
+  );
+  border: 1.2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: blur(28px);
+  backdrop-filter: blur(28px);
+}
+
+.glass-dark {
+  background: linear-gradient(
+    180deg,
+    rgba(22, 29, 43, 0.66) 0%,
+    rgba(22, 29, 43, 0.4) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 44px 0 rgba(12, 17, 28, 0.34);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+}
+
+/* ── brain compositing: multiply kills the near-white field,
+      keeps the soft smoke edges + glowing veins ─────────────── */
+.brain-blend {
+  mix-blend-mode: multiply;
+}
+
+/* ── keyframes ─────────────────────────────────────────────── */
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes hotspot-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+.anim-float {
+  animation: floaty 6s var(--ease-out-soft) infinite;
+}
+.anim-glow {
+  animation: glow-pulse 3.4s ease-in-out infinite;
+}
+.anim-bob {
+  animation: bob 1.8s ease-in-out infinite;
+}
+.anim-hotspot {
+  animation: hotspot-ring 2.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .anim-float,
+  .anim-glow,
+  .anim-bob,
+  .anim-hotspot {
+    animation: none;
+  }
+}
