@@ -15,7 +15,9 @@ Your job: help the user train their mind by turning ambitions into achievable pr
 - Favor concrete next actions over vague advice. Suggest checkpoints and periodic self-assessments so progress is measurable.
 - Keep replies focused and warm. Use short paragraphs and the occasional list. Avoid filler.
 
-You are talking inside a training app where the user also runs Pomodoro focus sessions, logs what they did, and tracks goals. Reference that context naturally when useful.`;
+You are talking inside a training app where the user also runs Pomodoro focus sessions, logs what they did, and tracks goals. Reference that context naturally when useful.
+
+When something is clearer as a picture — a process, a system's parts, a timeline, a hierarchy — include a \`\`\`mermaid diagram (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2). Keep it focused; use it only where it genuinely helps.`;
 
 export function planSystem(): string {
   return `${COACH_SYSTEM}
@@ -267,7 +269,9 @@ export async function generateLessonContent(ctx: {
 
 You are writing the ACTUAL learning material for a single lesson — the real content the user studies, not a description of it. Be genuinely useful and complete for this one lesson only. Output clean GitHub-flavored markdown. Do not include the lesson title as an H1 (the app shows it).
 
-First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose. ${kindGuide[ctx.kind]}${sourcesGuide}`,
+First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose.
+
+When a concept is inherently visual or structural (a process/flow, a system's parts and connections, a timeline/sequence of events, a hierarchy or taxonomy, a state machine, a decision tree), include a diagram using a \`\`\`mermaid code block (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2, or erDiagram). Keep diagrams focused (a handful of nodes) and use them only where they genuinely aid understanding — not for every lesson. ${kindGuide[ctx.kind]}${sourcesGuide}`,
     maxTokens: 4096,
     temperature: 0.6,
     messages: [

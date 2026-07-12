@@ -3,6 +3,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
+import MermaidBlock from "./MermaidBlock";
 
 /**
  * Brand-styled markdown. Used for streaming coach replies and generated lesson
@@ -41,7 +42,19 @@ const components: Components = {
     </a>
   ),
   code: ({ children, className }) => {
-    const inline = !className;
+    const raw = String(children);
+    const hasLang = /language-(\w+)/.exec(className ?? "");
+    const multiline = raw.includes("\n");
+    // Detect Mermaid by language tag OR by content — MiniMax often omits the
+    // ```mermaid tag and just starts with `flowchart TD` / `sequenceDiagram` / etc.
+    const isMermaid =
+      hasLang?.[1] === "mermaid" ||
+      /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart)\b/.test(
+        raw,
+      );
+    if (isMermaid) return <MermaidBlock code={raw.replace(/\n$/, "")} />;
+
+    const inline = !hasLang && !multiline;
     if (inline)
       return (
         <code className="rounded bg-ink/8 px-1.5 py-0.5 font-mono text-[12.5px] text-ink">
@@ -49,12 +62,14 @@ const components: Components = {
         </code>
       );
     return (
-      <code className="block overflow-x-auto rounded-[10px] bg-ink/90 p-3 font-mono text-[12.5px] text-white">
+      <code className="mb-2.5 block overflow-x-auto rounded-[10px] bg-ink/90 p-3 font-mono text-[12.5px] text-white last:mb-0">
         {children}
       </code>
     );
   },
-  pre: ({ children }) => <pre className="mb-2.5 last:mb-0">{children}</pre>,
+  // unwrap <pre> — the `code` renderer above is self-contained (and lets a
+  // mermaid diagram render as a block instead of being trapped inside a <pre>)
+  pre: ({ children }) => <>{children}</>,
   blockquote: ({ children }) => (
     <blockquote className="my-2.5 border-l-2 border-accent/50 pl-3 text-muted">{children}</blockquote>
   ),

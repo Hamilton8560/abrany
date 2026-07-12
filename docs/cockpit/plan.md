@@ -13,7 +13,8 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Scope gate: decompose oversized goals into tracks
 - [x] Web-grounding for time-sensitive lessons (Brave Search)
 - [x] Pluggable TTS (free browser voice now, HD by config later)
+- [x] Mermaid diagrams (free, client-side) in lessons + coach chat
 - [ ] Kokoro free-neural TTS bridge (optional, self-hosted)
-- [ ] Diagram enrichment — Mermaid (free) + real images (Higgsfield/paid)
+- [ ] Real image diagrams (Higgsfield / MiniMax Image — paid, on demand)
 - [ ] Assessments + spaced follow-ups (Phase 2)
 - [ ] Presentation generation, book-writing (later)

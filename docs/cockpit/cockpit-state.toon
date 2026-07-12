@@ -1,6 +1,6 @@
 # Initial snapshot seeded from the real project. From here on, cockpit.html
 # regenerates this file when you hit "Sync for Claude".
-decisions[8]{id,title,status,owner}:
+decisions[9]{id,title,status,owner}:
   0001,Local SQLite via node:sqlite,approved,david
   0002,MiniMax M3 via Anthropic-compatible endpoint,proposed,claude
   0003,Global FIFO MiniMax queue (cap 2),approved,david
@@ -9,7 +9,8 @@ decisions[8]{id,title,status,owner}:
   0006,Scope gate: decompose oversized goals into tracks,approved,david
   0007,Web-grounding via Brave Search,proposed,claude
   0008,Pluggable TTS provider,approved,david
-plan.tasks[15]{n,task,status}:
+  0009,Mermaid for free client-side diagrams,proposed,claude
+plan.tasks[16]{n,task,status}:
   1,App shell + brand reuse,done
   2,Pomodoro timer + session logging,done
   3,Goals + AI plans,done
@@ -21,7 +22,8 @@ plan.tasks[15]{n,task,status}:
   9,Scope gate (tracks),done
   10,Web-grounding (Brave),done
   11,Pluggable TTS,done
-  12,Kokoro free-neural TTS bridge,todo
-  13,Diagram enrichment (Mermaid + images),todo
-  14,Assessments + spaced follow-ups,todo
-  15,Presentation gen + book-writing,todo
+  12,Mermaid diagrams (free),done
+  13,Kokoro free-neural TTS bridge,todo
+  14,Real image diagrams (paid, on demand),todo
+  15,Assessments + spaced follow-ups,todo
+  16,Presentation gen + book-writing,todo
