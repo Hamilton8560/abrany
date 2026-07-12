@@ -89,15 +89,19 @@ type Seg =
 const LOCK_FRAME = [49, 99, 149, 200];
 const LV = LOCK_FRAME.map((f) => f / (FRAME_COUNT - 1));
 
+// travel weight (brain fly-through) is deliberately large so scrubbing the
+// motion feels slow/cinematic; locks are shorter holds for the caption.
+const TRAVEL_W = 2.1;
+const LOCK_W = 0.9;
 const TIMELINE: Seg[] = [
-  { type: "travel", from: 0.0, to: LV[0], w: 1.05 },
-  { type: "lock", at: LV[0], scene: 0, w: 0.9 },
-  { type: "travel", from: LV[0], to: LV[1], w: 1.05 },
-  { type: "lock", at: LV[1], scene: 1, w: 0.9 },
-  { type: "travel", from: LV[1], to: LV[2], w: 1.05 },
-  { type: "lock", at: LV[2], scene: 2, w: 0.9 },
-  { type: "travel", from: LV[2], to: LV[3], w: 1.05 },
-  { type: "lock", at: LV[3], scene: 3, w: 1.0 },
+  { type: "travel", from: 0.0, to: LV[0], w: TRAVEL_W },
+  { type: "lock", at: LV[0], scene: 0, w: LOCK_W },
+  { type: "travel", from: LV[0], to: LV[1], w: TRAVEL_W },
+  { type: "lock", at: LV[1], scene: 1, w: LOCK_W },
+  { type: "travel", from: LV[1], to: LV[2], w: TRAVEL_W },
+  { type: "lock", at: LV[2], scene: 2, w: LOCK_W },
+  { type: "travel", from: LV[2], to: LV[3], w: TRAVEL_W },
+  { type: "lock", at: LV[3], scene: 3, w: 1.05 },
 ];
 const TOTAL_W = TIMELINE.reduce((s, seg) => s + seg.w, 0);
 
