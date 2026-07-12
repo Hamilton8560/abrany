@@ -15,7 +15,7 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Pluggable TTS (free browser voice now, HD by config later)
 - [x] Mermaid diagrams (free, client-side) in lessons + coach chat
 - [x] Assessments + spaced follow-ups (SM-2 review queue, self-rated, zero-cost)
-- [ ] Optional "Quiz me" — LLM-generated questions per review
+- [x] "Quiz me" — coach generates + grades fresh questions per review
 - [ ] Kokoro free-neural TTS bridge (optional, self-hosted)
 - [ ] Real image diagrams (Higgsfield / MiniMax Image — paid, on demand)
 - [ ] Presentation generation, book-writing (later)

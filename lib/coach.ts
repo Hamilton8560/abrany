@@ -283,4 +283,95 @@ When a concept is inherently visual or structural (a process/flow, a system's pa
   });
 }
 
+/* ── "Quiz me": generate + grade a recall quiz for spaced review ── */
+
+export async function generateReviewQuiz(ctx: {
+  goalTitle: string;
+  lessonTitle: string;
+  lessonObjective: string;
+  content: string;
+}): Promise<{ question: string }[]> {
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+Generate a SHORT recall quiz that tests whether the learner still remembers and can use THIS one lesson. Adapt to the subject: recall/explain questions for knowledge, apply-it questions for skills, honest reflection prompts for interpretive subjects. Ground every question in the lesson content provided. Respond with ONLY JSON, no prose or fences:
+{ "questions": [ { "question": "..." } ] }
+Rules: 3 to 5 questions, answerable in a sentence or two. Do NOT include answers.`,
+    maxTokens: 900,
+    temperature: 0.5,
+    messages: [
+      {
+        role: "user",
+        content: `Goal: ${ctx.goalTitle}\nLesson: ${ctx.lessonTitle}\nObjective: ${ctx.lessonObjective}\n\nLESSON CONTENT:\n${ctx.content.slice(0, 6000)}\n\nWrite the recall quiz.`,
+      },
+    ],
+  });
+  let parsed: { questions?: unknown };
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    throw new Error("Coach returned an unparseable quiz");
+  }
+  const qs = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const clean = (qs as { question?: unknown }[])
+    .filter((q) => q && typeof q.question === "string" && (q.question as string).trim())
+    .slice(0, 6)
+    .map((q) => ({ question: (q.question as string).slice(0, 400) }));
+  if (!clean.length) throw new Error("Coach returned no questions");
+  return clean;
+}
+
+export type QuizVerdict = "correct" | "partial" | "incorrect";
+
+export type QuizGrade = {
+  results: { verdict: QuizVerdict; feedback: string }[];
+  summary: string;
+  suggested: "again" | "hard" | "good" | "easy";
+};
+
+export async function gradeReviewQuiz(ctx: {
+  lessonTitle: string;
+  content: string;
+  items: { question: string; answer: string }[];
+}): Promise<QuizGrade> {
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+You are grading a learner's recall quiz against the lesson content (the source of truth). For each question+answer, judge "correct", "partial", or "incorrect" and give one short, kind, specific feedback line (name what was missed). Then give a 1-2 sentence overall summary and a suggested spaced-repetition rating based on how they did overall: "again" (mostly wrong), "hard" (shaky), "good" (solid), "easy" (nailed it). A blank answer is "incorrect". Respond with ONLY JSON, no prose or fences:
+{ "results": [ { "verdict": "correct|partial|incorrect", "feedback": "..." } ], "summary": "...", "suggested": "again|hard|good|easy" }
+The results array MUST have exactly one entry per question, in order.`,
+    maxTokens: 1600,
+    temperature: 0.3,
+    messages: [
+      {
+        role: "user",
+        content: `Lesson: ${ctx.lessonTitle}\n\nLESSON CONTENT:\n${ctx.content.slice(0, 6000)}\n\nQUIZ:\n${ctx.items
+          .map((it, i) => `Q${i + 1}: ${it.question}\nLearner's answer: ${it.answer || "(blank)"}`)
+          .join("\n\n")}\n\nGrade it.`,
+      },
+    ],
+  });
+  let parsed: Partial<QuizGrade>;
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    throw new Error("Coach returned an unparseable grade");
+  }
+  const verdicts = new Set(["correct", "partial", "incorrect"]);
+  const ratings = new Set(["again", "hard", "good", "easy"]);
+  const results = (Array.isArray(parsed.results) ? parsed.results : [])
+    .slice(0, ctx.items.length)
+    .map((r) => ({
+      verdict: (verdicts.has((r as QuizGrade["results"][number]).verdict)
+        ? (r as QuizGrade["results"][number]).verdict
+        : "partial") as QuizVerdict,
+      feedback: ((r as QuizGrade["results"][number]).feedback ?? "").toString().slice(0, 300),
+    }));
+  return {
+    results,
+    summary: (parsed.summary ?? "").toString().slice(0, 400),
+    suggested: (ratings.has(parsed.suggested as string) ? parsed.suggested : "good") as QuizGrade["suggested"],
+  };
+}
+
 export { type ChatMessage };

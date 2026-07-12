@@ -6,6 +6,7 @@ import { api } from "@/lib/client";
 import { schedule, dueLabel, type Rating } from "@/lib/srs";
 import type { DueLesson, SrsUpcoming } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
+import ReviewQuiz from "@/components/app/ReviewQuiz";
 import { ReviewIcon } from "@/components/icons";
 
 type Resp = { due: DueLesson[]; summary: SrsUpcoming };
@@ -22,14 +23,22 @@ export default function ReviewPage() {
   const [summary, setSummary] = useState<SrsUpcoming | null>(null);
   const [i, setI] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [quizzing, setQuizzing] = useState(false);
+  const [suggested, setSuggested] = useState<Rating | null>(null);
   const [grading, setGrading] = useState(false);
+
+  const resetCard = () => {
+    setRevealed(false);
+    setQuizzing(false);
+    setSuggested(null);
+  };
 
   const load = useCallback(async () => {
     const d = await api<Resp>("/api/reviews");
     setQueue(d.due);
     setSummary(d.summary);
     setI(0);
-    setRevealed(false);
+    resetCard();
   }, []);
 
   useEffect(() => {
@@ -46,7 +55,7 @@ export default function ReviewPage() {
         method: "POST",
         body: JSON.stringify({ rating }),
       });
-      setRevealed(false);
+      resetCard();
       setI((n) => n + 1);
     } finally {
       setGrading(false);
@@ -123,23 +132,37 @@ export default function ReviewPage() {
             </p>
           </div>
 
-          {!revealed ? (
+          <div className="mt-4 flex flex-wrap gap-2">
             <button
-              onClick={() => setRevealed(true)}
-              className="mt-4 self-start glassx rounded-full px-5 py-2.5 text-[13px] font-semibold text-ink"
+              onClick={() => setRevealed((v) => !v)}
+              className="glassx rounded-full px-4 py-2 text-[13px] font-semibold text-ink"
             >
-              Show lesson
+              {revealed ? "Hide lesson" : "Show lesson"}
             </button>
-          ) : (
-            <div className="mt-4 max-h-[42vh] overflow-y-auto rounded-[14px] border border-line bg-white/40 p-4">
+            {!quizzing && (
+              <button
+                onClick={() => setQuizzing(true)}
+                className="glassx-dark rounded-full px-4 py-2 text-[13px] font-semibold text-white"
+              >
+                Quiz me
+              </button>
+            )}
+          </div>
+
+          {revealed && (
+            <div className="mt-3 max-h-[42vh] overflow-y-auto rounded-[14px] border border-line bg-white/40 p-4">
               <Markdown>{current.content}</Markdown>
             </div>
           )}
 
-          {/* grade buttons appear once you've recalled / revealed */}
+          {quizzing && (
+            <ReviewQuiz key={current.id} lessonId={current.id} onSuggest={setSuggested} />
+          )}
+
+          {/* grade buttons — the coach's suggested rating (after a quiz) is highlighted */}
           <div className="mt-6 border-t border-line/70 pt-5">
             <p className="mb-3 text-[12px] font-medium text-muted">
-              How well did you remember it?
+              {suggested ? "Confirm your rating (coach suggests the highlighted one):" : "How well did you remember it?"}
             </p>
             <div className="grid grid-cols-4 gap-2">
               {RATINGS.map((r) => {
@@ -156,7 +179,9 @@ export default function ReviewPage() {
                     key={r.key}
                     onClick={() => grade(r.key)}
                     disabled={grading}
-                    className={`flex flex-col items-center gap-0.5 rounded-[13px] px-2 py-2.5 text-[13px] font-semibold transition-colors disabled:opacity-50 ${r.tone}`}
+                    className={`flex flex-col items-center gap-0.5 rounded-[13px] px-2 py-2.5 text-[13px] font-semibold transition-colors disabled:opacity-50 ${r.tone} ${
+                      suggested === r.key ? "ring-2 ring-accent ring-offset-1" : ""
+                    }`}
                   >
                     {r.label}
                     <span className="text-[10px] font-normal opacity-70">{dueLabel(next.interval)}</span>

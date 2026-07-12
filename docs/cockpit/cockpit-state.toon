@@ -25,7 +25,7 @@ plan.tasks[17]{n,task,status}:
   11,Pluggable TTS,done
   12,Mermaid diagrams (free),done
   13,Assessments + spaced follow-ups (SM-2),done
-  14,Optional Quiz me (LLM questions per review),todo
+  14,Quiz me (coach generates + grades),done
   15,Kokoro free-neural TTS bridge,todo
   16,Real image diagrams (paid, on demand),todo
   17,Presentation gen + book-writing,todo
