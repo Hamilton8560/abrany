@@ -20,15 +20,30 @@ async function getMermaid() {
         securityLevel: "loose",
         theme: "base",
         fontFamily: "var(--font-sans), system-ui, sans-serif",
+        // calmer, more professional look: soft nodes, muted borders, curved edges
         themeVariables: {
-          primaryColor: "#e8eef6",
+          primaryColor: "#eef3f9",
           primaryTextColor: "#1b2436",
-          primaryBorderColor: "#ff4326",
-          lineColor: "#5c6675",
-          secondaryColor: "#ffe4dc",
-          tertiaryColor: "#f2f6fb",
+          primaryBorderColor: "#9fb0c6",
+          nodeBorder: "#9fb0c6",
+          lineColor: "#8795a8",
+          secondaryColor: "#f2f6fb",
+          tertiaryColor: "#ffffff",
+          edgeLabelBackground: "#ffffff",
+          clusterBkg: "#f2f6fb",
+          clusterBorder: "#d9e0ea",
+          titleColor: "#1b2436",
           fontSize: "14px",
         },
+        flowchart: {
+          curve: "basis",
+          padding: 14,
+          nodeSpacing: 48,
+          rankSpacing: 58,
+          useMaxWidth: true,
+          htmlLabels: true,
+        },
+        sequence: { useMaxWidth: true, mirrorActors: false },
       });
       return m.default;
     });
