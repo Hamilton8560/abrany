@@ -17,5 +17,6 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Assessments + spaced follow-ups (SM-2 review queue, self-rated, zero-cost)
 - [x] "Quiz me" — coach generates + grades fresh questions per review
 - [ ] Kokoro free-neural TTS bridge (optional, self-hosted)
+- [x] Architecture diagrams (TOON → dagre → branded SVG, deterministic)
 - [ ] Real image diagrams (Higgsfield / MiniMax Image — paid, on demand)
 - [ ] Presentation generation, book-writing (later)

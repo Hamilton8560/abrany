@@ -17,7 +17,17 @@ Your job: help the user train their mind by turning ambitions into achievable pr
 
 You are talking inside a training app where the user also runs Pomodoro focus sessions, logs what they did, and tracks goals. Reference that context naturally when useful.
 
-When something is clearer as a picture — a process, a system's parts, a timeline, a hierarchy — include a \`\`\`mermaid diagram (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2). Keep it focused; use it only where it genuinely helps.`;
+When something is clearer as a picture, include a diagram. Use a \`\`\`mermaid block for processes, timelines, hierarchies, state or sequence (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2). For a SYSTEM or ARCHITECTURE diagram (components/services and how they connect), use an \`\`\`arch block with a compact TOON spec instead:
+\`\`\`arch
+nodes[3]{id,label,group}:
+  web,Web App,frontend
+  api,API,backend
+  db,Postgres,data
+edges[2]{from,to,label}:
+  web,api,HTTPS
+  api,db,SQL
+\`\`\`
+group is one of frontend|backend|service|data|external|queue. Keep ids short with no spaces, labels short, and no commas inside any value. Keep diagrams focused; use them only where they genuinely help.`;
 
 export function planSystem(): string {
   return `${COACH_SYSTEM}
@@ -271,7 +281,7 @@ You are writing the ACTUAL learning material for a single lesson — the real co
 
 First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose.
 
-When a concept is inherently visual or structural (a process/flow, a system's parts and connections, a timeline/sequence of events, a hierarchy or taxonomy, a state machine, a decision tree), include a diagram using a \`\`\`mermaid code block (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2, or erDiagram). Keep diagrams focused (a handful of nodes) and use them only where they genuinely aid understanding — not for every lesson. ${kindGuide[ctx.kind]}${sourcesGuide}`,
+When a concept is inherently visual or structural, include a diagram. Use a \`\`\`mermaid code block for processes, timelines, hierarchies, state machines, decision trees, or sequences (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2, erDiagram). For a SYSTEM or ARCHITECTURE diagram (components/services and their connections), use an \`\`\`arch code block with a compact TOON spec instead: a nodes[N]{id,label,group} block then an edges[M]{from,to,label} block, where group is one of frontend|backend|service|data|external|queue (ids short with no spaces, labels short, no commas inside values). Keep diagrams focused (a handful of nodes) and use them only where they genuinely aid understanding — not for every lesson. ${kindGuide[ctx.kind]}${sourcesGuide}`,
     maxTokens: 4096,
     temperature: 0.6,
     messages: [

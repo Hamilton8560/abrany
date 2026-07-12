@@ -11,6 +11,7 @@ decisions[9]{id,title,status,owner}:
   0008,Pluggable TTS provider,approved,david
   0009,Mermaid for free client-side diagrams,proposed,claude
   0010,Spaced-repetition assessments + in-app follow-ups,proposed,claude
+  0011,Architecture diagrams from a TOON spec via dagre,proposed,claude
 plan.tasks[17]{n,task,status}:
   1,App shell + brand reuse,done
   2,Pomodoro timer + session logging,done

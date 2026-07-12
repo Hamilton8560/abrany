@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import MermaidBlock from "./MermaidBlock";
+import ArchDiagram from "./ArchDiagram";
 
 /**
  * Brand-styled markdown. Used for streaming coach replies and generated lesson
@@ -45,6 +46,10 @@ const components: Components = {
     const raw = String(children);
     const hasLang = /language-(\w+)/.exec(className ?? "");
     const multiline = raw.includes("\n");
+    // Architecture diagram: ```arch (TOON node/edge spec) → dagre-laid-out SVG.
+    const isArch =
+      hasLang?.[1] === "arch" || /^\s*nodes\[\d+\]\{[^}]*\}:/.test(raw);
+    if (isArch) return <ArchDiagram spec={raw} />;
     // Detect Mermaid by language tag OR by content — MiniMax often omits the
     // ```mermaid tag and just starts with `flowchart TD` / `sequenceDiagram` / etc.
     const isMermaid =
