@@ -4,7 +4,18 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight } from "./icons";
 
-/* ── beat content (from Figma nodes 21-2 / 21-35 / 21-68 / 21-101) ── */
+/* ───────────────────────────────────────────────────────────
+   BRAIN JOURNEY — scroll-scrubbed fly-through.
+   The scroll IS the playhead: a pre-decoded WebP frame sequence
+   (extracted from the Higgsfield film) is painted to a <canvas>.
+   NEVER scrub a <video>.currentTime — decoded frames blit instantly.
+   Captions LOCK on the 4 region frames (0.25 / 0.5 / 0.75 / 1.0).
+   ─────────────────────────────────────────────────────────── */
+
+const FRAME_COUNT = 202;
+const framePath = (i: number) =>
+  `/frames/f_${String(i).padStart(3, "0")}.webp`;
+
 type Variant = "light" | "dark";
 type Pos = "bottom-left" | "right" | "top-left" | "bottom-right";
 
@@ -15,15 +26,9 @@ interface Beat {
   copy: string;
   variant: Variant;
   pos: Pos;
-  /* brain transform when this beat is centered (fractions of viewport) */
-  scale: number;
-  x: number;
-  y: number;
-  /* hotspot screen position (fraction of stage) */
-  hx: number;
-  hy: number;
-  /* ghost numeral corner */
   ghost: "tl" | "bl";
+  still: string; // region keyframe for static fallback
+  lock: number; // videoProgress the film locks on
 }
 
 const BEATS: Beat[] = [
@@ -34,12 +39,9 @@ const BEATS: Beat[] = [
     copy: "Daily drills that build sustained attention and deep-work stamina.",
     variant: "light",
     pos: "bottom-left",
-    scale: 1.9,
-    x: 0.04,
-    y: -0.03,
-    hx: 0.48,
-    hy: 0.42,
     ghost: "tl",
+    still: "/regions/prefrontal.webp",
+    lock: 0.25,
   },
   {
     n: "02",
@@ -48,12 +50,9 @@ const BEATS: Beat[] = [
     copy: "Spaced-recall training that encodes and retrieves memory faster.",
     variant: "dark",
     pos: "right",
-    scale: 2.3,
-    x: 0.03,
-    y: 0.05,
-    hx: 0.45,
-    hy: 0.48,
     ghost: "bl",
+    still: "/regions/hippocampus.webp",
+    lock: 0.5,
   },
   {
     n: "03",
@@ -62,12 +61,9 @@ const BEATS: Beat[] = [
     copy: "Regulation exercises that lower reactivity and steady your stress response.",
     variant: "light",
     pos: "top-left",
-    scale: 2.75,
-    x: 0.08,
-    y: 0.08,
-    hx: 0.43,
-    hy: 0.55,
     ghost: "bl",
+    still: "/regions/amygdala.webp",
+    lock: 0.75,
   },
   {
     n: "04",
@@ -76,30 +72,91 @@ const BEATS: Beat[] = [
     copy: "Reflex and flow tasks that sharpen reaction speed and coordination.",
     variant: "light",
     pos: "bottom-right",
-    scale: 2.35,
-    x: -0.14,
-    y: 0.04,
-    hx: 0.64,
-    hy: 0.66,
     ghost: "tl",
+    still: "/regions/cerebellum.webp",
+    lock: 1.0,
   },
 ];
 
-/* anchor progress (0..1) for establish + 4 beats */
-const ANCHORS = [0.0, 0.24, 0.48, 0.72, 0.94];
-const ESTABLISH = { scale: 1.0, x: 0, y: 0 };
+/* ── travel/lock timeline ───────────────────────────────────── */
+type Seg =
+  | { type: "travel"; from: number; to: number; w: number }
+  | { type: "lock"; at: number; scene: number; w: number };
+
+// clean region end-frames (0-based indices into the frame sequence):
+// f_050 prefrontal · f_100 hippocampus · f_150 amygdala · f_200 cerebellum
+const LOCK_FRAME = [49, 99, 149, 200];
+const LV = LOCK_FRAME.map((f) => f / (FRAME_COUNT - 1));
+
+const TIMELINE: Seg[] = [
+  { type: "travel", from: 0.0, to: LV[0], w: 1.05 },
+  { type: "lock", at: LV[0], scene: 0, w: 0.9 },
+  { type: "travel", from: LV[0], to: LV[1], w: 1.05 },
+  { type: "lock", at: LV[1], scene: 1, w: 0.9 },
+  { type: "travel", from: LV[1], to: LV[2], w: 1.05 },
+  { type: "lock", at: LV[2], scene: 2, w: 0.9 },
+  { type: "travel", from: LV[2], to: LV[3], w: 1.05 },
+  { type: "lock", at: LV[3], scene: 3, w: 1.0 },
+];
+const TOTAL_W = TIMELINE.reduce((s, seg) => s + seg.w, 0);
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
-/* ── panel positioning ──────────────────────────────────────── */
+interface Resolved {
+  videoProgress: number;
+  scene: number; // active lock scene, -1 during travel
+  sceneOpacity: number; // caption opacity for the active scene
+}
+
+function resolve(p: number): Resolved {
+  const target = clamp01(p) * TOTAL_W;
+  const last = TIMELINE[TIMELINE.length - 1];
+  let acc = 0;
+  for (const seg of TIMELINE) {
+    const end = acc + seg.w;
+    if (target < end || seg === last) {
+      const local = clamp01((target - acc) / seg.w);
+      if (seg.type === "travel") {
+        return {
+          videoProgress: lerp(seg.from, seg.to, local),
+          scene: -1,
+          sceneOpacity: 0,
+        };
+      }
+      // lock: hold the frame, fade caption in over first 26% / out over last 22%
+      let o = 1;
+      if (local < 0.26) o = local / 0.26;
+      else if (local > 0.78) o = (1 - local) / 0.22;
+      return {
+        videoProgress: seg.at,
+        scene: seg.scene,
+        sceneOpacity: smooth(clamp01(o)),
+      };
+    }
+    acc = end;
+  }
+  return { videoProgress: 1, scene: 3, sceneOpacity: 1 };
+}
+
+/* ── caption panel (shared with static fallback) ────────────── */
 const POS_CLASS: Record<Pos, string> = {
   "bottom-left": "left-6 md:left-20 bottom-[11%]",
   right: "right-6 md:right-20 top-1/2 -translate-y-1/2",
   "top-left": "left-6 md:left-20 top-[19%]",
   "bottom-right": "right-6 md:right-20 bottom-[11%]",
 };
+
+function GhostNumeral({ n, className = "" }: { n: string; className?: string }) {
+  return (
+    <span
+      className={`pointer-events-none select-none font-display font-black leading-[0.8] text-ink/[0.06] [font-size:clamp(180px,32vw,440px)] ${className}`}
+    >
+      {n}
+    </span>
+  );
+}
 
 function FeaturePanel({ beat }: { beat: Beat }) {
   const dark = beat.variant === "dark";
@@ -113,7 +170,6 @@ function FeaturePanel({ beat }: { beat: Beat }) {
         </span>
         <span className={dark ? "text-white/55" : "text-muted"}>/ 04</span>
       </div>
-
       <div className="mt-4 flex items-center gap-2">
         <span className="h-[2px] w-[22px] bg-accent" />
         <span
@@ -123,7 +179,6 @@ function FeaturePanel({ beat }: { beat: Beat }) {
           {beat.region}
         </span>
       </div>
-
       <h3
         className={`mt-3 font-display font-extrabold [font-size:clamp(30px,3.4vw,40px)] [line-height:1.05] [letter-spacing:-0.01em] ${
           dark ? "text-white" : "text-ink"
@@ -133,7 +188,6 @@ function FeaturePanel({ beat }: { beat: Beat }) {
         <br />
         {beat.title[1]}
       </h3>
-
       <p
         className={`mt-4 max-w-[340px] text-[14.5px] leading-[1.5] ${
           dark ? "text-white/70" : "text-muted"
@@ -141,7 +195,6 @@ function FeaturePanel({ beat }: { beat: Beat }) {
       >
         {beat.copy}
       </p>
-
       <a
         href="#footer"
         className="group mt-6 inline-flex items-center gap-2 text-[14px] font-semibold text-accent"
@@ -153,202 +206,190 @@ function FeaturePanel({ beat }: { beat: Beat }) {
   );
 }
 
-function Hotspot() {
-  return (
-    <div className="relative grid place-items-center">
-      <span className="absolute size-[58px] rounded-full border border-white/90" />
-      <span className="anim-hotspot absolute size-[58px] rounded-full border border-white/70" />
-      <span className="size-[12px] rounded-full bg-accent shadow-[0_0_16px_6px_rgba(255,66,38,0.6)]" />
-    </div>
-  );
-}
-
-function GhostNumeral({ beat, className = "" }: { beat: Beat; className?: string }) {
-  return (
-    <span
-      className={`pointer-events-none select-none font-display font-black leading-[0.8] text-ink/[0.05] [font-size:clamp(180px,34vw,460px)] ${className}`}
-    >
-      {beat.n}
-    </span>
-  );
-}
-
-/* ── the brain that zooms/pans (image-scale fallback for video) ── */
-function BrainStage({ brainRef }: { brainRef: React.RefObject<HTMLDivElement | null> }) {
-  return (
-    <div
-      ref={brainRef}
-      className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[min(80vh,94vw)] -translate-x-1/2 -translate-y-1/2 will-change-transform"
-      style={{ transformOrigin: "center center" }}
-    >
-      {/* halo */}
-      <div
-        className="absolute inset-[8%] rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(255,120,70,0.14) 0%, rgba(255,120,70,0) 62%)",
-        }}
-      />
-      <Image
-        src="/brain.png"
-        alt="Anatomical brain fly-through"
-        fill
-        sizes="90vw"
-        className="brain-blend object-contain"
-        style={{ filter: "drop-shadow(0 26px 55px rgba(26,36,54,0.20))" }}
-      />
-    </div>
-  );
-}
-
 export default function BrainJourney() {
   const sectionRef = useRef<HTMLElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const brainRef = useRef<HTMLDivElement>(null);
-  const beatRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const hotRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const capRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [mode, setMode] = useState<"static" | "scroll">("static");
+  const [loadPct, setLoadPct] = useState(0);
+  const [ready, setReady] = useState(false);
 
+  // decide mode after mount (SSR-safe: starts "static")
   useEffect(() => {
     const mq = window.matchMedia(
       "(min-width: 1024px) and (prefers-reduced-motion: no-preference)"
     );
-    if (!mq.matches) {
-      setMode("static");
-      return;
-    }
-    setMode("scroll");
-
-    let ctx: { revert: () => void } | null = null;
-    let cancelled = false;
-
-    (async () => {
-      const gsapMod = await import("gsap");
-      const stMod = await import("gsap/ScrollTrigger");
-      if (cancelled) return;
-      const gsap = gsapMod.default;
-      const ScrollTrigger = stMod.ScrollTrigger;
-      gsap.registerPlugin(ScrollTrigger);
-
-      const brain = brainRef.current!;
-      const beats = beatRefs.current;
-      const hots = hotRefs.current;
-      const vw = () => window.innerWidth;
-      const vh = () => window.innerHeight;
-
-      const setBrain = (p: number) => {
-        // find surrounding anchors
-        let i = 0;
-        while (i < ANCHORS.length - 1 && p > ANCHORS[i + 1]) i++;
-        const states = [ESTABLISH, ...BEATS];
-        const a = states[i];
-        const b = states[Math.min(i + 1, states.length - 1)];
-        const span = ANCHORS[Math.min(i + 1, ANCHORS.length - 1)] - ANCHORS[i] || 1;
-        const t = smooth(clamp01((p - ANCHORS[i]) / span));
-        const scale = lerp(a.scale, b.scale, t);
-        const x = lerp(a.x, b.x, t) * vw();
-        const y = lerp(a.y, b.y, t) * vh();
-        gsap.set(brain, { scale, x, y, force3D: true });
-      };
-
-      const setBeats = (p: number) => {
-        BEATS.forEach((beat, idx) => {
-          const anchor = ANCHORS[idx + 1];
-          // triangular visibility window around the anchor
-          const halfIn = 0.11;
-          const halfOut = 0.11;
-          let o = 0;
-          if (p <= anchor) o = clamp01((p - (anchor - halfIn)) / halfIn);
-          else o = clamp01(1 - (p - anchor) / halfOut);
-          o = smooth(clamp01(o));
-          const el = beats[idx];
-          const hot = hots[idx];
-          if (el) {
-            el.style.opacity = String(o);
-            el.style.transform = `translateY(${(1 - o) * 26}px)`;
-            el.style.pointerEvents = o > 0.6 ? "auto" : "none";
-          }
-          if (hot) hot.style.opacity = String(smooth(clamp01(o * 1.1)));
-        });
-      };
-
-      // initialise
-      setBrain(0);
-      setBeats(0);
-
-      const st = ScrollTrigger.create({
-        trigger: sectionRef.current!,
-        start: "top top",
-        end: "bottom bottom",
-        scrub: 0.6,
-        onUpdate: (self) => {
-          setBrain(self.progress);
-          setBeats(self.progress);
-        },
-        invalidateOnRefresh: true,
-      });
-
-      ctx = {
-        revert: () => {
-          st.kill();
-          gsap.set(brain, { clearProps: "transform" });
-        },
-      };
-      ScrollTrigger.refresh();
-    })();
-
-    return () => {
-      cancelled = true;
-      ctx?.revert();
-    };
+    setMode(mq.matches ? "scroll" : "static");
   }, []);
 
-  /* ───────── SCROLL MODE (pinned sticky stage) ───────── */
+  // canvas scrubber — runs once the canvas is actually mounted
+  useEffect(() => {
+    if (mode !== "scroll" || !canvasRef.current) return;
+
+    let raf = 0;
+    let disposed = false;
+    const frames: HTMLImageElement[] = new Array(FRAME_COUNT);
+    let loaded = 0;
+
+    // progressive: load coarse (every 6th) first, then the rest
+    const order: number[] = [];
+    for (let i = 1; i <= FRAME_COUNT; i += 6) order.push(i);
+    for (let i = 1; i <= FRAME_COUNT; i++) if ((i - 1) % 6 !== 0) order.push(i);
+
+    const load = (idx: number) =>
+      new Promise<void>((res) => {
+        const img = new window.Image();
+        img.onload = img.onerror = () => {
+          frames[idx - 1] = img;
+          loaded++;
+          if (!disposed) setLoadPct(Math.round((loaded / FRAME_COUNT) * 100));
+          res();
+        };
+        img.src = framePath(idx);
+      });
+
+    // small concurrency pool
+    (async () => {
+      const POOL = 8;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < order.length && !disposed) {
+          const idx = order[cursor++];
+          await load(idx);
+          if (loaded === Math.ceil(FRAME_COUNT / 6)) {
+            if (!disposed) setReady(true); // coarse set in — reveal
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: POOL }, worker));
+      if (!disposed) setReady(true);
+    })();
+
+    const getFrame = (i: number): HTMLImageElement | null => {
+      const clamped = Math.max(0, Math.min(FRAME_COUNT - 1, i));
+      for (let d = 0; d <= FRAME_COUNT; d++) {
+        if (frames[clamped + d]) return frames[clamped + d];
+        if (frames[clamped - d]) return frames[clamped - d];
+      }
+      return null;
+    };
+
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext("2d")!;
+    let cw = 0,
+      ch = 0;
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const r = canvas.getBoundingClientRect();
+      cw = r.width;
+      ch = r.height;
+      canvas.width = Math.round(cw * dpr);
+      canvas.height = Math.round(ch * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const drawFrame = (vp: number) => {
+      const idx = Math.round(vp * (FRAME_COUNT - 1));
+      const img = getFrame(idx);
+      if (!img || !img.width) return;
+      // cover-fit
+      const s = Math.max(cw / img.width, ch / img.height);
+      const w = img.width * s;
+      const h = img.height * s;
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.drawImage(img, (cw - w) / 2, (ch - h) / 2, w, h);
+    };
+
+    let current = 0;
+    const tick = () => {
+      if (disposed) return;
+      const sec = sectionRef.current!;
+      const rect = sec.getBoundingClientRect();
+      const scrollable = sec.offsetHeight - window.innerHeight;
+      const p = clamp01(-rect.top / Math.max(1, scrollable));
+      // smooth the playhead
+      const state = resolve(p);
+      current += (state.videoProgress - current) * 0.16;
+      drawFrame(current);
+
+      // captions
+      BEATS.forEach((_, i) => {
+        const el = capRefs.current[i];
+        if (!el) return;
+        const o = state.scene === i ? state.sceneOpacity : 0;
+        el.style.opacity = String(o);
+        el.style.transform = `translateY(${(1 - o) * 24}px)`;
+        el.style.pointerEvents = o > 0.6 ? "auto" : "none";
+      });
+
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+    };
+  }, [mode]);
+
+  /* ───────── SCROLL MODE ───────── */
   if (mode === "scroll") {
     return (
-      <section ref={sectionRef} className="relative" style={{ height: "500vh" }}>
-        <div
-          ref={stageRef}
-          className="sticky top-0 h-screen w-full overflow-hidden"
-        >
-          <BrainStage brainRef={brainRef} />
+      <section ref={sectionRef} className="relative" style={{ height: `${TOTAL_W * 82}vh` }}>
+        <div className="sticky top-0 h-screen w-full overflow-hidden">
+          {/* poster while frames decode */}
+          <div
+            className="absolute inset-0 transition-opacity duration-700"
+            style={{ opacity: ready ? 0 : 1 }}
+          >
+            <Image
+              src="/regions/establish.webp"
+              alt=""
+              fill
+              priority
+              className="object-cover"
+            />
+          </div>
 
-          {/* hotspots */}
-          {BEATS.map((beat, i) => (
-            <div
-              key={`hot-${beat.n}`}
-              ref={(el) => {
-                hotRefs.current[i] = el;
-              }}
-              className="absolute"
-              style={{
-                left: `${beat.hx * 100}%`,
-                top: `${beat.hy * 100}%`,
-                transform: "translate(-50%,-50%)",
-                opacity: 0,
-              }}
-            >
-              <Hotspot />
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 h-full w-full transition-opacity duration-700"
+            style={{ opacity: ready ? 1 : 0 }}
+          />
+
+          {/* loading bar */}
+          {!ready && (
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-center">
+              <div className="h-[2px] w-40 overflow-hidden rounded-full bg-ink/10">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-200"
+                  style={{ width: `${loadPct}%` }}
+                />
+              </div>
+              <p className="mt-3 text-[11px] font-medium tracking-[1.6px] text-muted">
+                PREPARING THE FLY-THROUGH
+              </p>
             </div>
-          ))}
+          )}
 
-          {/* panels */}
+          {/* captions */}
           {BEATS.map((beat, i) => (
             <div
-              key={`panel-${beat.n}`}
+              key={beat.n}
               ref={(el) => {
-                beatRefs.current[i] = el;
+                capRefs.current[i] = el;
               }}
               className={`absolute ${POS_CLASS[beat.pos]}`}
               style={{ opacity: 0 }}
             >
               <div className="relative">
                 <GhostNumeral
-                  beat={beat}
+                  n={beat.n}
                   className={`absolute ${
-                    beat.ghost === "tl"
-                      ? "-left-4 -top-[42%]"
-                      : "-left-4 top-[60%]"
+                    beat.ghost === "tl" ? "-left-4 -top-[42%]" : "-left-4 top-[60%]"
                   } -z-10`}
                 />
                 <FeaturePanel beat={beat} />
@@ -365,28 +406,24 @@ export default function BrainJourney() {
     <section className="relative">
       {BEATS.map((beat) => (
         <div
-          key={`static-${beat.n}`}
-          className="relative flex min-h-[92vh] items-center overflow-hidden py-16"
+          key={beat.n}
+          className="relative flex min-h-[92vh] items-center overflow-hidden"
         >
-          <div
-            className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[135vw] max-w-[720px] -translate-x-1/2 -translate-y-[46%]"
-          >
-            <Image
-              src="/brain.png"
-              alt="Anatomical brain region"
-              fill
-              sizes="135vw"
-              className="brain-blend object-contain"
-            />
-          </div>
+          <Image
+            src={beat.still}
+            alt={`${beat.region} lit up`}
+            fill
+            sizes="100vw"
+            className="object-cover"
+          />
           <span
-            className={`pointer-events-none absolute select-none font-display font-black leading-[0.8] text-ink/[0.05] [font-size:34vw] ${
-              beat.ghost === "tl" ? "left-1 top-[6%]" : "left-1 bottom-[2%]"
+            className={`pointer-events-none absolute select-none font-display font-black leading-[0.8] text-white/10 [font-size:34vw] ${
+              beat.ghost === "tl" ? "left-1 top-[5%]" : "left-1 bottom-[2%]"
             }`}
           >
             {beat.n}
           </span>
-          <div className={`relative z-10 w-full px-6`}>
+          <div className="relative z-10 w-full px-6">
             <FeaturePanel beat={beat} />
           </div>
         </div>
