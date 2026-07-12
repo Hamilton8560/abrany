@@ -123,6 +123,12 @@ function migrate(db: DatabaseSync) {
   // lessons can be flagged for web-grounding and carry their cited sources
   addCol("lessons", "needs_current", "needs_current INTEGER NOT NULL DEFAULT 0");
   addCol("lessons", "sources", "sources TEXT NOT NULL DEFAULT '[]'");
+  // spaced-repetition state (null due = not enrolled in reviews)
+  addCol("lessons", "srs_due", "srs_due TEXT");
+  addCol("lessons", "srs_interval", "srs_interval REAL NOT NULL DEFAULT 0");
+  addCol("lessons", "srs_ease", "srs_ease REAL NOT NULL DEFAULT 2.3");
+  addCol("lessons", "srs_reps", "srs_reps INTEGER NOT NULL DEFAULT 0");
+  addCol("lessons", "srs_last", "srs_last TEXT");
 }
 
 export function getDb(): DatabaseSync {

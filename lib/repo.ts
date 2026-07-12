@@ -25,8 +25,19 @@ export type Lesson = {
   error: string;
   needs_current: number; // 0/1 — flagged for web-grounding
   sources: string; // JSON array of {title,url,description}
+  srs_due: string | null; // null = not enrolled in spaced review
+  srs_interval: number;
+  srs_ease: number;
+  srs_reps: number;
+  srs_last: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type DueLesson = Lesson & {
+  milestone_title: string;
+  goal_id: number;
+  goal_title: string;
 };
 
 export type Job = {
@@ -300,6 +311,70 @@ export function setLessonContent(id: number, content: string, sources: object[] 
       "UPDATE lessons SET content = ?, sources = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
     )
     .run(content, JSON.stringify(sources), id);
+}
+
+/* ── Spaced repetition (assessments / follow-ups) ──────────── */
+
+/** Enroll a lesson in spaced review — due today, fresh SM-2 state. Idempotent. */
+export function enrollLesson(id: number): Lesson | undefined {
+  getDb()
+    .prepare(
+      `UPDATE lessons SET srs_due = date('now'), srs_interval = 0, srs_ease = 2.3, srs_reps = 0,
+       updated_at = datetime('now') WHERE id = ? AND srs_due IS NULL`,
+    )
+    .run(id);
+  return getLesson(id);
+}
+
+export function unenrollLesson(id: number): void {
+  getDb().prepare("UPDATE lessons SET srs_due = NULL WHERE id = ?").run(id);
+}
+
+/** Lessons due for review today (across all goals), soonest first. */
+export function dueLessons(): DueLesson[] {
+  return getDb()
+    .prepare(
+      `SELECT l.*, pi.title AS milestone_title, g.id AS goal_id, g.title AS goal_title
+       FROM lessons l
+       JOIN plan_items pi ON pi.id = l.plan_item_id
+       JOIN plans p ON p.id = pi.plan_id
+       JOIN goals g ON g.id = p.goal_id
+       WHERE l.srs_due IS NOT NULL AND date(l.srs_due) <= date('now') AND l.status = 'ready'
+       ORDER BY l.srs_due, l.id`,
+    )
+    .all() as DueLesson[];
+}
+
+export function dueCount(): number {
+  const r = getDb()
+    .prepare(
+      "SELECT COUNT(*) c FROM lessons WHERE srs_due IS NOT NULL AND date(srs_due) <= date('now') AND status = 'ready'",
+    )
+    .get() as { c: number };
+  return r.c;
+}
+
+export type SrsUpcoming = { enrolled: number; dueToday: number };
+
+export function srsSummary(): SrsUpcoming {
+  const db = getDb();
+  const enrolled = (db.prepare("SELECT COUNT(*) c FROM lessons WHERE srs_due IS NOT NULL").get() as {
+    c: number;
+  }).c;
+  return { enrolled, dueToday: dueCount() };
+}
+
+/** Persist a computed SM-2 result and the next due date. */
+export function saveReview(
+  id: number,
+  next: { interval: number; ease: number; reps: number },
+): void {
+  getDb()
+    .prepare(
+      `UPDATE lessons SET srs_interval = ?, srs_ease = ?, srs_reps = ?, srs_last = datetime('now'),
+       srs_due = date('now', '+' || ? || ' days'), updated_at = datetime('now') WHERE id = ?`,
+    )
+    .run(next.interval, next.ease, next.reps, Math.max(0, Math.round(next.interval)), id);
 }
 
 /* ── Jobs (durable async queue) ────────────────────────────── */

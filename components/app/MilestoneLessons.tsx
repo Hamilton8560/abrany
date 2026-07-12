@@ -217,6 +217,22 @@ function LessonAction({
 }
 
 function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) {
+  const [enrolled, setEnrolled] = useState(lesson.srs_due != null);
+  const [busy, setBusy] = useState(false);
+
+  const toggleEnroll = async () => {
+    setBusy(true);
+    const next = !enrolled;
+    setEnrolled(next);
+    try {
+      await api(`/api/lessons/${lesson.id}/enroll`, { method: next ? "POST" : "DELETE" });
+    } catch {
+      setEnrolled(!next);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-sm sm:p-8"
@@ -236,6 +252,16 @@ function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void
             </h3>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={toggleEnroll}
+              disabled={busy}
+              title={enrolled ? "In your spaced-review rotation" : "Have your coach follow up on this over time"}
+              className={`rounded-full px-3 py-1.5 text-[12px] font-semibold disabled:opacity-60 ${
+                enrolled ? "bg-up/15 text-up" : "glassx text-ink"
+              }`}
+            >
+              {enrolled ? "✓ In reviews" : "Add to reviews"}
+            </button>
             {lesson.content ? <ListenButton text={lesson.content} /> : null}
             <button
               onClick={onClose}

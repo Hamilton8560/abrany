@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/Nav";
@@ -10,6 +11,7 @@ import {
   TargetIcon,
   ChatIcon,
   JournalIcon,
+  ReviewIcon,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 
@@ -17,12 +19,34 @@ const NAV: { href: string; label: string; Icon: ComponentType<SVGProps<SVGSVGEle
   { href: "/app", label: "Dashboard", Icon: HomeIcon },
   { href: "/app/timer", label: "Focus Timer", Icon: TimerIcon },
   { href: "/app/goals", label: "Goals & Plans", Icon: TargetIcon },
+  { href: "/app/review", label: "Review", Icon: ReviewIcon },
   { href: "/app/coach", label: "Coach", Icon: ChatIcon },
   { href: "/app/log", label: "Training Log", Icon: JournalIcon },
 ];
 
+/** Poll the number of lessons due for spaced review (for the nav badge). */
+function useDueCount() {
+  const [due, setDue] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      fetch("/api/reviews", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d) => alive && setDue(d.summary?.dueToday ?? 0))
+        .catch(() => {});
+    tick();
+    const id = setInterval(tick, 15000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+  return due;
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const due = useDueCount();
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col gap-8 p-5 lg:flex">
@@ -45,7 +69,16 @@ export default function Sidebar() {
                 }`}
               >
                 <Icon className={`size-[18px] ${active ? "text-white" : "text-muted group-hover:text-ink"}`} />
-                {label}
+                <span className="flex-1">{label}</span>
+                {href === "/app/review" && due > 0 && (
+                  <span
+                    className={`grid min-w-[20px] place-items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-bold ${
+                      active ? "bg-white/25 text-white" : "bg-accent text-white"
+                    }`}
+                  >
+                    {due}
+                  </span>
+                )}
               </Link>
             );
           })}

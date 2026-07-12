@@ -10,7 +10,8 @@ decisions[9]{id,title,status,owner}:
   0007,Web-grounding via Brave Search,proposed,claude
   0008,Pluggable TTS provider,approved,david
   0009,Mermaid for free client-side diagrams,proposed,claude
-plan.tasks[16]{n,task,status}:
+  0010,Spaced-repetition assessments + in-app follow-ups,proposed,claude
+plan.tasks[17]{n,task,status}:
   1,App shell + brand reuse,done
   2,Pomodoro timer + session logging,done
   3,Goals + AI plans,done
@@ -23,7 +24,8 @@ plan.tasks[16]{n,task,status}:
   10,Web-grounding (Brave),done
   11,Pluggable TTS,done
   12,Mermaid diagrams (free),done
-  13,Kokoro free-neural TTS bridge,todo
-  14,Real image diagrams (paid, on demand),todo
-  15,Assessments + spaced follow-ups,todo
-  16,Presentation gen + book-writing,todo
+  13,Assessments + spaced follow-ups (SM-2),done
+  14,Optional Quiz me (LLM questions per review),todo
+  15,Kokoro free-neural TTS bridge,todo
+  16,Real image diagrams (paid, on demand),todo
+  17,Presentation gen + book-writing,todo
