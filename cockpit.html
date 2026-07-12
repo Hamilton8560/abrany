@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Dev Cockpit — architecture · decisions · plan · mockups</title>
+<script>
+  // Must be set before Excalidraw loads so it can find its fonts/assets.
+  window.EXCALIDRAW_ASSET_PATH = "https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/";
+</script>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#111725; --panel2:#0e1420; --line:#1e2940;
+    --ink:#e6edf7; --muted:#8b9bb4; --faint:#5b6b86;
+    --accent:#6ea8fe; --accent2:#7ee0c0; --warn:#f4c86b; --bad:#f28b82; --good:#7ee0a8;
+    --chip:#18223a; --shadow:0 8px 30px rgba(0,0,0,.35);
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;
+       display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);
+         background:linear-gradient(180deg,#0f1522,#0b0e14);flex:0 0 auto}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.2px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .brand small{color:var(--faint);font-weight:400;font-family:var(--mono);font-size:11px}
+  .tabs{display:flex;gap:4px;margin-left:8px}
+  .tab{padding:7px 14px;border-radius:8px;color:var(--muted);cursor:pointer;user-select:none;
+       border:1px solid transparent;display:flex;align-items:center;gap:7px;font-weight:500}
+  .tab .badge{background:var(--chip);color:var(--muted);border-radius:20px;padding:1px 7px;font-size:11px;font-family:var(--mono)}
+  .tab:hover{color:var(--ink);background:#0e1626}
+  .tab.active{color:var(--ink);background:#16203a;border-color:var(--line)}
+  .tab.active .badge{background:#22335a;color:#cfe0ff}
+  .spacer{flex:1}
+  button.btn{background:#17233d;color:var(--ink);border:1px solid var(--line);padding:8px 13px;border-radius:8px;
+        cursor:pointer;font-weight:500;font-family:var(--sans);display:inline-flex;align-items:center;gap:7px}
+  button.btn:hover{border-color:#2f3f63;background:#1b294a}
+  button.btn.primary{background:linear-gradient(180deg,#3f6fd6,#345fc0);border-color:#4a74d0}
+  button.btn.primary:hover{background:linear-gradient(180deg,#4a7be0,#3d6acd)}
+  button.btn.ghost{background:transparent}
+  .status{font-family:var(--mono);font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px}
+  .status .live{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+  .status.connected .live{background:var(--good);box-shadow:0 0 10px var(--good)}
+  main{flex:1;display:flex;min-height:0}
+  .content{flex:1;min-width:0;position:relative;display:flex;flex-direction:column}
+  .rail{width:320px;flex:0 0 320px;border-left:1px solid var(--line);background:var(--panel2);display:flex;flex-direction:column}
+  .rail.collapsed{width:0;flex-basis:0;overflow:hidden}
+  .rail h3{margin:0;padding:12px 14px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);
+           border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .rail .body{flex:1;display:flex;flex-direction:column;min-height:0;padding:12px 14px;gap:10px}
+  .rail textarea{flex:1;resize:none;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+         border-radius:10px;padding:12px;font-family:var(--mono);font-size:12.5px;line-height:1.55}
+  .rail .hint{color:var(--faint);font-size:11px;line-height:1.5}
+  .view{position:absolute;inset:0;display:none;flex-direction:column}
+  .view.active{display:flex}
+  /* Canvas */
+  #excalidraw-host{position:absolute;inset:0}
+  .canvas-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+       gap:14px;text-align:center;padding:40px;color:var(--muted)}
+  .canvas-fallback code{background:var(--chip);padding:2px 6px;border-radius:5px;font-family:var(--mono);color:var(--accent2)}
+  .excalidraw .App-menu_top .buttonList{}
+  .toolbar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .toolbar .title{font-weight:600}
+  .toolbar .fname{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  /* Decisions */
+  .scroll{overflow:auto;padding:18px;flex:1}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;max-width:1200px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+  .card h4{margin:0;font-size:15px;display:flex;align-items:center;gap:9px;justify-content:space-between}
+  .card .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .badge-st{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+  .st-proposed{background:#2a2f18;color:var(--warn)}
+  .st-approved{background:#16301f;color:var(--good)}
+  .st-rejected{background:#331a1a;color:var(--bad)}
+  .st-superseded{background:#23283a;color:var(--faint)}
+  .card p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+  .card .sec-label{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);margin-top:2px}
+  .card textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:9px;
+        padding:9px;font-family:var(--sans);font-size:12.5px;resize:vertical;min-height:52px}
+  .card .actions{display:flex;gap:8px;margin-top:2px}
+  .mini{padding:6px 11px;font-size:12.5px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:#141d31;color:var(--ink)}
+  .mini.approve:hover{border-color:var(--good);color:var(--good)}
+  .mini.reject:hover{border-color:var(--bad);color:var(--bad)}
+  .mini:hover{background:#1a2540}
+  /* Plan */
+  .plan-wrap{max-width:820px;margin:0 auto;width:100%}
+  .task{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
+        background:var(--panel);margin-bottom:9px}
+  .task input{margin-top:3px;width:17px;height:17px;accent-color:var(--accent2);cursor:pointer}
+  .task .t{flex:1;line-height:1.5}
+  .task.done .t{color:var(--faint);text-decoration:line-through}
+  .task .tag{font-family:var(--mono);font-size:10.5px;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  .md h1,.md h2,.md h3{color:var(--ink)}
+  .md h2{font-size:16px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-top:26px}
+  .md p{color:var(--muted);line-height:1.6}
+  .md code{background:var(--chip);padding:1px 5px;border-radius:4px;font-family:var(--mono);color:var(--accent2)}
+  /* Mockups */
+  .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;max-width:1200px;margin:0 auto}
+  .mock{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+  .mock .img{aspect-ratio:16/10;background:#0a0f1a;display:flex;align-items:center;justify-content:center;overflow:hidden;border-bottom:1px solid var(--line)}
+  .mock .img img{width:100%;height:100%;object-fit:contain}
+  .mock .ph{color:var(--faint);font-family:var(--mono);font-size:12px;text-align:center;padding:20px}
+  .mock .meta{padding:11px 13px;display:flex;flex-direction:column;gap:7px}
+  .mock .name{font-size:13px;font-weight:600}
+  .mock textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;
+        padding:7px;font-size:12px;resize:vertical;min-height:40px}
+  .empty{color:var(--faint);text-align:center;padding:60px 20px;font-size:13px;line-height:1.6}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#16203a;border:1px solid #2b3c60;
+        color:var(--ink);padding:11px 18px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:opacity .25s, transform .25s;
+        pointer-events:none;font-size:13px;z-index:50}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+  .demo-banner{background:#20281a;border-bottom:1px solid #3a4526;color:var(--warn);font-size:12.5px;padding:7px 16px;
+        display:flex;align-items:center;gap:10px;font-family:var(--mono)}
+  .demo-banner b{color:#ffe6a3}
+  .iconbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:7px;width:30px;height:30px;
+        cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .iconbtn:hover{color:var(--ink);border-color:#2f3f63}
+  input[type=file]{display:none}
+  .addbtn{border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:12px;padding:16px;cursor:pointer;
+        display:flex;align-items:center;justify-content:center;gap:8px;min-height:110px}
+  .addbtn:hover{border-color:var(--accent);color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span> Dev Cockpit <small id="repoName">demo mode</small></div>
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-view="canvas">◭ Architecture</div>
+    <div class="tab" data-view="decisions">✔ Decisions <span class="badge" id="decCount">0</span></div>
+    <div class="tab" data-view="plan">☰ Plan <span class="badge" id="planCount">0</span></div>
+    <div class="tab" data-view="mockups">▧ Mockups <span class="badge" id="mockCount">0</span></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="status" id="connStatus"><span class="live"></span><span id="connText">not connected</span></div>
+  <button class="btn ghost" id="railToggle" title="Toggle feedback rail">✎ Feedback</button>
+  <button class="btn" id="openBtn">📂 Open repo /docs</button>
+  <button class="btn primary" id="syncBtn">⟳ Sync for Claude</button>
+</header>
+
+<div class="demo-banner" id="demoBanner">
+  <b>DEMO MODE</b> — showing sample data. Click <b>Open repo /docs</b> in Chrome or Edge to connect your real repo and round-trip files to disk.
+</div>
+
+<main>
+  <div class="content">
+    <!-- CANVAS -->
+    <section class="view active" data-view="canvas">
+      <div class="toolbar">
+        <span class="title">Architecture canvas</span>
+        <span class="fname">docs/cockpit/architecture.excalidraw</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn ghost" id="importExcali">Import .excalidraw</button>
+        <button class="btn ghost" id="exportExcali">Export</button>
+        <button class="btn" id="saveCanvas">Save canvas</button>
+      </div>
+      <div style="position:relative;flex:1">
+        <div id="excalidraw-host"></div>
+        <div class="canvas-fallback" id="canvasFallback" style="display:none">
+          <div style="font-size:15px;color:var(--ink)">Canvas engine couldn't load from CDN</div>
+          <div>You're likely offline or in a restricted preview. The canvas needs network access to
+             <code>unpkg.com</code>. Open <code>cockpit.html</code> in Chrome/Edge with a connection.</div>
+          <button class="btn" onclick="mountExcalidraw()">Retry</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DECISIONS -->
+    <section class="view" data-view="decisions">
+      <div class="toolbar">
+        <span class="title">Decision board</span>
+        <span class="fname">docs/decisions/*.md</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn" id="newDecision">+ New decision</button>
+      </div>
+      <div class="scroll"><div class="cards" id="decCards"></div></div>
+    </section>
+
+    <!-- PLAN -->
+    <section class="view" data-view="plan">
+      <div class="toolbar">
+        <span class="title">Plan &amp; spec</span>
+        <span class="fname">docs/cockpit/plan.md</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn" id="savePlan">Save plan</button>
+      </div>
+      <div class="scroll"><div class="plan-wrap" id="planWrap"></div></div>
+    </section>
+
+    <!-- MOCKUPS -->
+    <section class="view" data-view="mockups">
+      <div class="toolbar">
+        <span class="title">Mockups</span>
+        <span class="fname">docs/cockpit/mockups/</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn" id="addMock">+ Add image</button>
+      </div>
+      <div class="scroll"><div class="mgrid" id="mockGrid"></div></div>
+    </section>
+  </div>
+
+  <!-- FEEDBACK RAIL -->
+  <aside class="rail" id="rail">
+    <h3>✎ Feedback → Claude <span style="flex:1"></span><span class="status"><span class="live"></span></span></h3>
+    <div class="body">
+      <div class="hint">Prose notes Claude reads <b>first</b> each turn. Your approvals, drawings, and comments
+        also flow in via <code>cockpit-state.toon</code> on Sync. Write intent here — “rethink the auth boundary”,
+        “the ledger box should be async”.</div>
+      <textarea id="feedback" placeholder="# Notes for the next turn&#10;&#10;- "></textarea>
+      <button class="btn primary" id="syncBtn2">⟳ Sync everything for Claude</button>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="excaliFileInput" accept=".excalidraw,application/json"/>
+<input type="file" id="mockFileInput" accept="image/*" multiple/>
+
+<!-- Excalidraw deps (UMD) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js" crossorigin></script>
+
+<script>
+/* ============================ STATE ============================ */
+const state = {
+  dir: null,            // FileSystemDirectoryHandle for /docs
+  connected: false,
+  decisions: [],        // {file, id, title, status, owner, date, context, decision, consequences, review, raw}
+  plan: { raw: "", tasks: [] },
+  mockups: [],          // {name, url, note}
+  feedback: "",
+  scene: null,          // excalidraw scene {elements, appState, files}
+  excalidrawAPI: null,
+};
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* ============================ TABS ============================ */
+$$("#tabs .tab").forEach(t=>t.onclick=()=>{
+  $$("#tabs .tab").forEach(x=>x.classList.remove("active"));
+  $$(".view").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active");
+  $(`.view[data-view="${t.dataset.view}"]`).classList.add("active");
+});
+$("#railToggle").onclick=()=>$("#rail").classList.toggle("collapsed");
+
+/* ============================ TOAST ============================ */
+let toastT;
+function toast(msg){ const el=$("#toast"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),2600); }
+
+/* ============================ EXCALIDRAW ============================ */
+function mountExcalidraw(){
+  const host = $("#excalidraw-host");
+  const fb = $("#canvasFallback");
+  if(!window.ExcalidrawLib || !window.React || !window.ReactDOM){
+    fb.style.display="flex"; host.style.display="none"; return;
+  }
+  fb.style.display="none"; host.style.display="block";
+  const { Excalidraw } = window.ExcalidrawLib;
+  const initialData = state.scene || { elements: [], appState:{ viewBackgroundColor:"#0f1522" } };
+  const comp = React.createElement(Excalidraw, {
+    initialData,
+    theme:"dark",
+    excalidrawAPI:(api)=>{ state.excalidrawAPI = api; },
+  });
+  if(!host._root){ host._root = ReactDOM.createRoot(host); }
+  host._root.render(comp);
+}
+function loadSceneIntoCanvas(){
+  if(state.excalidrawAPI && state.scene){
+    try{ state.excalidrawAPI.updateScene({
+      elements: state.scene.elements||[],
+      appState: Object.assign({viewBackgroundColor:"#0f1522"}, state.scene.appState||{})
+    }); if(state.scene.files) state.excalidrawAPI.addFiles(Object.values(state.scene.files)); }catch(e){}
+  } else { mountExcalidraw(); }
+}
+function grabScene(){
+  if(!state.excalidrawAPI) return state.scene;
+  const elements = state.excalidrawAPI.getSceneElements();
+  const appState = state.excalidrawAPI.getAppState();
+  const files = state.excalidrawAPI.getFiles();
+  const clean = { type:"excalidraw", version:2, source:"dev-cockpit",
+    elements, appState:{ viewBackgroundColor: appState.viewBackgroundColor||"#0f1522",
+      gridSize: appState.gridSize||null }, files };
+  state.scene = clean; return clean;
+}
+
+/* ============================ FILE SYSTEM ============================ */
+async function openDocs(){
+  if(!window.showDirectoryPicker){ toast("Use Chrome or Edge to connect a folder"); return; }
+  try{
+    const dir = await window.showDirectoryPicker({ mode:"readwrite" });
+    const perm = await dir.requestPermission({ mode:"readwrite" });
+    if(perm!=="granted"){ toast("Permission denied"); return; }
+    state.dir = dir; state.connected = true;
+    $("#repoName").textContent = dir.name + "/";
+    $("#connStatus").classList.add("connected");
+    $("#connText").textContent = "connected · "+dir.name;
+    $("#demoBanner").style.display="none";
+    await loadAll();
+    toast("Connected — loaded from disk");
+  }catch(e){ if(e.name!=="AbortError") toast("Could not open folder"); }
+}
+async function getDir(parent, name, create=false){
+  try{ return await parent.getDirectoryHandle(name, {create}); }catch(e){ return null; }
+}
+async function readFile(dir, name){
+  try{ const h=await dir.getFileHandle(name); const f=await h.getFile(); return await f.text(); }
+  catch(e){ return null; }
+}
+async function writeFile(dir, name, contents){
+  const h = await dir.getFileHandle(name, {create:true});
+  const w = await h.createWritable(); await w.write(contents); await w.close();
+}
+async function loadAll(){
+  const cockpit = await getDir(state.dir, "cockpit", true);
+  // architecture
+  const ex = await readFile(cockpit, "architecture.excalidraw");
+  if(ex){ try{ state.scene = JSON.parse(ex); }catch(e){} }
+  loadSceneIntoCanvas();
+  // plan
+  const plan = await readFile(cockpit, "plan.md");
+  state.plan.raw = plan || SAMPLE.plan; parsePlan(); renderPlan();
+  // feedback
+  state.feedback = (await readFile(cockpit, "feedback.md")) || "";
+  $("#feedback").value = state.feedback;
+  // decisions
+  const decDir = await getDir(state.dir, "decisions", true);
+  state.decisions = [];
+  if(decDir){
+    for await (const [name, handle] of decDir.entries()){
+      if(handle.kind==="file" && name.endsWith(".md")){
+        const txt = await (await handle.getFile()).text();
+        const d = parseADR(txt, name); if(d) state.decisions.push(d);
+      }
+    }
+    state.decisions.sort((a,b)=> (a.id>b.id?1:-1));
+  }
+  renderDecisions();
+  // mockups
+  const mockDir = await getDir(cockpit, "mockups", true);
+  state.mockups = [];
+  if(mockDir){
+    for await (const [name, handle] of mockDir.entries()){
+      if(handle.kind==="file" && /\.(png|jpe?g|svg|gif|webp)$/i.test(name)){
+        const f = await handle.getFile();
+        state.mockups.push({ name, url: URL.createObjectURL(f), note:"" });
+      }
+    }
+    // load sidecar notes
+    const notes = await readFile(mockDir, "_notes.json");
+    if(notes){ try{ const j=JSON.parse(notes); state.mockups.forEach(m=>{ if(j[m.name]) m.note=j[m.name]; }); }catch(e){} }
+  }
+  renderMockups();
+}
+
+/* ============================ ADR PARSE / SERIALIZE ============================ */
+function parseADR(txt, file){
+  const fm = txt.match(/^---\n([\s\S]*?)\n---/);
+  const meta = {};
+  if(fm){ fm[1].split("\n").forEach(l=>{ const m=l.match(/^(\w+):\s*(.*)$/); if(m) meta[m[1]]=m[2].trim(); }); }
+  const body = txt.replace(/^---\n[\s\S]*?\n---\n?/,"");
+  const sec = (name)=>{ const r=new RegExp("##\\s*"+name+"\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)","i");
+    const m=body.match(r); return m? m[1].trim():""; };
+  return {
+    file, id: meta.id||"----", title: meta.title||file.replace(/\.md$/,""),
+    status: (meta.status||"proposed").toLowerCase(), owner: meta.owner||"claude", date: meta.date||"",
+    context: sec("Context"), decision: sec("Decision"), consequences: sec("Consequences"), review: sec("Review"),
+  };
+}
+function serializeADR(d){
+  return `---
+id: ${d.id}
+title: ${d.title}
+status: ${d.status}
+owner: ${d.owner}
+date: ${d.date||""}
+---
+
+## Context
+${d.context||""}
+
+## Decision
+${d.decision||""}
+
+## Consequences
+${d.consequences||""}
+
+## Review
+${d.review||""}
+`;
+}
+
+/* ============================ PLAN PARSE ============================ */
+function parsePlan(){
+  const tasks=[]; let n=0;
+  state.plan.raw.split("\n").forEach(line=>{
+    const m=line.match(/^\s*[-*]\s*\[([ xX])\]\s+(.*)$/);
+    if(m){ n++; tasks.push({ n, done:m[1].toLowerCase()==="x", text:m[2], line }); }
+  });
+  state.plan.tasks=tasks;
+}
+function serializePlan(){
+  // rewrite checkbox lines from task state, preserve everything else
+  let i=-1;
+  return state.plan.raw.split("\n").map(line=>{
+    const m=line.match(/^(\s*[-*]\s*)\[([ xX])\](\s+.*)$/);
+    if(m){ i++; const t=state.plan.tasks[i]; if(t) return `${m[1]}[${t.done?"x":" "}]${m[3]}`; }
+    return line;
+  }).join("\n");
+}
+
+/* ============================ RENDER: DECISIONS ============================ */
+function renderDecisions(){
+  const wrap=$("#decCards"); wrap.innerHTML="";
+  $("#decCount").textContent=state.decisions.length;
+  if(!state.decisions.length){ wrap.innerHTML='<div class="empty">No decisions yet. Claude proposes them, or click <b>+ New decision</b>.</div>'; return; }
+  state.decisions.forEach((d,idx)=>{
+    const c=document.createElement("div"); c.className="card";
+    c.innerHTML=`
+      <h4><span>${escapeHtml(d.title)}</span><span class="badge-st st-${d.status}">${d.status}</span></h4>
+      <div class="id">ADR ${d.id} · ${d.owner}${d.date? " · "+d.date:""}</div>
+      ${d.context?`<div class="sec-label">Context</div><p>${escapeHtml(d.context)}</p>`:""}
+      ${d.decision?`<div class="sec-label">Decision</div><p>${escapeHtml(d.decision)}</p>`:""}
+      ${d.consequences?`<div class="sec-label">Consequences</div><p>${escapeHtml(d.consequences)}</p>`:""}
+      <div class="sec-label">Your review</div>
+      <textarea placeholder="Comment for Claude…">${escapeHtml(d.review||"")}</textarea>
+      <div class="actions">
+        <button class="mini approve">✔ Approve</button>
+        <button class="mini reject">✕ Reject</button>
+        <button class="mini save">Save</button>
+      </div>`;
+    const ta=c.querySelector("textarea");
+    ta.oninput=()=>{ d.review=ta.value; };
+    c.querySelector(".approve").onclick=()=>{ d.status="approved"; renderDecisions(); saveDecision(d); };
+    c.querySelector(".reject").onclick=()=>{ d.status="rejected"; renderDecisions(); saveDecision(d); };
+    c.querySelector(".save").onclick=()=>saveDecision(d);
+    wrap.appendChild(c);
+  });
+}
+async function saveDecision(d){
+  if(state.connected){
+    const decDir = await getDir(state.dir,"decisions",true);
+    await writeFile(decDir, d.file, serializeADR(d));
+    toast("Saved "+d.file);
+  } else { toast("Saved (demo) — connect a repo to persist"); }
+}
+$("#newDecision").onclick=()=>{
+  const nextId=String(state.decisions.length+1).padStart(4,"0");
+  const d={ file:`${nextId}-new-decision.md`, id:nextId, title:"New decision", status:"proposed",
+    owner:"david", date:new Date().toISOString().slice(0,10), context:"", decision:"", consequences:"", review:"" };
+  state.decisions.push(d); renderDecisions();
+};
+
+/* ============================ RENDER: PLAN ============================ */
+function renderPlan(){
+  const wrap=$("#planWrap"); wrap.innerHTML="";
+  $("#planCount").textContent=state.plan.tasks.filter(t=>!t.done).length;
+  // title / prose above first task
+  const md=document.createElement("div"); md.className="md";
+  const firstTaskIdx=state.plan.raw.split("\n").findIndex(l=>/^\s*[-*]\s*\[[ xX]\]/.test(l));
+  const preamble = firstTaskIdx>0? state.plan.raw.split("\n").slice(0,firstTaskIdx).join("\n"):"";
+  md.innerHTML=miniMarkdown(preamble);
+  wrap.appendChild(md);
+  state.plan.tasks.forEach((t,i)=>{
+    const row=document.createElement("div"); row.className="task"+(t.done?" done":"");
+    row.innerHTML=`<input type="checkbox" ${t.done?"checked":""}/><div class="t">${escapeHtml(t.text)}</div>`;
+    row.querySelector("input").onchange=e=>{ t.done=e.target.checked; row.classList.toggle("done",t.done);
+      $("#planCount").textContent=state.plan.tasks.filter(x=>!x.done).length; };
+    wrap.appendChild(row);
+  });
+}
+$("#savePlan").onclick=async()=>{
+  const out=serializePlan(); state.plan.raw=out;
+  if(state.connected){ const c=await getDir(state.dir,"cockpit",true); await writeFile(c,"plan.md",out); toast("Saved plan.md"); }
+  else toast("Saved (demo)");
+};
+
+/* ============================ RENDER: MOCKUPS ============================ */
+function renderMockups(){
+  const grid=$("#mockGrid"); grid.innerHTML="";
+  $("#mockCount").textContent=state.mockups.length;
+  state.mockups.forEach(m=>{
+    const el=document.createElement("div"); el.className="mock";
+    el.innerHTML=`<div class="img">${m.url?`<img src="${m.url}"/>`:`<div class="ph">${escapeHtml(m.name)}</div>`}</div>
+      <div class="meta"><div class="name">${escapeHtml(m.name)}</div>
+      <textarea placeholder="Note / request for Claude about this mockup…">${escapeHtml(m.note||"")}</textarea></div>`;
+    el.querySelector("textarea").oninput=e=>{ m.note=e.target.value; };
+    grid.appendChild(el);
+  });
+  const add=document.createElement("div"); add.className="addbtn"; add.textContent="+ Add mockup image";
+  add.onclick=()=>$("#mockFileInput").click(); grid.appendChild(add);
+}
+$("#addMock").onclick=()=>$("#mockFileInput").click();
+$("#mockFileInput").onchange=async e=>{
+  for(const f of e.target.files){
+    state.mockups.push({ name:f.name, url:URL.createObjectURL(f), note:"", _blob:f });
+    if(state.connected){ const c=await getDir(state.dir,"cockpit",true); const md=await getDir(c,"mockups",true);
+      const h=await md.getFileHandle(f.name,{create:true}); const w=await h.createWritable(); await w.write(f); await w.close(); }
+  }
+  renderMockups(); toast(state.connected?"Added to mockups/":"Added (demo)");
+};
+
+/* ============================ SYNC (write everything + TOON) ============================ */
+function toTOON(){
+  const D=state.decisions;
+  let out="";
+  out+=`decisions[${D.length}]{id,title,status,owner}:\n`;
+  D.forEach(d=> out+=`  ${d.id},${csv(d.title)},${d.status},${d.owner}\n`);
+  const T=state.plan.tasks;
+  out+=`plan.tasks[${T.length}]{n,task,status}:\n`;
+  T.forEach(t=> out+=`  ${t.n},${csv(t.text)},${t.done?"done":"todo"}\n`);
+  // reviewer comments (only where present) as a second block
+  const withComments=D.filter(d=>d.review && d.review.trim());
+  if(withComments.length){
+    out+=`comments[${withComments.length}]{id,note}:\n`;
+    withComments.forEach(d=> out+=`  ${d.id},${csv(d.review.replace(/\n/g," "))}\n`);
+  }
+  return out;
+}
+const csv = s => /[,\n"]/.test(s)? `"${String(s).replace(/"/g,'""')}"` : String(s);
+async function syncAll(){
+  grabScene();
+  state.feedback=$("#feedback").value;
+  if(!state.connected){
+    // demo: still show the TOON that WOULD be written, download the bundle
+    const toon=toTOON();
+    downloadText("cockpit-state.toon", toon);
+    toast("Demo — downloaded cockpit-state.toon (connect repo to write in place)");
+    return;
+  }
+  const c=await getDir(state.dir,"cockpit",true);
+  if(state.scene) await writeFile(c,"architecture.excalidraw", JSON.stringify(state.scene,null,2));
+  await writeFile(c,"plan.md", serializePlan());
+  await writeFile(c,"feedback.md", state.feedback);
+  await writeFile(c,"cockpit-state.toon", toTOON());
+  for(const d of state.decisions){ const decDir=await getDir(state.dir,"decisions",true); await writeFile(decDir,d.file,serializeADR(d)); }
+  // mockup notes sidecar
+  const md=await getDir(c,"mockups",true); const notes={}; state.mockups.forEach(m=>{ if(m.note) notes[m.name]=m.note; });
+  await writeFile(md,"_notes.json", JSON.stringify(notes,null,2));
+  toast("Synced — Claude can read cockpit-state.toon + feedback.md");
+}
+$("#syncBtn").onclick=syncAll; $("#syncBtn2").onclick=syncAll;
+$("#openBtn").onclick=openDocs;
+$("#saveCanvas").onclick=async()=>{ grabScene();
+  if(state.connected){ const c=await getDir(state.dir,"cockpit",true); await writeFile(c,"architecture.excalidraw",JSON.stringify(state.scene,null,2)); toast("Saved architecture.excalidraw"); }
+  else toast("Grabbed scene (demo) — use Export to download"); };
+$("#exportExcali").onclick=()=>{ grabScene(); downloadText("architecture.excalidraw", JSON.stringify(state.scene,null,2)); };
+$("#importExcali").onclick=()=>$("#excaliFileInput").click();
+$("#excaliFileInput").onchange=async e=>{ const f=e.target.files[0]; if(!f)return;
+  try{ state.scene=JSON.parse(await f.text()); loadSceneIntoCanvas(); toast("Imported "+f.name); }catch(err){ toast("Not a valid .excalidraw"); } };
+
+/* ============================ HELPERS ============================ */
+function escapeHtml(s){ return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function miniMarkdown(md){
+  return escapeHtml(md)
+    .replace(/^#\s+(.*)$/gm,"<h1>$1</h1>")
+    .replace(/^##\s+(.*)$/gm,"<h2>$1</h2>")
+    .replace(/^###\s+(.*)$/gm,"<h3>$1</h3>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+    .replace(/^\s*$/gm,"<br/>")
+    .replace(/\n/g,"\n");
+}
+function downloadText(name, text){
+  const b=new Blob([text],{type:"text/plain"}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+/* ============================ SAMPLE DATA (demo mode) ============================ */
+const SAMPLE={
+  plan:`# Plan — Ledger service (v2)
+
+Generated by Superpowers. Review here; tick tasks as they land.
+
+- [x] Extract domain ports (hexagonal boundary)
+- [x] Stand up Postgres adapter behind LedgerRepo port
+- [ ] Ledger write model with optimistic concurrency
+- [ ] Projection rebuild job (idempotent)
+- [ ] Contract tests against the port
+- [ ] Load test: 2k writes/s target`,
+  decisions:[
+    { file:"0005-hexagonal-boundaries.md", id:"0005", title:"Adopt hexagonal boundaries for the ledger", status:"approved", owner:"claude", date:"2026-07-10",
+      context:"The ledger currently couples domain logic to the ORM, making the write model hard to test in isolation.",
+      decision:"Introduce ports (LedgerRepo, EventBus) and push Postgres/Kafka behind adapters.",
+      consequences:"More files up front; fully unit-testable core; swappable infra. YAGNI-checked: only two ports for now.", review:"Good — keep the port surface minimal." },
+    { file:"0006-postgres-over-dynamo.md", id:"0006", title:"Postgres over DynamoDB for the core store", status:"approved", owner:"david", date:"2026-07-11",
+      context:"Need transactional multi-row writes for the ledger; access patterns aren't purely key-value.",
+      decision:"Use Postgres with SERIALIZABLE for the write model; revisit if a single-entity hot path emerges.",
+      consequences:"Simpler transactions; one less datastore to operate; gives up Dynamo's autoscale.", review:"" },
+    { file:"0007-event-sourcing-ledger.md", id:"0007", title:"Event sourcing for the ledger", status:"proposed", owner:"claude", date:"2026-07-12",
+      context:"Auditors want a full history; current design overwrites balances.",
+      decision:"Model the ledger as an append-only event log with projected balances.",
+      consequences:"Perfect audit trail and rebuildable state; adds projection complexity and eventual consistency on reads.", review:"" },
+  ],
+  scene:{ type:"excalidraw", version:2, source:"dev-cockpit",
+    appState:{ viewBackgroundColor:"#0f1522" },
+    elements:[
+      box("api","API Gateway", -420,-40, "#4a74d0"),
+      box("svc","Ledger Service\\n(domain core)", -120,-40, "#3a8f6f"),
+      box("pg","Postgres\\n(write model)", 200,-160, "#7a5cc0"),
+      box("bus","Event Bus", 200,80, "#c08a3a"),
+      arrow("a1", -260,0, -140,0),
+      arrow("a2", 120,-20, 190,-120),
+      arrow("a3", 120,20, 190,100),
+    ], files:{} },
+};
+function box(id,label,x,y,color){
+  return { id, type:"rectangle", x, y, width:150, height:70, angle:0, strokeColor:color, backgroundColor:"transparent",
+    fillStyle:"solid", strokeWidth:2, roughness:1, opacity:100, seed:Math.floor(Math.random()*99999),
+    boundElements:[{type:"text",id:id+"_t"}], roundness:{type:3}, version:1, versionNonce:1, isDeleted:false, groupIds:[], frameId:null, link:null, locked:false,
+    label:{text:label} };
+}
+function arrow(id,x1,y1,x2,y2){
+  return { id, type:"arrow", x:x1, y:y1, width:x2-x1, height:y2-y1, angle:0, strokeColor:"#8b9bb4", backgroundColor:"transparent",
+    fillStyle:"solid", strokeWidth:2, roughness:1, opacity:100, seed:Math.floor(Math.random()*99999),
+    points:[[0,0],[x2-x1,y2-y1]], roundness:{type:2}, version:1, versionNonce:1, isDeleted:false, groupIds:[], frameId:null,
+    startBinding:null, endBinding:null, startArrowhead:null, endArrowhead:"arrow", locked:false };
+}
+// Excalidraw needs text as separate bound elements; simplest robust demo = use label-less boxes + separate text.
+function withText(scene){
+  const out=[]; scene.elements.forEach(el=>{
+    if(el.label){ const t=el.label.text; delete el.label;
+      out.push(el);
+      out.push({ id:el.id+"_t", type:"text", x:el.x+12, y:el.y+22, width:el.width-24, height:el.height-30, angle:0,
+        strokeColor:el.strokeColor, backgroundColor:"transparent", fillStyle:"solid", strokeWidth:1, roughness:1, opacity:100,
+        seed:Math.floor(Math.random()*99999), text:t, rawText:t, fontSize:15, fontFamily:3, textAlign:"center", verticalAlign:"middle",
+        containerId:el.id, originalText:t, roundness:null, version:1, versionNonce:1, isDeleted:false, groupIds:[], frameId:null, link:null, locked:false, lineHeight:1.25 });
+    } else out.push(el);
+  });
+  scene.elements=out; return scene;
+}
+
+/* ============================ BOOT ============================ */
+function boot(){
+  // demo data
+  state.plan.raw=SAMPLE.plan; parsePlan(); renderPlan();
+  state.decisions=SAMPLE.decisions.map(d=>({...d})); renderDecisions();
+  state.scene=withText(JSON.parse(JSON.stringify(SAMPLE.scene)));
+  state.mockups=[]; renderMockups();
+  // mount canvas (waits for CDN)
+  let tries=0; (function wait(){ if(window.ExcalidrawLib){ mountExcalidraw(); }
+    else if(tries++<40){ setTimeout(wait,150); } else { $("#canvasFallback").style.display="flex"; $("#excalidraw-host").style.display="none"; } })();
+}
+boot();
+</script>
+</body>
+</html>

@@ -1,5 +1,3 @@
-@AGENTS.md
-
 <!-- Paste this block into your project's CLAUDE.md -->
 
 ## Dev Cockpit protocol
