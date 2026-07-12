@@ -11,7 +11,7 @@ function SocialButton({ children }: { children: React.ReactNode }) {
   return (
     <a
       href="#top"
-      className="grid size-[38px] place-items-center rounded-full border border-line bg-white/60 text-muted transition-colors hover:border-transparent hover:bg-ink hover:text-white"
+      className="glassx grid size-[38px] place-items-center rounded-full text-muted transition-colors hover:text-ink"
     >
       {children}
     </a>
@@ -47,7 +47,7 @@ export default function Footer() {
           </h2>
           <a
             href="#top"
-            className="group inline-flex items-center gap-3 rounded-full bg-ink px-6 py-[15px] text-[15px] font-semibold text-white transition-transform duration-300 hover:-translate-y-0.5"
+            className="glassx-dark group inline-flex items-center gap-3 rounded-full px-6 py-[15px] text-[15px] font-semibold text-white transition-transform duration-300 hover:-translate-y-0.5"
           >
             Start Training
             <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />

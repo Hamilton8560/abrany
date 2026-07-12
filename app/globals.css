@@ -97,45 +97,65 @@ body {
   z-index: 0;
 }
 .lg-light {
-  /* opaque enough for crisp text, still refractive at the rim */
+  /* translucent so the backdrop visibly refracts through the glass */
   background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.82) 0%,
-    rgba(255, 255, 255, 0.62) 100%
+    135deg,
+    rgba(255, 255, 255, 0.44) 0%,
+    rgba(255, 255, 255, 0.14) 52%,
+    rgba(255, 255, 255, 0.3) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  /* thick glossy glass bezel */
   box-shadow:
-    inset 1px 1px 1px rgba(255, 255, 255, 0.85),
-    inset -1px -1px 1px rgba(255, 255, 255, 0.35),
-    inset 0 0 24px rgba(255, 255, 255, 0.18),
-    0 16px 40px rgba(27, 36, 54, 0.14);
+    inset 0 2px 1px rgba(255, 255, 255, 1),
+    inset 2px 0 1px rgba(255, 255, 255, 0.5),
+    inset -2px 0 1px rgba(255, 255, 255, 0.45),
+    inset 0 -3px 4px rgba(255, 255, 255, 0.6),
+    inset 0 0 40px rgba(255, 255, 255, 0.22),
+    0 12px 40px rgba(27, 36, 54, 0.22),
+    0 2px 8px rgba(27, 36, 54, 0.14);
+}
+.lg-light .lg-content {
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.55);
 }
 .lg-dark {
   background: linear-gradient(
-    180deg,
-    rgba(20, 27, 40, 0.6) 0%,
-    rgba(20, 27, 40, 0.4) 100%
+    135deg,
+    rgba(22, 29, 43, 0.5) 0%,
+    rgba(22, 29, 43, 0.24) 52%,
+    rgba(22, 29, 43, 0.4) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow:
-    inset 1px 1px 1px rgba(255, 255, 255, 0.24),
-    inset -1px -1px 1px rgba(255, 255, 255, 0.07),
-    0 18px 46px rgba(12, 17, 28, 0.42);
+    inset 0 2px 1px rgba(255, 255, 255, 0.42),
+    inset 0 -3px 4px rgba(255, 255, 255, 0.14),
+    inset 0 0 34px rgba(255, 255, 255, 0.08),
+    0 18px 48px rgba(12, 17, 28, 0.46);
 }
-/* specular: soft top-left rim highlight */
+.lg-dark .lg-content {
+  text-shadow: 0 1px 3px rgba(12, 17, 28, 0.5);
+}
+/* specular: bright diagonal glare streak + top-left hotspot */
 .lg-specular {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
   background:
+    linear-gradient(
+      125deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.55) 45%,
+      rgba(255, 255, 255, 0.12) 50%,
+      transparent 60%
+    ),
     radial-gradient(
-      120% 80% at 22% 12%,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0) 42%
+      90% 60% at 16% 8%,
+      rgba(255, 255, 255, 0.7) 0%,
+      rgba(255, 255, 255, 0) 46%
     );
   mix-blend-mode: screen;
-  opacity: 0.7;
+  opacity: 0.9;
 }
 .lg-content {
   position: relative;
@@ -146,6 +166,72 @@ body {
     backdrop-filter: blur(14px) !important;
     -webkit-backdrop-filter: blur(14px) !important;
   }
+}
+
+/* ── glassx: lightweight liquid-glass chrome for buttons / nav /
+      pills (bevel + specular, no per-element SVG). Works everywhere. */
+.glassx {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.18) 55%,
+    rgba(255, 255, 255, 0.34) 100%
+  );
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 2px 1px rgba(255, 255, 255, 1),
+    inset 0 -3px 4px rgba(255, 255, 255, 0.6),
+    inset 0 0 26px rgba(255, 255, 255, 0.2),
+    0 8px 26px rgba(27, 36, 54, 0.18);
+}
+.glassx-dark {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    rgba(20, 27, 40, 0.72) 0%,
+    rgba(20, 27, 40, 0.5) 55%,
+    rgba(20, 27, 40, 0.66) 100%
+  );
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 2px 1px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 4px rgba(255, 255, 255, 0.12),
+    0 10px 28px rgba(12, 17, 28, 0.4);
+}
+.glassx::after,
+.glassx-dark::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    linear-gradient(
+      125deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.5) 46%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 62%
+    ),
+    radial-gradient(
+      90% 60% at 16% 8%,
+      rgba(255, 255, 255, 0.6) 0%,
+      rgba(255, 255, 255, 0) 46%
+    );
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+.glassx > *,
+.glassx-dark > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── brain compositing: multiply kills the near-white field,

@@ -36,13 +36,9 @@ export default function Nav() {
 
   return (
     <header
-      className="fixed inset-x-0 top-0 z-50 transition-colors duration-300"
-      style={{
-        background: scrolled ? "rgba(242,246,251,0.72)" : "transparent",
-        backdropFilter: scrolled ? "blur(18px)" : "none",
-        WebkitBackdropFilter: scrolled ? "blur(18px)" : "none",
-        borderBottom: scrolled ? "1px solid rgba(217,224,234,0.7)" : "1px solid transparent",
-      }}
+      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+        scrolled ? "glassx" : ""
+      }`}
     >
       <nav className="mx-auto flex h-[68px] max-w-[1440px] items-center justify-between px-6 md:px-20">
         <Logo />
@@ -74,7 +70,7 @@ export default function Nav() {
           <button
             type="button"
             aria-label="Menu"
-            className="flex flex-col items-center gap-1 rounded-full border border-line bg-white/60 px-[9px] py-[11px]"
+            className="glassx flex flex-col items-center gap-1 rounded-full px-[9px] py-[11px]"
           >
             <span className="block h-[1.5px] w-4 bg-ink" />
             <span className="block h-[1.5px] w-4 bg-ink" />

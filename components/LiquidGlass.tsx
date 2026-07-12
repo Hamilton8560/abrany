@@ -106,6 +106,7 @@ export default function LiquidGlass({
   }, [radius, bezel, size.w, size.h]);
 
   const dark = variant === "dark";
+  const chroma = Math.max(3, Math.round(scale * 0.16));
 
   return (
     <div
@@ -133,13 +134,15 @@ export default function LiquidGlass({
               result="m"
               preserveAspectRatio="none"
             />
-            <feDisplacementMap
-              in="SourceGraphic"
-              in2="m"
-              scale={scale}
-              xChannelSelector="R"
-              yChannelSelector="G"
-            />
+            {/* chromatic aberration: displace R/G/B by different amounts */}
+            <feDisplacementMap in="SourceGraphic" in2="m" scale={scale + chroma} xChannelSelector="R" yChannelSelector="G" result="rD" />
+            <feDisplacementMap in="SourceGraphic" in2="m" scale={scale} xChannelSelector="R" yChannelSelector="G" result="gD" />
+            <feDisplacementMap in="SourceGraphic" in2="m" scale={scale - chroma} xChannelSelector="R" yChannelSelector="G" result="bD" />
+            <feColorMatrix in="rD" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="rC" />
+            <feColorMatrix in="gD" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="gC" />
+            <feColorMatrix in="bD" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="bC" />
+            <feBlend in="rC" in2="gC" mode="screen" result="rg" />
+            <feBlend in="rg" in2="bC" mode="screen" />
           </filter>
         </svg>
       )}

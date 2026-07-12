@@ -44,7 +44,7 @@ function StartTrainingPill() {
   return (
     <a
       href="#footer"
-      className="group inline-flex items-center gap-[14px] rounded-full bg-white py-[7px] pl-[7px] pr-[7px] shadow-[var(--shadow-cta)] transition-transform duration-300 hover:-translate-y-0.5"
+      className="glassx group inline-flex items-center gap-[14px] rounded-full py-[7px] pl-[7px] pr-[7px] shadow-[var(--shadow-cta)] transition-transform duration-300 hover:-translate-y-0.5"
     >
       <span className="grid size-[42px] place-items-center rounded-full bg-ink text-white">
         <BrainGlyph className="size-[18px]" />
