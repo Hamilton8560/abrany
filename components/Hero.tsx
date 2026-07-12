@@ -149,9 +149,16 @@ function PlayButton() {
     <button
       type="button"
       aria-label="Play intro"
-      className="anim-bob grid size-[78px] place-items-center rounded-full border border-white/65 bg-white/30 shadow-[var(--shadow-glow)] backdrop-blur-[16px] transition-transform duration-300 hover:scale-105"
+      className="anim-bob rounded-full shadow-[var(--shadow-glow)] transition-transform duration-300 hover:scale-105"
     >
-      <PlayIcon className="ml-1 h-6 w-[22px] text-ink/85" />
+      <LiquidGlass
+        radius={39}
+        bezel={18}
+        scale={30}
+        className="grid size-[78px] place-items-center"
+      >
+        <PlayIcon className="ml-1 h-6 w-[22px] text-ink/85" />
+      </LiquidGlass>
     </button>
   );
 }
