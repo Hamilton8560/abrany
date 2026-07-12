@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { Lesson } from "@/lib/repo";
 import Markdown from "./Markdown";
+import ListenButton from "./ListenButton";
 import { ChevronDown, CheckIcon } from "@/components/icons";
 
 const KIND_LABEL: Record<Lesson["kind"], string> = {
@@ -234,12 +235,15 @@ function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void
               {lesson.title}
             </h3>
           </div>
-          <button
-            onClick={onClose}
-            className="glassx shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {lesson.content ? <ListenButton text={lesson.content} /> : null}
+            <button
+              onClick={onClose}
+              className="glassx rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink"
+            >
+              Close
+            </button>
+          </div>
         </div>
         {lesson.content ? (
           <Markdown>{lesson.content}</Markdown>
