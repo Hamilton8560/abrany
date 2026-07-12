@@ -166,7 +166,7 @@ function FeaturePanel({ beat }: { beat: Beat }) {
       radius={20}
       bezel={22}
       scale={54}
-      blur={8}
+      blur={14}
       variant={dark ? "dark" : "light"}
       className="w-[min(430px,86vw)]"
     >
