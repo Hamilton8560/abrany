@@ -23,6 +23,8 @@ export type Lesson = {
   status: "stub" | "queued" | "generating" | "ready" | "error";
   content: string;
   error: string;
+  needs_current: number; // 0/1 — flagged for web-grounding
+  sources: string; // JSON array of {title,url,description}
   created_at: string;
   updated_at: string;
 };
@@ -274,13 +276,15 @@ export function planItemWithContext(planItemId: number):
 
 export function createLessonStubs(
   planItemId: number,
-  stubs: { title: string; objective?: string; kind?: Lesson["kind"] }[],
+  stubs: { title: string; objective?: string; kind?: LessonKind; needsCurrent?: boolean }[],
 ): Lesson[] {
   const db = getDb();
   const ins = db.prepare(
-    "INSERT INTO lessons (plan_item_id, title, objective, kind, order_index) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO lessons (plan_item_id, title, objective, kind, order_index, needs_current) VALUES (?, ?, ?, ?, ?, ?)",
   );
-  stubs.forEach((s, i) => ins.run(planItemId, s.title, s.objective ?? "", s.kind ?? "reading", i));
+  stubs.forEach((s, i) =>
+    ins.run(planItemId, s.title, s.objective ?? "", s.kind ?? "read", i, s.needsCurrent ? 1 : 0),
+  );
   return listLessons(planItemId);
 }
 
@@ -290,12 +294,12 @@ export function setLessonStatus(id: number, status: Lesson["status"], error = ""
     .run(status, error, id);
 }
 
-export function setLessonContent(id: number, content: string): void {
+export function setLessonContent(id: number, content: string, sources: object[] = []): void {
   getDb()
     .prepare(
-      "UPDATE lessons SET content = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
+      "UPDATE lessons SET content = ?, sources = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
     )
-    .run(content, id);
+    .run(content, JSON.stringify(sources), id);
 }
 
 /* ── Jobs (durable async queue) ────────────────────────────── */

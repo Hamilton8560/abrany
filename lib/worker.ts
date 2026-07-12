@@ -11,6 +11,7 @@ import {
   type Job,
 } from "./repo";
 import { generateLessonContent } from "./coach";
+import { braveSearch } from "./search";
 
 /**
  * Durable, continuous background worker. Jobs live in the `jobs` table so they
@@ -34,6 +35,12 @@ async function processJob(job: Job): Promise<void> {
     setLessonStatus(lessonId, "generating");
     const ctx = planItemWithContext(lesson.plan_item_id);
     if (!ctx) throw new Error("Lesson milestone context missing");
+
+    // time-sensitive lessons: pull live web sources to ground the content
+    const sources = lesson.needs_current
+      ? await braveSearch(`${lesson.title} ${ctx.goal.title}`, 6)
+      : [];
+
     // generateLessonContent → complete() already routes through the shared queue;
     // do NOT wrap again here or nested acquisition can deadlock the cap.
     const content = await generateLessonContent({
@@ -42,8 +49,9 @@ async function processJob(job: Job): Promise<void> {
       lessonTitle: lesson.title,
       lessonObjective: lesson.objective,
       kind: lesson.kind,
+      sources,
     });
-    setLessonContent(lessonId, content);
+    setLessonContent(lessonId, content, sources);
     return;
   }
   throw new Error(`Unknown job type: ${job.type}`);

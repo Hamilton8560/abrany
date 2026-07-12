@@ -113,11 +113,16 @@ function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
   `);
 
-  // guarded column add: goals gain a parent (for decomposed "track" sub-goals)
-  const goalCols = db.prepare("PRAGMA table_info(goals)").all() as { name: string }[];
-  if (!goalCols.some((c) => c.name === "parent_goal_id")) {
-    db.exec("ALTER TABLE goals ADD COLUMN parent_goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE");
-  }
+  // guarded column adds
+  const addCol = (table: string, col: string, def: string) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
+  };
+  // goals gain a parent (for decomposed "track" sub-goals)
+  addCol("goals", "parent_goal_id", "parent_goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE");
+  // lessons can be flagged for web-grounding and carry their cited sources
+  addCol("lessons", "needs_current", "needs_current INTEGER NOT NULL DEFAULT 0");
+  addCol("lessons", "sources", "sources TEXT NOT NULL DEFAULT '[]'");
 }
 
 export function getDb(): DatabaseSync {

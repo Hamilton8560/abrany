@@ -151,7 +151,14 @@ export default function MilestoneLessons({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium text-ink">{l.title}</p>
-                      <p className="text-[10.5px] text-muted">{kindLabel(l.kind)}</p>
+                      <p className="flex items-center gap-1.5 text-[10.5px] text-muted">
+                        {kindLabel(l.kind)}
+                        {l.needs_current ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-1.5 py-0.5 font-semibold text-accent">
+                            <span className="size-1 rounded-full bg-accent" /> Live sources
+                          </span>
+                        ) : null}
+                      </p>
                     </div>
                     <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
                   </li>

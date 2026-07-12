@@ -154,6 +154,7 @@ export type LessonStub = {
   title: string;
   objective: string;
   kind: LessonKind;
+  needsCurrent: boolean;
 };
 
 const KINDS = ["read", "teach", "practice", "apply", "check", "review"] as const;
@@ -176,7 +177,9 @@ You are breaking ONE milestone into a short sequence of concrete, do-able LESSON
 6. review   — an active-recall workout over the WHOLE milestone (spaced retrieval)
 
 Respond with ONLY a JSON object, no prose or fences:
-{ "lessons": [ { "title": "...", "objective": "one line: what you'll be able to do after", "kind": "read|teach|practice|apply|check|review" } ] }
+{ "lessons": [ { "title": "...", "objective": "one line: what you'll be able to do after", "kind": "read|teach|practice|apply|check|review", "needsCurrent": false } ] }
+Set "needsCurrent": true ONLY for lessons whose accuracy depends on up-to-date, post-2024 facts (current events, geopolitics, latest technology/tools/prices, evolving standards). Timeless material (grammar, math, theology, history, fundamentals) is false.
+
 First judge HOW this subject is learned and reshape the stages' MEANING (the arc order stays the same):
 - Hands-on skill (coding, language, math, electrical engineering, an instrument, PT technique): practice = drills/reps, apply = build or perform it.
 - Body of knowledge/ideas (geopolitics, history, a book's framework like "48 Laws of Power"): practice = summarize/argue/connect, apply = analyze a real case through the lens, check = explain it back.
@@ -208,7 +211,9 @@ Rules:
     throw new Error("Coach returned unparseable lessons");
   }
   const lessons = Array.isArray(parsed.lessons) ? parsed.lessons : [];
-  const clean = (lessons as { title?: unknown; objective?: unknown; kind?: unknown }[])
+  const clean = (
+    lessons as { title?: unknown; objective?: unknown; kind?: unknown; needsCurrent?: unknown }[]
+  )
     .filter((l) => l && typeof l.title === "string" && (l.title as string).trim())
     .slice(0, 8)
     .map((l) => ({
@@ -217,6 +222,7 @@ Rules:
       kind: (KINDS as readonly string[]).includes(l.kind as string)
         ? (l.kind as LessonStub["kind"])
         : ("read" as const),
+      needsCurrent: l.needsCurrent === true,
     }));
   if (!clean.length) throw new Error("Coach returned no lessons");
   return clean;
@@ -230,6 +236,7 @@ export async function generateLessonContent(ctx: {
   lessonTitle: string;
   lessonObjective: string;
   kind: LessonStub["kind"];
+  sources?: { title: string; url: string; description: string }[];
 }): Promise<string> {
   const kindGuide: Record<LessonStub["kind"], string> = {
     read: "STAGE: READ — a short, skimmable overview that maps what's coming. Use headings and a compact list or table of the key items/ideas. This is orientation, not deep teaching. Keep it tight.",
@@ -245,18 +252,28 @@ export async function generateLessonContent(ctx: {
       "STAGE: REVIEW — an active-recall workout over the WHOLE milestone (spaced retrieval, not new material): 8-12 flashcard-style prompts (cover the answer, recall it) spanning everything covered, plus a short 'if you missed these, revisit…' guide.",
   };
 
+  const hasSources = ctx.sources && ctx.sources.length > 0;
+  const sourcesGuide = hasSources
+    ? ` This subject is time-sensitive, so you are given CURRENT web search results below. Ground any up-to-date facts (recent events, latest tools, current figures) in them, and prefer them over your own prior knowledge where they conflict. Cite inline like [1], [2] and end with a "## Sources" section listing the numbered sources as markdown links.`
+    : "";
+  const sourcesBlock = hasSources
+    ? `\n\nCURRENT WEB SOURCES (as of today):\n${ctx.sources!
+        .map((s, i) => `[${i + 1}] ${s.title} — ${s.url}\n${s.description}`)
+        .join("\n\n")}`
+    : "";
+
   return complete({
     system: `${COACH_SYSTEM}
 
 You are writing the ACTUAL learning material for a single lesson — the real content the user studies, not a description of it. Be genuinely useful and complete for this one lesson only. Output clean GitHub-flavored markdown. Do not include the lesson title as an H1 (the app shows it).
 
-First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose. ${kindGuide[ctx.kind]}`,
+First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose. ${kindGuide[ctx.kind]}${sourcesGuide}`,
     maxTokens: 4096,
     temperature: 0.6,
     messages: [
       {
         role: "user",
-        content: `Goal: ${ctx.goalTitle}\nMilestone: ${ctx.milestoneTitle}\nLesson: ${ctx.lessonTitle}\nObjective: ${ctx.lessonObjective}\n\nWrite this lesson's content now.`,
+        content: `Goal: ${ctx.goalTitle}\nMilestone: ${ctx.milestoneTitle}\nLesson: ${ctx.lessonTitle}\nObjective: ${ctx.lessonObjective}${sourcesBlock}\n\nWrite this lesson's content now.`,
       },
     ],
   });
