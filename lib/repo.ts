@@ -45,6 +45,63 @@ export function setUserLanguage(id: number, language: string): void {
   getDb().prepare("UPDATE users SET language = ? WHERE id = ?").run(language, id);
 }
 
+/* ── focus timer (server-synced, one per user) ─────────────── */
+
+export type TimerState = {
+  mode: "focus" | "break";
+  focus_min: number;
+  break_min: number;
+  running: number; // 0/1
+  end_at: number | null;
+  left_sec: number;
+  focus_accum: number;
+  focus_start: number | null;
+  updated_at: string;
+};
+
+const DEFAULT_TIMER: TimerState = {
+  mode: "focus",
+  focus_min: 25,
+  break_min: 5,
+  running: 0,
+  end_at: null,
+  left_sec: 25 * 60,
+  focus_accum: 0,
+  focus_start: null,
+  updated_at: "",
+};
+
+export function getTimerState(userId: number): TimerState {
+  const row = getDb().prepare("SELECT * FROM timer_states WHERE user_id = ?").get(userId) as
+    | (TimerState & { user_id: number })
+    | undefined;
+  return row ? row : { ...DEFAULT_TIMER };
+}
+
+export function setTimerState(userId: number, s: Omit<TimerState, "updated_at">): TimerState {
+  getDb()
+    .prepare(
+      `INSERT INTO timer_states (user_id, mode, focus_min, break_min, running, end_at, left_sec, focus_accum, focus_start, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(user_id) DO UPDATE SET
+         mode=excluded.mode, focus_min=excluded.focus_min, break_min=excluded.break_min,
+         running=excluded.running, end_at=excluded.end_at, left_sec=excluded.left_sec,
+         focus_accum=excluded.focus_accum, focus_start=excluded.focus_start, updated_at=datetime('now')`,
+    )
+    .run(
+      userId,
+      s.mode,
+      s.focus_min,
+      s.break_min,
+      s.running ? 1 : 0,
+      s.end_at,
+      s.left_sec,
+      s.focus_accum,
+      s.focus_start,
+    );
+  return getTimerState(userId);
+}
+
 /** All users (owner-only use: the impersonation / instructor picker). */
 export function listUsers(): Pick<User, "id" | "email" | "is_owner" | "language" | "created_at">[] {
   return getDb()

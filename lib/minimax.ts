@@ -19,7 +19,14 @@ import { languageDirective } from "./languages";
  * All calls still pass through the shared concurrency queue.
  */
 
-export type Provider = "minimax" | "kimi" | "deepseek" | "openrouter";
+export type Provider =
+  | "minimax"
+  | "kimi"
+  | "deepseek"
+  | "openrouter"
+  | "anthropic"
+  | "openai"
+  | "gemini";
 export type LlmCreds = { provider: Provider; key: string; model: string };
 
 type Style = "anthropic" | "openai";
@@ -32,6 +39,10 @@ const DEFAULTS: Record<Provider, { style: Style; baseURL: string; model: string 
   kimi: { style: "anthropic", baseURL: "https://api.kimi.com/coding", model: "k2.7-code" },
   deepseek: { style: "openai", baseURL: "https://api.deepseek.com", model: "deepseek-chat" },
   openrouter: { style: "openai", baseURL: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat" },
+  // top-tier "bring your own" providers
+  anthropic: { style: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-sonnet-5" },
+  openai: { style: "openai", baseURL: "https://api.openai.com/v1", model: "gpt-4o" },
+  gemini: { style: "openai", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
 };
 
 export const PROVIDERS = Object.keys(DEFAULTS) as Provider[];

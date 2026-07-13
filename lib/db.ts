@@ -90,6 +90,20 @@ function migrate(db: DatabaseSync) {
       value TEXT NOT NULL
     );
 
+    -- one live focus timer per user, so it syncs across every device they use
+    CREATE TABLE IF NOT EXISTS timer_states (
+      user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      mode        TEXT NOT NULL DEFAULT 'focus',   -- focus | break
+      focus_min   INTEGER NOT NULL DEFAULT 25,
+      break_min   INTEGER NOT NULL DEFAULT 5,
+      running     INTEGER NOT NULL DEFAULT 0,
+      end_at      INTEGER,                          -- epoch ms the running block ends
+      left_sec    INTEGER NOT NULL DEFAULT 1500,    -- remaining secs while paused
+      focus_accum INTEGER NOT NULL DEFAULT 0,       -- banked focus seconds
+      focus_start INTEGER,                          -- epoch ms current focus segment began
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- generated learning content: a milestone (plan_item) expands into lessons
     CREATE TABLE IF NOT EXISTS lessons (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -3,17 +3,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fmtClock, api } from "@/lib/client";
 import { PlayIcon, PauseIcon, ResetIcon, CheckIcon } from "@/components/icons";
-import type { Goal } from "@/lib/repo";
+import type { Goal, TimerState } from "@/lib/repo";
 
 type Mode = "focus" | "break";
 const PRESETS = [15, 25, 45, 50];
-const STORE_KEY = "abrany.timer.v1";
+
+type ServerState = {
+  mode: Mode;
+  focus_min: number;
+  break_min: number;
+  running: 0 | 1;
+  end_at: number | null;
+  left_sec: number;
+  focus_accum: number;
+  focus_start: number | null;
+};
 
 /**
- * Wall-clock timer, not a counter. The countdown is derived from an absolute
- * end timestamp, so background-tab interval throttling can never make it drift
- * or "go inactive" — every render just re-reads the clock. State is mirrored to
- * localStorage so a reload (or returning after the block ended) resumes exactly.
+ * Wall-clock timer whose authority lives on the SERVER, one per user. The
+ * countdown is derived from an absolute end timestamp, so background-tab
+ * throttling can't make it drift; storing that timestamp server-side means every
+ * device the user is on reads the exact same live timer — start it on your phone,
+ * watch it on the web, and there's only ever one running.
  */
 export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
   const [focusMin, setFocusMin] = useState(25);
@@ -33,30 +44,14 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
   const endAtRef = useRef<number | null>(null); // when the current block ends
   const focusAccumRef = useRef(0); // focus seconds banked from prior running segments
   const focusStartRef = useRef<number | null>(null); // ms the current focus segment began
+  // brief window after a local action during which polls don't overwrite us
+  const suppressUntilRef = useRef(0);
+  const suppress = () => (suppressUntilRef.current = Date.now() + 1800);
 
-  const save = useCallback(
-    (patch: Record<string, unknown> = {}) => {
-      try {
-        localStorage.setItem(
-          STORE_KEY,
-          JSON.stringify({
-            mode,
-            focusMin,
-            breakMin,
-            running,
-            left,
-            endAt: endAtRef.current,
-            focusAccum: focusAccumRef.current,
-            focusStart: focusStartRef.current,
-            ...patch,
-          }),
-        );
-      } catch {
-        /* storage unavailable — timer still works, just won't survive reload */
-      }
-    },
-    [mode, focusMin, breakMin, running, left],
-  );
+  // Persist the timer to the server (source of truth for every device).
+  const push = (s: ServerState) => {
+    api("/api/timer", { method: "POST", body: JSON.stringify(s) }).catch(() => {});
+  };
 
   const foldFocus = (now: number) => {
     if (focusStartRef.current != null) {
@@ -74,8 +69,48 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
       setElapsed(focusAccumRef.current);
       setRecording(true); // prompt to log what you did
     }
-    save({ running: false, endAt: null, left: 0 });
-  }, [mode, save]);
+    suppress();
+    push({ mode, focus_min: focusMin, break_min: breakMin, running: 0, end_at: null, left_sec: 0, focus_accum: focusAccumRef.current, focus_start: null });
+  }, [mode, focusMin, breakMin]);
+
+  // Adopt a server snapshot (on load + on poll → cross-device sync).
+  const applyState = useCallback((s: TimerState) => {
+    const m: Mode = s.mode === "break" ? "break" : "focus";
+    setMode(m);
+    setFocusMin(s.focus_min || 25);
+    setBreakMin(s.break_min || 5);
+    focusAccumRef.current = s.focus_accum || 0;
+    const now = Date.now();
+    if (s.running && s.end_at && s.end_at > now) {
+      endAtRef.current = s.end_at;
+      focusStartRef.current = m === "focus" ? s.focus_start ?? now : null;
+      setLeft(Math.max(0, Math.round((s.end_at - now) / 1000)));
+      setRunning(true);
+      if (m === "focus" && focusStartRef.current != null) {
+        setElapsed(focusAccumRef.current + Math.floor((now - focusStartRef.current) / 1000));
+      }
+    } else if (s.running && s.end_at && s.end_at <= now) {
+      // the block completed while every device was away — recover + persist the finish
+      endAtRef.current = null;
+      let accum = s.focus_accum || 0;
+      if (m === "focus" && s.focus_start) accum += Math.floor((s.end_at - s.focus_start) / 1000);
+      focusAccumRef.current = accum;
+      setRunning(false);
+      setLeft(0);
+      if (m === "focus") {
+        setElapsed(accum);
+        setRecording(true);
+      }
+      suppress();
+      push({ mode: m, focus_min: s.focus_min, break_min: s.break_min, running: 0, end_at: null, left_sec: 0, focus_accum: accum, focus_start: null });
+    } else {
+      endAtRef.current = null;
+      focusStartRef.current = null;
+      setRunning(false);
+      setElapsed(s.focus_accum || 0);
+      setLeft(s.left_sec ?? (m === "focus" ? s.focus_min : s.break_min) * 60);
+    }
+  }, []);
 
   // Derive the display from the wall clock; also fires on tab refocus.
   const recompute = useCallback(() => {
@@ -105,49 +140,22 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
     };
   }, [running, recompute]);
 
-  // Rehydrate on mount: resume a running block, or recover one that ended while away.
+  // Load server state on mount, then poll so another device's start/pause shows live.
   useEffect(() => {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(STORE_KEY);
-    } catch {
-      return;
-    }
-    if (!raw) return;
-    try {
-      const s = JSON.parse(raw) as {
-        mode?: Mode; focusMin?: number; breakMin?: number; running?: boolean;
-        left?: number; endAt?: number | null; focusAccum?: number; focusStart?: number | null;
-      };
-      const m: Mode = s.mode === "break" ? "break" : "focus";
-      setMode(m);
-      if (typeof s.focusMin === "number") setFocusMin(s.focusMin);
-      if (typeof s.breakMin === "number") setBreakMin(s.breakMin);
-      focusAccumRef.current = s.focusAccum || 0;
-      const now = Date.now();
-      if (s.running && s.endAt && s.endAt > now) {
-        endAtRef.current = s.endAt;
-        focusStartRef.current = m === "focus" ? s.focusStart ?? now : null;
-        setLeft(Math.round((s.endAt - now) / 1000));
-        setRunning(true);
-      } else if (s.running && s.endAt && s.endAt <= now) {
-        // the block completed while the tab was closed/backgrounded
-        if (m === "focus" && s.focusStart) {
-          focusAccumRef.current += Math.floor((s.endAt - s.focusStart) / 1000);
-          setElapsed(focusAccumRef.current);
-          setRecording(true);
-        }
-        setLeft(0);
-      } else {
-        setElapsed(focusAccumRef.current);
-        if (typeof s.left === "number") setLeft(s.left);
-      }
-    } catch {
-      /* corrupt state — ignore and start fresh */
-    }
-    // mount-only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let alive = true;
+    const pull = () =>
+      api<{ timer: TimerState }>("/api/timer")
+        .then((d) => {
+          if (alive && d.timer && Date.now() >= suppressUntilRef.current) applyState(d.timer);
+        })
+        .catch(() => {});
+    pull();
+    const id = setInterval(pull, 4000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [applyState]);
 
   const start = () => {
     const base = left > 0 ? left : totalFor(mode);
@@ -156,13 +164,15 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
     if (mode === "focus") focusStartRef.current = now;
     setLeft(base);
     setRunning(true);
-    save({ running: true, endAt: endAtRef.current, left: base, focusStart: focusStartRef.current });
+    suppress();
+    push({ mode, focus_min: focusMin, break_min: breakMin, running: 1, end_at: endAtRef.current, left_sec: base, focus_accum: focusAccumRef.current, focus_start: focusStartRef.current });
   };
   const pause = () => {
     foldFocus(Date.now());
     endAtRef.current = null;
     setRunning(false);
-    save({ running: false, endAt: null, focusStart: null });
+    suppress();
+    push({ mode, focus_min: focusMin, break_min: breakMin, running: 0, end_at: null, left_sec: left, focus_accum: focusAccumRef.current, focus_start: null });
   };
   const reset = () => {
     endAtRef.current = null;
@@ -171,7 +181,8 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
     setRunning(false);
     setElapsed(0);
     setLeft(totalFor(mode));
-    save({ running: false, endAt: null, left: totalFor(mode), focusAccum: 0, focusStart: null });
+    suppress();
+    push({ mode, focus_min: focusMin, break_min: breakMin, running: 0, end_at: null, left_sec: totalFor(mode), focus_accum: 0, focus_start: null });
   };
   const switchMode = (m: Mode) => {
     endAtRef.current = null;
@@ -180,15 +191,20 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
     setRunning(false);
     setMode(m);
     setElapsed(0);
-    setLeft(totalFor(m));
-    save({ mode: m, running: false, endAt: null, left: totalFor(m), focusAccum: 0, focusStart: null });
+    const l = (m === "focus" ? focusMin : breakMin) * 60;
+    setLeft(l);
+    suppress();
+    push({ mode: m, focus_min: focusMin, break_min: breakMin, running: 0, end_at: null, left_sec: l, focus_accum: 0, focus_start: null });
   };
   const setDuration = (minutes: number) => {
+    const nextFocus = mode === "focus" ? minutes : focusMin;
+    const nextBreak = mode === "break" ? minutes : breakMin;
     if (mode === "focus") setFocusMin(minutes);
     else setBreakMin(minutes);
     if (!running) {
       setLeft(minutes * 60);
-      save({ [mode === "focus" ? "focusMin" : "breakMin"]: minutes, left: minutes * 60 });
+      suppress();
+      push({ mode, focus_min: nextFocus, break_min: nextBreak, running: 0, end_at: null, left_sec: minutes * 60, focus_accum: focusAccumRef.current, focus_start: null });
     }
   };
 

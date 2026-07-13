@@ -4,20 +4,40 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
 import QueueBadge from "@/components/app/QueueBadge";
 import InstructorPanel from "@/components/app/InstructorPanel";
+import OpenRouterModelPicker from "@/components/app/OpenRouterModelPicker";
 import { LANGUAGES } from "@/lib/languages";
 import type { PublicUser } from "@/lib/user";
 
-type Meta = { label: string; defaultModel: string; keyUrl: string; modelHint: string };
+type Meta = { label: string; keyUrl: string; modelHint: string; models?: string[] };
+// Order = display order. The three "premium" providers come first.
 const PROVIDERS: Record<string, Meta> = {
-  deepseek: { label: "DeepSeek", defaultModel: "deepseek-chat", keyUrl: "https://platform.deepseek.com", modelHint: "deepseek-chat" },
-  openrouter: { label: "OpenRouter", defaultModel: "", keyUrl: "https://openrouter.ai/keys", modelHint: "deepseek/deepseek-chat" },
-  minimax: { label: "MiniMax", defaultModel: "MiniMax-M3", keyUrl: "https://platform.minimax.io", modelHint: "MiniMax-M3" },
-  kimi: { label: "Kimi Code", defaultModel: "k2.7-code", keyUrl: "https://platform.moonshot.ai", modelHint: "k2.7-code" },
+  anthropic: {
+    label: "Claude",
+    keyUrl: "https://console.anthropic.com/settings/keys",
+    modelHint: "claude-sonnet-5",
+    models: ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"],
+  },
+  openai: {
+    label: "OpenAI",
+    keyUrl: "https://platform.openai.com/api-keys",
+    modelHint: "gpt-4o",
+    models: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "o3", "o4-mini"],
+  },
+  gemini: {
+    label: "Gemini",
+    keyUrl: "https://aistudio.google.com/apikey",
+    modelHint: "gemini-2.0-flash",
+    models: ["gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
+  },
+  openrouter: { label: "OpenRouter", keyUrl: "https://openrouter.ai/keys", modelHint: "deepseek/deepseek-chat" },
+  deepseek: { label: "DeepSeek", keyUrl: "https://platform.deepseek.com", modelHint: "deepseek-chat", models: ["deepseek-chat", "deepseek-reasoner"] },
+  minimax: { label: "MiniMax", keyUrl: "https://platform.minimax.io", modelHint: "MiniMax-M3", models: ["MiniMax-M3"] },
+  kimi: { label: "Kimi Code", keyUrl: "https://platform.moonshot.ai", modelHint: "k2.7-code", models: ["k2.7-code"] },
 };
 
 export default function SettingsPage() {
   const [me, setMe] = useState<PublicUser | null>(null);
-  const [provider, setProvider] = useState("deepseek");
+  const [provider, setProvider] = useState("anthropic");
   const [key, setKey] = useState("");
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -260,14 +280,30 @@ export default function SettingsPage() {
 
             <div>
               <label className="text-[12px] font-semibold uppercase tracking-wider text-muted">
-                Model {provider === "openrouter" ? "(required)" : "(optional)"}
+                Model {provider === "openrouter" ? "(searchable · live pricing)" : "(optional)"}
               </label>
-              <input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={meta.modelHint}
-                className="mt-2 w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
-              />
+              {provider === "openrouter" ? (
+                <div className="mt-2">
+                  <OpenRouterModelPicker value={model} onChange={setModel} />
+                </div>
+              ) : (
+                <>
+                  <input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={meta.modelHint}
+                    list={meta.models ? `models-${provider}` : undefined}
+                    className="mt-2 w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
+                  />
+                  {meta.models && (
+                    <datalist id={`models-${provider}`}>
+                      {meta.models.map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                  )}
+                </>
+              )}
             </div>
 
             {msg && (
