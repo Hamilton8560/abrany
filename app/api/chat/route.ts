@@ -7,7 +7,7 @@ import {
   getPlanForGoal,
   userOwnsGoal,
 } from "@/lib/repo";
-import { streamText, type ChatMessage } from "@/lib/minimax";
+import { streamText, withLlm, llmContext, type ChatMessage } from "@/lib/minimax";
 import { COACH_SYSTEM } from "@/lib/coach";
 import { getSessionUser, unauthorized } from "@/lib/auth";
 
@@ -27,6 +27,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const content = (body.message ?? "").toString().trim();
   if (!content) return NextResponse.json({ error: "Message is required" }, { status: 400 });
+  const llm = llmContext(user);
+  if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
 
   const ownsGoal = body.goalId != null && userOwnsGoal(user.id, Number(body.goalId));
   const threadId = getOrCreateDefaultThread(user.id, ownsGoal ? Number(body.goalId) : null);
@@ -60,15 +62,17 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const chunk of streamText({
-          system,
-          messages: history,
-          maxTokens: 2048,
-          signal: request.signal,
-        })) {
-          full += chunk;
-          controller.enqueue(encoder.encode(chunk));
-        }
+        await withLlm(llm.creds, async () => {
+          for await (const chunk of streamText({
+            system,
+            messages: history,
+            maxTokens: 2048,
+            signal: request.signal,
+          })) {
+            full += chunk;
+            controller.enqueue(encoder.encode(chunk));
+          }
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Coach is unavailable";
         controller.enqueue(encoder.encode(`\n\n⚠️ ${message}`));

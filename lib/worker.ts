@@ -16,10 +16,12 @@ import {
   listChapters,
   setChapterStatus,
   setChapterContent,
+  getUser,
   type Job,
 } from "./repo";
 import { generateLessonContent, generatePresentation, generateChapter } from "./coach";
 import { braveSearch } from "./search";
+import { withLlm, resolveUserLlm } from "./minimax";
 
 /**
  * Durable, continuous background worker. Jobs live in the `jobs` table so they
@@ -106,7 +108,10 @@ function tick() {
   const jobs = claimJobs(available);
   for (const job of jobs) {
     w.inFlight++;
-    processJob(job)
+    // run generation with the enqueuing user's AI credentials (owner → server env)
+    const user = job.user_id ? getUser(job.user_id) : undefined;
+    const creds = user ? (() => { const r = resolveUserLlm(user); return r.mode === "byo" ? r.creds : null; })() : null;
+    withLlm(creds, () => processJob(job))
       .then(() => finishJob(job.id, "done"))
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
@@ -142,25 +147,25 @@ export function ensureWorker(): void {
 }
 
 /** Queue a lesson for background generation. */
-export function enqueueLesson(lessonId: number): Job {
+export function enqueueLesson(lessonId: number, userId: number): Job {
   setLessonStatus(lessonId, "queued");
-  const job = enqueueJobRow("generate_lesson", { lessonId });
+  const job = enqueueJobRow("generate_lesson", { lessonId }, userId);
   ensureWorker();
   return job;
 }
 
 /** Queue a presentation deck for background generation. */
-export function enqueuePresentation(presentationId: number): Job {
+export function enqueuePresentation(presentationId: number, userId: number): Job {
   setPresentationStatus(presentationId, "generating");
-  const job = enqueueJobRow("generate_presentation", { presentationId });
+  const job = enqueueJobRow("generate_presentation", { presentationId }, userId);
   ensureWorker();
   return job;
 }
 
 /** Queue one book chapter for background generation. */
-export function enqueueChapter(chapterId: number): Job {
+export function enqueueChapter(chapterId: number, userId: number): Job {
   setChapterStatus(chapterId, "queued");
-  const job = enqueueJobRow("generate_chapter", { chapterId });
+  const job = enqueueJobRow("generate_chapter", { chapterId }, userId);
   ensureWorker();
   return job;
 }

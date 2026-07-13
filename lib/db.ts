@@ -184,6 +184,8 @@ function migrate(db: DatabaseSync) {
   addCol("lessons", "srs_ease", "srs_ease REAL NOT NULL DEFAULT 2.3");
   addCol("lessons", "srs_reps", "srs_reps INTEGER NOT NULL DEFAULT 0");
   addCol("lessons", "srs_last", "srs_last TEXT");
+  // jobs run with the enqueuing user's AI credentials
+  addCol("jobs", "user_id", "user_id INTEGER");
 }
 
 export function getDb(): DatabaseSync {

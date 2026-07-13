@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { listLessons, userOwnsPlanItem } from "@/lib/repo";
 import { enqueueLesson } from "@/lib/worker";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
+import { llmContext } from "@/lib/minimax";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,8 +13,10 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/plan-items/[id
   if (!user) return unauthorized();
   const { id } = await ctx.params;
   if (!userOwnsPlanItem(user.id, Number(id))) return forbidden();
+  const llm = llmContext(user);
+  if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
   const lessons = listLessons(Number(id));
   const toQueue = lessons.filter((l) => l.status === "stub" || l.status === "error");
-  toQueue.forEach((l) => enqueueLesson(l.id));
+  toQueue.forEach((l) => enqueueLesson(l.id, user.id));
   return NextResponse.json({ queued: toQueue.length });
 }

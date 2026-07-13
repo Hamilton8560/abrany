@@ -131,6 +131,7 @@ export type Job = {
   status: "queued" | "running" | "done" | "error";
   attempts: number;
   error: string;
+  user_id: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -627,10 +628,10 @@ export function saveReview(
 
 /* ── Jobs (durable async queue) ────────────────────────────── */
 
-export function enqueueJobRow(type: string, payload: object): Job {
+export function enqueueJobRow(type: string, payload: object, userId: number | null = null): Job {
   const info = getDb()
-    .prepare("INSERT INTO jobs (type, payload) VALUES (?, ?)")
-    .run(type, JSON.stringify(payload));
+    .prepare("INSERT INTO jobs (type, payload, user_id) VALUES (?, ?, ?)")
+    .run(type, JSON.stringify(payload), userId);
   return getDb().prepare("SELECT * FROM jobs WHERE id = ?").get(Number(info.lastInsertRowid)) as Job;
 }
 
