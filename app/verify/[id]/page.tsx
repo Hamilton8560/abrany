@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { getCertificate, goalStats } from "@/lib/repo";
+import { qrDataUrl } from "@/lib/qr";
 import Certificate, { type CertData } from "@/components/app/Certificate";
 import Transcript from "@/components/app/Transcript";
 import { CheckIcon } from "@/components/icons";
@@ -30,6 +31,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
   const h = await headers();
   const base = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const rows = cert.goal_id ? goalStats(cert.goal_id).rows : [];
+  const verifyUrl = `${base}/verify/${cert.id}`;
   const c: CertData = {
     id: cert.id,
     recipientName: cert.recipient_name,
@@ -39,7 +41,8 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
     minutesTotal: cert.minutes_total,
     overall: cert.overall,
     issuedAt: cert.issued_at,
-    verifyUrl: `${base}/verify/${cert.id}`,
+    verifyUrl,
+    qr: await qrDataUrl(verifyUrl),
   };
 
   return (

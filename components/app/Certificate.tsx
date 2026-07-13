@@ -10,6 +10,7 @@ export type CertData = {
   overall: string;
   issuedAt: string;
   verifyUrl: string;
+  qr?: string; // data URL of a QR pointing at verifyUrl
 };
 
 const fmtDate = (iso: string) =>
@@ -43,6 +44,16 @@ export default function Certificate({ c }: { c: CertData }) {
       {/* double border */}
       <div className="absolute rounded-[1.4cqw] border border-accent/50" style={{ inset: "2.4cqw" }} />
       <div className="absolute rounded-[1cqw] border border-line" style={{ inset: "3.3cqw" }} />
+
+      {/* QR → verify page */}
+      {c.qr && (
+        <div className="absolute flex flex-col items-center" style={{ right: "6cqw", top: "6cqw", gap: "0.5cqw" }}>
+          <img src={c.qr} alt="Scan to verify" style={{ width: "7cqw", height: "7cqw" }} />
+          <span className="font-medium text-muted" style={{ fontSize: "0.72cqw", letterSpacing: "0.14cqw" }}>
+            SCAN TO VERIFY
+          </span>
+        </div>
+      )}
 
       {/* top content */}
       <div className="absolute inset-x-0 flex flex-col items-center text-center" style={{ top: "8.5cqw", gap: "1.7cqw" }}>

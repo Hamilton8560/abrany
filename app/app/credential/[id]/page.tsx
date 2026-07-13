@@ -3,6 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { getSessionUser } from "@/lib/auth";
 import { getCertificate, goalStats } from "@/lib/repo";
+import { qrDataUrl } from "@/lib/qr";
 import Certificate, { type CertData } from "@/components/app/Certificate";
 import Transcript from "@/components/app/Transcript";
 import CredentialActions from "@/components/app/CredentialActions";
@@ -22,6 +23,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
   const base = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const verifyUrl = `${base}/verify/${cert.id}`;
   const rows = cert.goal_id ? goalStats(cert.goal_id).rows : [];
+  const qr = await qrDataUrl(verifyUrl);
 
   const c: CertData = {
     id: cert.id,
@@ -33,6 +35,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
     overall: cert.overall,
     issuedAt: cert.issued_at,
     verifyUrl,
+    qr,
   };
 
   return (

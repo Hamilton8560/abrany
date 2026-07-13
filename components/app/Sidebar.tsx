@@ -16,6 +16,7 @@ import {
   BookIcon,
   SettingsIcon,
   MoreIcon,
+  AwardIcon,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 import type { PublicUser } from "@/lib/user";
@@ -30,6 +31,7 @@ const NAV: NavItem[] = [
   { href: "/app/coach", label: "Coach", short: "Coach", Icon: ChatIcon },
   { href: "/app/presentations", label: "Presentations", short: "Slides", Icon: SlidesIcon },
   { href: "/app/books", label: "Books", short: "Books", Icon: BookIcon },
+  { href: "/app/achievements", label: "Achievements", short: "Awards", Icon: AwardIcon },
   { href: "/app/log", label: "Training Log", short: "Log", Icon: JournalIcon },
 ];
 

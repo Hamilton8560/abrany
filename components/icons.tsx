@@ -220,6 +220,15 @@ export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function AwardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <circle cx="12" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8.5 13.2 7 21l5-2.6L17 21l-1.5-7.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function MoreIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
