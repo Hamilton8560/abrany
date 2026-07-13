@@ -1,18 +1,25 @@
 import { NextResponse } from "next/server";
-import { listLessons, createLessonStubs, planItemWithContext } from "@/lib/repo";
+import { listLessons, createLessonStubs, planItemWithContext, userOwnsPlanItem } from "@/lib/repo";
 import { expandMilestone } from "@/lib/coach";
+import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/plan-items/[id]/lessons">) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
   const { id } = await ctx.params;
+  if (!userOwnsPlanItem(user.id, Number(id))) return forbidden();
   return NextResponse.json({ lessons: listLessons(Number(id)) });
 }
 
 /** Expand a milestone into lesson stubs (idempotent — returns existing if already expanded). */
 export async function POST(_req: Request, ctx: RouteContext<"/api/plan-items/[id]/lessons">) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
   const { id } = await ctx.params;
+  if (!userOwnsPlanItem(user.id, Number(id))) return forbidden();
   const itemId = Number(id);
   const existing = listLessons(itemId);
   if (existing.length) return NextResponse.json({ lessons: existing });

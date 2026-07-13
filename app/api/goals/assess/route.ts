@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { assessScope } from "@/lib/coach";
+import { getSessionUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
   const body = await request.json().catch(() => ({}));
   const title = (body.title ?? "").toString().trim();
   if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });

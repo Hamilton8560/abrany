@@ -172,6 +172,12 @@ function migrate(db: DatabaseSync) {
   // lessons can be flagged for web-grounding and carry their cited sources
   addCol("lessons", "needs_current", "needs_current INTEGER NOT NULL DEFAULT 0");
   addCol("lessons", "sources", "sources TEXT NOT NULL DEFAULT '[]'");
+  // multi-tenant: user ownership on the root entities (children isolate via FK chains)
+  addCol("goals", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+  addCol("sessions", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+  addCol("threads", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+  addCol("presentations", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+  addCol("books", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   // spaced-repetition state (null due = not enrolled in reviews)
   addCol("lessons", "srs_due", "srs_due TEXT");
   addCol("lessons", "srs_interval", "srs_interval REAL NOT NULL DEFAULT 0");

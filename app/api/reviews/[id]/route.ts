@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getLesson, saveReview } from "@/lib/repo";
+import { getLesson, saveReview, userOwnsLesson } from "@/lib/repo";
 import { schedule, type Rating } from "@/lib/srs";
+import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,10 @@ const RATINGS: Rating[] = ["again", "hard", "good", "easy"];
 
 /** Grade a review: apply SM-2 and reschedule the lesson. */
 export async function POST(request: Request, ctx: RouteContext<"/api/reviews/[id]">) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
   const { id } = await ctx.params;
+  if (!userOwnsLesson(user.id, Number(id))) return forbidden();
   const lesson = getLesson(Number(id));
   if (!lesson) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

@@ -5,24 +5,31 @@ import {
   addMessage,
   getGoal,
   getPlanForGoal,
+  userOwnsGoal,
 } from "@/lib/repo";
 import { streamText, type ChatMessage } from "@/lib/minimax";
 import { COACH_SYSTEM } from "@/lib/coach";
+import { getSessionUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const threadId = getOrCreateDefaultThread();
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
+  const threadId = getOrCreateDefaultThread(user.id);
   return NextResponse.json({ threadId, messages: listMessages(threadId) });
 }
 
 export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
   const body = await request.json().catch(() => ({}));
   const content = (body.message ?? "").toString().trim();
   if (!content) return NextResponse.json({ error: "Message is required" }, { status: 400 });
 
-  const threadId = getOrCreateDefaultThread(body.goalId ?? null);
+  const ownsGoal = body.goalId != null && userOwnsGoal(user.id, Number(body.goalId));
+  const threadId = getOrCreateDefaultThread(user.id, ownsGoal ? Number(body.goalId) : null);
   addMessage(threadId, "user", content);
 
   // Build context: prior turns + optional focused goal/plan.
@@ -32,7 +39,7 @@ export async function POST(request: Request) {
   }));
 
   let system = COACH_SYSTEM;
-  if (body.goalId != null) {
+  if (ownsGoal) {
     const goal = getGoal(Number(body.goalId));
     if (goal) {
       const plan = getPlanForGoal(goal.id);

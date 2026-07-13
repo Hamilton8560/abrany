@@ -1,6 +1,7 @@
 import { scryptSync, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
 import { cookies } from "next/headers";
-import { createUser, getUser, getUserByEmail, type User } from "./repo";
+import { NextResponse } from "next/server";
+import { createUser, getUser, getUserByEmail, backfillOwnerData, type User } from "./repo";
 
 /**
  * Minimal, dependency-free auth: scrypt password hashing + an HMAC-signed
@@ -56,13 +57,9 @@ export function ensureOwner(): void {
   const email = process.env.ADMIN_EMAIL?.toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
-  const existing = getUserByEmail(email);
-  if (!existing) {
-    createUser(email, hashPassword(password), true);
-  } else if (!existing.is_owner) {
-    // keep the owner flag correct if the account already existed
-    // (no password overwrite — owner can change it later)
-  }
+  const owner = getUserByEmail(email) ?? createUser(email, hashPassword(password), true);
+  // one-time: adopt any pre-multi-tenant rows (NULL user_id) so they belong to the owner
+  backfillOwnerData(owner.id);
 }
 
 /* ── cookie helpers (call inside route handlers) ───────────── */
@@ -89,3 +86,6 @@ export async function getSessionUser(): Promise<User | null> {
   if (id == null) return null;
   return getUser(id) ?? null;
 }
+
+export const unauthorized = () => NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const forbidden = () => NextResponse.json({ error: "Not found" }, { status: 404 });

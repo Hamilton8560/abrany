@@ -40,6 +40,50 @@ export function setUserAiCreds(id: number, provider: string, key: string, model:
     .run(provider, key, model, id);
 }
 
+/** One-time: adopt pre-multi-tenant rows (NULL user_id) into the owner account. */
+export function backfillOwnerData(ownerId: number): void {
+  const db = getDb();
+  for (const t of ["goals", "sessions", "threads", "presentations", "books"]) {
+    db.prepare(`UPDATE ${t} SET user_id = ? WHERE user_id IS NULL`).run(ownerId);
+  }
+}
+
+/* ── ownership checks (multi-tenant isolation) ─────────────── */
+const owns = (sql: string, ...args: unknown[]) => !!getDb().prepare(sql).get(...(args as never[]));
+
+export const userOwnsGoal = (userId: number, goalId: number) =>
+  owns("SELECT 1 FROM goals WHERE id = ? AND user_id = ?", goalId, userId);
+
+export const userOwnsPlanItem = (userId: number, planItemId: number) =>
+  owns(
+    `SELECT 1 FROM plan_items pi JOIN plans p ON p.id = pi.plan_id JOIN goals g ON g.id = p.goal_id
+     WHERE pi.id = ? AND g.user_id = ?`,
+    planItemId,
+    userId,
+  );
+
+export const userOwnsLesson = (userId: number, lessonId: number) =>
+  owns(
+    `SELECT 1 FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id
+     JOIN plans p ON p.id = pi.plan_id JOIN goals g ON g.id = p.goal_id
+     WHERE l.id = ? AND g.user_id = ?`,
+    lessonId,
+    userId,
+  );
+
+export const userOwnsPresentation = (userId: number, id: number) =>
+  owns("SELECT 1 FROM presentations WHERE id = ? AND user_id = ?", id, userId);
+
+export const userOwnsBook = (userId: number, id: number) =>
+  owns("SELECT 1 FROM books WHERE id = ? AND user_id = ?", id, userId);
+
+export const userOwnsChapter = (userId: number, chapterId: number) =>
+  owns(
+    "SELECT 1 FROM chapters c JOIN books b ON b.id = c.book_id WHERE c.id = ? AND b.user_id = ?",
+    chapterId,
+    userId,
+  );
+
 export type Goal = {
   id: number;
   title: string;
@@ -131,12 +175,12 @@ export type Message = {
 
 /* ── Goals ─────────────────────────────────────────────── */
 
-export function listGoals(): Goal[] {
+export function listGoals(userId: number): Goal[] {
   return getDb()
     .prepare(
-      "SELECT * FROM goals WHERE status != 'archived' AND parent_goal_id IS NULL ORDER BY status='done', updated_at DESC",
+      "SELECT * FROM goals WHERE user_id = ? AND status != 'archived' AND parent_goal_id IS NULL ORDER BY status='done', updated_at DESC",
     )
-    .all() as Goal[];
+    .all(userId) as Goal[];
 }
 
 export function getGoal(id: number): Goal | undefined {
@@ -149,10 +193,15 @@ export function getChildGoals(parentId: number): Goal[] {
     .all(parentId) as Goal[];
 }
 
-export function createGoal(title: string, description = "", parentGoalId: number | null = null): Goal {
+export function createGoal(
+  userId: number,
+  title: string,
+  description = "",
+  parentGoalId: number | null = null,
+): Goal {
   const info = getDb()
-    .prepare("INSERT INTO goals (title, description, parent_goal_id) VALUES (?, ?, ?)")
-    .run(title, description, parentGoalId);
+    .prepare("INSERT INTO goals (user_id, title, description, parent_goal_id) VALUES (?, ?, ?, ?)")
+    .run(userId, title, description, parentGoalId);
   return getGoal(Number(info.lastInsertRowid))!;
 }
 
@@ -218,17 +267,19 @@ export function updatePlanItem(itemId: number, status: PlanItem["status"]): void
 
 /* ── Sessions ──────────────────────────────────────────── */
 
-export function listSessions(limit = 100): (Session & { goal_title: string | null })[] {
+export function listSessions(userId: number, limit = 100): (Session & { goal_title: string | null })[] {
   return getDb()
     .prepare(
       `SELECT s.*, g.title AS goal_title
        FROM sessions s LEFT JOIN goals g ON g.id = s.goal_id
+       WHERE s.user_id = ?
        ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
     )
-    .all(limit) as (Session & { goal_title: string | null })[];
+    .all(userId, limit) as (Session & { goal_title: string | null })[];
 }
 
 export function createSession(input: {
+  userId: number;
   goalId?: number | null;
   mode?: "focus" | "break";
   durationSec: number;
@@ -239,10 +290,11 @@ export function createSession(input: {
 }): Session {
   const info = getDb()
     .prepare(
-      `INSERT INTO sessions (goal_id, mode, duration_sec, notes, tags, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
+      `INSERT INTO sessions (user_id, goal_id, mode, duration_sec, notes, tags, started_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
     )
     .run(
+      input.userId,
       input.goalId ?? null,
       input.mode ?? "focus",
       Math.round(input.durationSec),
@@ -258,28 +310,30 @@ export function createSession(input: {
 
 export type SessionStats = { totalFocusSec: number; sessionCount: number; todayFocusSec: number };
 
-export function sessionStats(): SessionStats {
+export function sessionStats(userId: number): SessionStats {
   const db = getDb();
   const total = db
-    .prepare("SELECT COALESCE(SUM(duration_sec),0) n, COUNT(*) c FROM sessions WHERE mode='focus'")
-    .get() as { n: number; c: number };
+    .prepare("SELECT COALESCE(SUM(duration_sec),0) n, COUNT(*) c FROM sessions WHERE mode='focus' AND user_id = ?")
+    .get(userId) as { n: number; c: number };
   const today = db
     .prepare(
-      "SELECT COALESCE(SUM(duration_sec),0) n FROM sessions WHERE mode='focus' AND date(created_at)=date('now')",
+      "SELECT COALESCE(SUM(duration_sec),0) n FROM sessions WHERE mode='focus' AND user_id = ? AND date(created_at)=date('now')",
     )
-    .get() as { n: number };
+    .get(userId) as { n: number };
   return { totalFocusSec: total.n, sessionCount: total.c, todayFocusSec: today.n };
 }
 
 /* ── Threads & messages (coach) ────────────────────────── */
 
-export function getOrCreateDefaultThread(goalId?: number | null): number {
+export function getOrCreateDefaultThread(userId: number, goalId?: number | null): number {
   const db = getDb();
   const existing = db
-    .prepare("SELECT id FROM threads ORDER BY id DESC LIMIT 1")
-    .get() as { id: number } | undefined;
+    .prepare("SELECT id FROM threads WHERE user_id = ? ORDER BY id DESC LIMIT 1")
+    .get(userId) as { id: number } | undefined;
   if (existing) return existing.id;
-  const info = db.prepare("INSERT INTO threads (goal_id) VALUES (?)").run(goalId ?? null);
+  const info = db
+    .prepare("INSERT INTO threads (user_id, goal_id) VALUES (?, ?)")
+    .run(userId, goalId ?? null);
   return Number(info.lastInsertRowid);
 }
 
@@ -367,10 +421,15 @@ export type Presentation = {
   updated_at: string;
 };
 
-export function createPresentation(title: string, topic: string, goalId: number | null = null): Presentation {
+export function createPresentation(
+  userId: number,
+  title: string,
+  topic: string,
+  goalId: number | null = null,
+): Presentation {
   const info = getDb()
-    .prepare("INSERT INTO presentations (title, topic, goal_id) VALUES (?, ?, ?)")
-    .run(title, topic, goalId);
+    .prepare("INSERT INTO presentations (user_id, title, topic, goal_id) VALUES (?, ?, ?, ?)")
+    .run(userId, title, topic, goalId);
   return getPresentation(Number(info.lastInsertRowid))!;
 }
 
@@ -380,10 +439,10 @@ export function getPresentation(id: number): Presentation | undefined {
     | undefined;
 }
 
-export function listPresentations(): Presentation[] {
+export function listPresentations(userId: number): Presentation[] {
   return getDb()
-    .prepare("SELECT * FROM presentations ORDER BY created_at DESC, id DESC")
-    .all() as Presentation[];
+    .prepare("SELECT * FROM presentations WHERE user_id = ? ORDER BY created_at DESC, id DESC")
+    .all(userId) as Presentation[];
 }
 
 export function setPresentationContent(id: number, title: string, content: string): void {
@@ -429,8 +488,10 @@ export type Chapter = {
   updated_at: string;
 };
 
-export function createBook(title: string, brief: string): Book {
-  const info = getDb().prepare("INSERT INTO books (title, brief) VALUES (?, ?)").run(title, brief);
+export function createBook(userId: number, title: string, brief: string): Book {
+  const info = getDb()
+    .prepare("INSERT INTO books (user_id, title, brief) VALUES (?, ?, ?)")
+    .run(userId, title, brief);
   return getBook(Number(info.lastInsertRowid))!;
 }
 
@@ -438,8 +499,10 @@ export function getBook(id: number): Book | undefined {
   return getDb().prepare("SELECT * FROM books WHERE id = ?").get(id) as Book | undefined;
 }
 
-export function listBooks(): Book[] {
-  return getDb().prepare("SELECT * FROM books ORDER BY created_at DESC, id DESC").all() as Book[];
+export function listBooks(userId: number): Book[] {
+  return getDb()
+    .prepare("SELECT * FROM books WHERE user_id = ? ORDER BY created_at DESC, id DESC")
+    .all(userId) as Book[];
 }
 
 export function setBookStatus(id: number, status: Book["status"], error = ""): void {
@@ -513,38 +576,40 @@ export function unenrollLesson(id: number): void {
   getDb().prepare("UPDATE lessons SET srs_due = NULL WHERE id = ?").run(id);
 }
 
-/** Lessons due for review today (across all goals), soonest first. */
-export function dueLessons(): DueLesson[] {
+const DUE_JOIN = `FROM lessons l
+       JOIN plan_items pi ON pi.id = l.plan_item_id
+       JOIN plans p ON p.id = pi.plan_id
+       JOIN goals g ON g.id = p.goal_id`;
+
+/** Lessons due for review today for this user, soonest first. */
+export function dueLessons(userId: number): DueLesson[] {
   return getDb()
     .prepare(
       `SELECT l.*, pi.title AS milestone_title, g.id AS goal_id, g.title AS goal_title
-       FROM lessons l
-       JOIN plan_items pi ON pi.id = l.plan_item_id
-       JOIN plans p ON p.id = pi.plan_id
-       JOIN goals g ON g.id = p.goal_id
-       WHERE l.srs_due IS NOT NULL AND date(l.srs_due) <= date('now') AND l.status = 'ready'
+       ${DUE_JOIN}
+       WHERE g.user_id = ? AND l.srs_due IS NOT NULL AND date(l.srs_due) <= date('now') AND l.status = 'ready'
        ORDER BY l.srs_due, l.id`,
     )
-    .all() as DueLesson[];
+    .all(userId) as DueLesson[];
 }
 
-export function dueCount(): number {
+export function dueCount(userId: number): number {
   const r = getDb()
     .prepare(
-      "SELECT COUNT(*) c FROM lessons WHERE srs_due IS NOT NULL AND date(srs_due) <= date('now') AND status = 'ready'",
+      `SELECT COUNT(*) c ${DUE_JOIN}
+       WHERE g.user_id = ? AND l.srs_due IS NOT NULL AND date(l.srs_due) <= date('now') AND l.status = 'ready'`,
     )
-    .get() as { c: number };
+    .get(userId) as { c: number };
   return r.c;
 }
 
 export type SrsUpcoming = { enrolled: number; dueToday: number };
 
-export function srsSummary(): SrsUpcoming {
-  const db = getDb();
-  const enrolled = (db.prepare("SELECT COUNT(*) c FROM lessons WHERE srs_due IS NOT NULL").get() as {
-    c: number;
-  }).c;
-  return { enrolled, dueToday: dueCount() };
+export function srsSummary(userId: number): SrsUpcoming {
+  const enrolled = (getDb()
+    .prepare(`SELECT COUNT(*) c ${DUE_JOIN} WHERE g.user_id = ? AND l.srs_due IS NOT NULL`)
+    .get(userId) as { c: number }).c;
+  return { enrolled, dueToday: dueCount(userId) };
 }
 
 /** Persist a computed SM-2 result and the next due date. */

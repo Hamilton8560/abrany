@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
-import { getLesson, planItemWithContext } from "@/lib/repo";
+import { getLesson, planItemWithContext, userOwnsLesson } from "@/lib/repo";
 import { generateReviewQuiz } from "@/lib/coach";
+import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Generate fresh recall questions for a lesson (queued through MiniMax). */
 export async function POST(_req: Request, ctx: RouteContext<"/api/lessons/[id]/quiz">) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
   const { id } = await ctx.params;
+  if (!userOwnsLesson(user.id, Number(id))) return forbidden();
   const lesson = getLesson(Number(id));
   if (!lesson || !lesson.content) {
     return NextResponse.json({ error: "Lesson not ready" }, { status: 404 });
