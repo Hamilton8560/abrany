@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLesson, userOwnsLesson } from "@/lib/repo";
+import { getLesson, setLessonGrade, userOwnsLesson } from "@/lib/repo";
 import { gradeReviewQuiz } from "@/lib/coach";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 import { llmContext, withLlm } from "@/lib/minimax";
@@ -37,6 +37,16 @@ export async function POST(request: Request, ctx: RouteContext<"/api/lessons/[id
         }),
       user.language,
     );
+    // persist a letter grade for the transcript, from the per-question verdicts
+    const results = (grade as { results?: { verdict?: string }[] })?.results ?? [];
+    if (results.length) {
+      const score =
+        results.reduce((s, r) => s + (r.verdict === "correct" ? 1 : r.verdict === "partial" ? 0.5 : 0), 0) /
+        results.length;
+      const pct = Math.round(score * 100);
+      const letter = pct >= 93 ? "A" : pct >= 85 ? "A−" : pct >= 78 ? "B+" : pct >= 70 ? "B" : pct >= 60 ? "C+" : pct >= 50 ? "C" : "D";
+      setLessonGrade(Number(id), letter);
+    }
     return NextResponse.json({ grade });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not grade the quiz";

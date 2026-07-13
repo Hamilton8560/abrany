@@ -66,7 +66,7 @@ export default function Sidebar({ user }: { user: PublicUser }) {
   const due = useDueCount();
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col gap-8 p-5 lg:flex">
+    <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col gap-8 p-5 lg:flex print:!hidden">
       <div className="glass flex h-full min-h-0 flex-col gap-7 overflow-hidden rounded-[var(--radius-card-lg)] p-5">
         <div className="shrink-0 px-1 pt-1">
           <Logo />
@@ -154,13 +154,13 @@ export function MobileBar({ user }: { user: PublicUser }) {
 
   return (
     <>
-      <div className="glassx sticky top-0 z-40 flex items-center justify-between px-5 py-3 lg:hidden">
+      <div className="glassx sticky top-0 z-40 flex items-center justify-between px-5 py-3 lg:hidden print:hidden">
         <Logo compact />
         <QueueBadge />
       </div>
 
       {/* Bottom tab bar: 4 primaries + More */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-white/80 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-white/80 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden print:hidden">
         {primary.map(({ href, short, label, Icon }) => {
           const active = isActive(href);
           return (

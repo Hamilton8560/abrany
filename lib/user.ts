@@ -1,4 +1,4 @@
-import { isFreeAiEnabled, type User } from "./repo";
+import { displayName, isFreeAiEnabled, type User } from "./repo";
 
 /** Client-safe view of a user — never exposes the password hash or the raw AI key. */
 export type PublicUser = {
@@ -14,6 +14,9 @@ export type PublicUser = {
   canUseAi: boolean;
   /** Language code content is generated in (see lib/languages). */
   language: string;
+  /** Raw display name ('' if unset) and the resolved name used on certificates. */
+  name: string;
+  displayName: string;
 };
 
 export function publicUser(u: User): PublicUser {
@@ -29,5 +32,7 @@ export function publicUser(u: User): PublicUser {
     freeAiAccess,
     canUseAi: hasKey || freeAiAccess,
     language: u.language || "en",
+    name: u.name || "",
+    displayName: displayName(u),
   };
 }

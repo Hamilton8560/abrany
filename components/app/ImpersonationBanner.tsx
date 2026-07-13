@@ -11,7 +11,7 @@ export default function ImpersonationBanner({ email }: { email: string }) {
     window.location.href = "/app/settings";
   };
   return (
-    <div className="sticky top-0 z-[60] flex items-center justify-between gap-3 bg-accent px-4 py-2 text-white">
+    <div className="sticky top-0 z-[60] flex items-center justify-between gap-3 bg-accent px-4 py-2 text-white print:hidden">
       <p className="min-w-0 truncate text-[12.5px] font-semibold">
         Acting as {email} — anything you create is saved to their account.
       </p>

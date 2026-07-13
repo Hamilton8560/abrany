@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
 
 /* ── Users / auth ──────────────────────────────────────────── */
@@ -11,8 +12,16 @@ export type User = {
   ai_key: string;
   ai_model: string;
   language: string; // ISO-ish short code (see lib/languages); '' → default 'en'
+  name: string; // display name for certificates ('' → derive from email)
   created_at: string;
 };
+
+/** Best display name for a user: their set name, else the email's local part. */
+export function displayName(u: Pick<User, "name" | "email">): string {
+  if (u.name && u.name.trim()) return u.name.trim();
+  const local = u.email.split("@")[0].replace(/[._-]+/g, " ");
+  return local.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 export function createUser(email: string, passwordHash: string, isOwner = false): User {
   const info = getDb()
@@ -43,6 +52,10 @@ export function setUserAiCreds(id: number, provider: string, key: string, model:
 
 export function setUserLanguage(id: number, language: string): void {
   getDb().prepare("UPDATE users SET language = ? WHERE id = ?").run(language, id);
+}
+
+export function setUserName(id: number, name: string): void {
+  getDb().prepare("UPDATE users SET name = ? WHERE id = ?").run(name.slice(0, 80), id);
 }
 
 /* ── focus timer (server-synced, one per user) ─────────────── */
@@ -514,6 +527,114 @@ export function setLessonCompleted(id: number, done: boolean): Lesson | undefine
     .prepare("UPDATE lessons SET completed_at = ?, updated_at = datetime('now') WHERE id = ?")
     .run(done ? new Date().toISOString() : null, id);
   return getLesson(id);
+}
+
+/** Store a section's grade (e.g. "A", "92%") for the transcript. */
+export function setLessonGrade(id: number, grade: string): void {
+  getDb().prepare("UPDATE lessons SET grade = ? WHERE id = ?").run(grade.slice(0, 12), id);
+}
+
+/* ── Certificates / credentials ────────────────────────────── */
+
+export type Certificate = {
+  id: string;
+  user_id: number;
+  goal_id: number | null;
+  recipient_name: string;
+  title: string;
+  sections_total: number;
+  sections_done: number;
+  minutes_total: number;
+  overall: string;
+  issued_at: string;
+};
+
+export type TranscriptRow = { title: string; kind: string; completed_at: string | null; grade: string };
+
+/** Roll a goal's lessons + time up into transcript stats. */
+export function goalStats(goalId: number): {
+  sectionsTotal: number;
+  sectionsDone: number;
+  minutesTotal: number;
+  rows: TranscriptRow[];
+} {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT l.title, l.kind, l.completed_at, l.grade
+         FROM lessons l
+         JOIN plan_items pi ON pi.id = l.plan_item_id
+         JOIN plans p ON p.id = pi.plan_id
+        WHERE p.goal_id = ?
+        ORDER BY pi.order_index, l.order_index`,
+    )
+    .all(goalId) as TranscriptRow[];
+  const sectionsTotal = rows.length;
+  const sectionsDone = rows.filter((r) => r.completed_at).length;
+  const secs = db
+    .prepare("SELECT COALESCE(SUM(duration_sec),0) n FROM sessions WHERE goal_id = ? AND mode='focus'")
+    .get(goalId) as { n: number };
+  return { sectionsTotal, sectionsDone, minutesTotal: Math.round(secs.n / 60), rows };
+}
+
+/** Derive an overall label from the graded sections (else a completion label). */
+function overallLabel(rows: TranscriptRow[], sectionsTotal: number, sectionsDone: number): string {
+  const graded = rows.map((r) => r.grade).filter(Boolean);
+  const letters = graded.filter((g) => /^[A-F][+-]?$/.test(g));
+  if (letters.length) {
+    const pts = letters.map((g) => "FDCBA".indexOf(g[0]) + (g[1] === "+" ? 0.3 : g[1] === "-" ? -0.3 : 0));
+    const avg = pts.reduce((a, b) => a + b, 0) / pts.length;
+    const base = "FDCBA"[Math.max(0, Math.min(4, Math.round(avg)))];
+    const frac = avg - Math.round(avg);
+    return base + (frac > 0.15 ? "+" : frac < -0.15 ? "−" : "");
+  }
+  return sectionsTotal > 0 && sectionsDone >= sectionsTotal ? "Completed" : "In progress";
+}
+
+/** Issue (or return the existing) credential for a completed goal. */
+export function issueCertificate(userId: number, goalId: number): Certificate {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT * FROM certificates WHERE user_id = ? AND goal_id = ? ORDER BY issued_at DESC LIMIT 1")
+    .get(userId, goalId) as Certificate | undefined;
+  if (existing) return existing;
+
+  const goal = getGoal(goalId)!;
+  const user = getUser(userId)!;
+  const stats = goalStats(goalId);
+  const year = new Date().getFullYear();
+  const id = `ABR-${year}-${randomBytes(3).toString("hex").toUpperCase()}`;
+  db.prepare(
+    `INSERT INTO certificates (id, user_id, goal_id, recipient_name, title, sections_total, sections_done, minutes_total, overall)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    userId,
+    goalId,
+    displayName(user),
+    goal.title,
+    stats.sectionsTotal,
+    stats.sectionsDone,
+    stats.minutesTotal,
+    overallLabel(stats.rows, stats.sectionsTotal, stats.sectionsDone),
+  );
+  return db.prepare("SELECT * FROM certificates WHERE id = ?").get(id) as Certificate;
+}
+
+export function getCertificate(id: string): Certificate | undefined {
+  return getDb().prepare("SELECT * FROM certificates WHERE id = ?").get(id) as Certificate | undefined;
+}
+
+export function getCertificateForGoal(userId: number, goalId: number): Certificate | undefined {
+  return getDb()
+    .prepare("SELECT * FROM certificates WHERE user_id = ? AND goal_id = ? ORDER BY issued_at DESC LIMIT 1")
+    .get(userId, goalId) as Certificate | undefined;
+}
+
+export function listCertificates(userId: number): Certificate[] {
+  return getDb()
+    .prepare("SELECT * FROM certificates WHERE user_id = ? ORDER BY issued_at DESC")
+    .all(userId) as Certificate[];
 }
 
 export function setLessonContent(id: number, content: string, sources: object[] = []): void {

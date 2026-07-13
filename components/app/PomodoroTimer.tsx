@@ -6,7 +6,8 @@ import { PlayIcon, PauseIcon, ResetIcon, CheckIcon } from "@/components/icons";
 import type { Goal, TimerState } from "@/lib/repo";
 
 type Mode = "focus" | "break";
-const PRESETS = [15, 25, 45, 50];
+const FOCUS_PRESETS = [15, 25, 45, 50];
+const BREAK_PRESETS = [5, 10, 15, 20];
 
 type ServerState = {
   mode: Mode;
@@ -300,7 +301,7 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
             {mode} length
           </span>
           <div className="flex gap-2">
-            {PRESETS.map((p) => {
+            {(mode === "focus" ? FOCUS_PRESETS : BREAK_PRESETS).map((p) => {
               const cur = mode === "focus" ? focusMin : breakMin;
               return (
                 <button

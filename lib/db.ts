@@ -157,6 +157,22 @@ function migrate(db: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS idx_chapters_book ON chapters(book_id);
 
+    -- issued completion credentials (certificate + transcript, publicly verifiable)
+    CREATE TABLE IF NOT EXISTS certificates (
+      id             TEXT PRIMARY KEY,               -- e.g. ABR-2026-8F3A21
+      user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      goal_id        INTEGER REFERENCES goals(id) ON DELETE SET NULL,
+      recipient_name TEXT NOT NULL,                  -- snapshot at issue time
+      title          TEXT NOT NULL,                  -- the achievement (goal title)
+      sections_total INTEGER NOT NULL DEFAULT 0,
+      sections_done  INTEGER NOT NULL DEFAULT 0,
+      minutes_total  INTEGER NOT NULL DEFAULT 0,
+      overall        TEXT NOT NULL DEFAULT '',       -- overall grade/label snapshot
+      issued_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_cert_user ON certificates(user_id);
+    CREATE INDEX IF NOT EXISTS idx_cert_goal ON certificates(goal_id);
+
     -- durable async job queue drained by the background worker
     CREATE TABLE IF NOT EXISTS jobs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,6 +221,10 @@ function migrate(db: DatabaseSync) {
   addCol("jobs", "user_id", "user_id INTEGER");
   // each user's content is generated in their chosen language
   addCol("users", "language", "language TEXT NOT NULL DEFAULT 'en'");
+  // display name for certificates (falls back to email local-part if empty)
+  addCol("users", "name", "name TEXT NOT NULL DEFAULT ''");
+  // a graded section keeps its result (e.g. "A", "92%") for the transcript
+  addCol("lessons", "grade", "grade TEXT NOT NULL DEFAULT ''");
 }
 
 export function getDb(): DatabaseSync {

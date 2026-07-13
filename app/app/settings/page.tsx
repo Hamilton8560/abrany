@@ -46,15 +46,29 @@ export default function SettingsPage() {
   const [freeBusy, setFreeBusy] = useState(false);
   const [language, setLanguage] = useState("en");
   const [langBusy, setLangBusy] = useState(false);
+  const [name, setName] = useState("");
+  const [nameSaved, setNameSaved] = useState(false);
 
   const load = () =>
     api<{ user: PublicUser }>("/api/auth/me").then((d) => {
       setMe(d.user);
       setFreeAi(!!d.user?.freeAiAccess);
       setLanguage(d.user?.language || "en");
+      setName(d.user?.name || "");
       if (d.user.provider) setProvider(d.user.provider);
       if (d.user.model) setModel(d.user.model);
     });
+
+  const saveName = async () => {
+    try {
+      await api("/api/settings/profile", { method: "POST", body: JSON.stringify({ name }) });
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 1600);
+      load().catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  };
 
   const saveLanguage = async (code: string) => {
     const prev = language;
@@ -126,6 +140,28 @@ export default function SettingsPage() {
           Your AI connection
         </h1>
       </header>
+
+      <section className="glass rounded-[var(--radius-card-lg)] p-6">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="name" className="text-[15px] font-semibold text-ink">
+            Your name
+          </label>
+          <p className="text-[13.5px] text-muted">
+            Shown on your certificates. {me ? <span className="text-ink">Currently: {me.displayName}</span> : null}
+          </p>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={saveName}
+            placeholder="e.g. David Hamilton"
+            className="w-full max-w-[320px] rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
+          />
+          {nameSaved && <span className="text-[12px] font-medium text-up">Saved ✓</span>}
+        </div>
+      </section>
 
       <section className="glass rounded-[var(--radius-card-lg)] p-6">
         <div className="flex flex-col gap-1.5">

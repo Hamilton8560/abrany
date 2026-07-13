@@ -20,6 +20,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cert, setCert] = useState<{ id: string } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [completing, setCompleting] = useState(false);
 
   const load = useCallback(async () => {
     const d = await api<GoalResp>(`/api/goals/${id}`);
@@ -27,7 +31,28 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     setPlan(d.plan);
     setChildren(d.children ?? []);
     setLoading(false);
+    api<{ certificate: { id: string } | null }>(`/api/goals/${id}/complete`)
+      .then((r) => setCert(r.certificate))
+      .catch(() => {});
   }, [id]);
+
+  const completeGoal = async () => {
+    setCompleting(true);
+    setError(null);
+    try {
+      const d = await api<{ certificate: { id: string } }>(`/api/goals/${id}/complete`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      });
+      setGoal((g) => (g ? { ...g, status: "done" } : g));
+      setConfirmOpen(false);
+      router.push(`/app/credential/${d.certificate.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not complete the goal.");
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   useEffect(() => {
     load().catch(() => setLoading(false));
@@ -144,14 +169,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           >
             Discuss with coach
           </Link>
-          {goal.status !== "done" ? (
-            <button
-              onClick={() => setStatus("done")}
-              className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink"
-            >
-              Mark complete
-            </button>
-          ) : (
+          {goal.status === "done" && (
             <button
               onClick={() => setStatus("active")}
               className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink"
@@ -295,6 +313,97 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           </div>
         )}
       </section>
+      )}
+
+      {/* completion CTA — issuing a credential requires an explicit confirmation */}
+      {!isUmbrella && (
+        <section className="glass rounded-[var(--radius-card-lg)] p-6">
+          {cert ? (
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[15px] font-semibold text-ink">🎓 Certificate issued</p>
+                <p className="mt-1 text-[13.5px] text-muted">
+                  You completed this goal. Credential <span className="font-medium text-ink">{cert.id}</span>.
+                </p>
+              </div>
+              <Link
+                href={`/app/credential/${cert.id}`}
+                className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
+              >
+                View certificate
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[15px] font-semibold text-ink">Finished this goal?</p>
+                <p className="mt-1 text-[13.5px] text-muted">
+                  Confirm you&apos;ve completed everything — we&apos;ll issue your certificate and transcript.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setConfirmChecked(false);
+                  setError(null);
+                  setConfirmOpen(true);
+                }}
+                className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
+              >
+                Mark this goal complete
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-ink/30 p-4 backdrop-blur-sm"
+          onClick={() => setConfirmOpen(false)}
+        >
+          <div
+            className="glass w-full max-w-[440px] rounded-[var(--radius-card-lg)] p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-[22px] font-extrabold uppercase text-ink">Complete this goal?</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-muted">
+              This issues your certificate &amp; transcript for{" "}
+              <span className="font-semibold text-ink">{goal.title}</span> — a permanent, shareable record.
+              Only confirm if you&apos;ve genuinely finished.
+            </p>
+            {sectionsTotal > 0 && (
+              <p className="mt-3 rounded-[12px] bg-white/60 px-4 py-2.5 text-[13px] text-muted">
+                Progress: <span className="font-semibold text-ink">{sectionsDone}/{sectionsTotal} sections</span> · {progress}%
+                {sectionsDone < sectionsTotal ? " — some sections aren't marked done yet." : ""}
+              </p>
+            )}
+            <label className="mt-4 flex items-start gap-2.5 text-[13.5px] text-ink">
+              <input
+                type="checkbox"
+                checked={confirmChecked}
+                onChange={(e) => setConfirmChecked(e.target.checked)}
+                className="mt-0.5 size-4 accent-accent"
+              />
+              <span>I confirm I&apos;ve completed everything in this goal.</span>
+            </label>
+            {error && <p className="mt-3 text-[13px] text-accent">{error}</p>}
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="px-4 py-2 text-[13px] font-semibold text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={completeGoal}
+                disabled={!confirmChecked || completing}
+                className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+              >
+                {completing ? "Issuing…" : "Complete & issue certificate"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
