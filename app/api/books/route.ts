@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const brief = (body.brief ?? "").toString().trim();
   if (!brief) return NextResponse.json({ error: "A brief is required" }, { status: 400 });
   try {
-    const outline = await withLlm(llm.creds, () => generateBookOutline({ brief }));
+    const outline = await withLlm(llm.creds, () => generateBookOutline({ brief }), user.language);
     const book = createBook(user.id, outline.title, brief);
     createChapterStubs(book.id, outline.chapters);
     setBookStatus(book.id, "ready");

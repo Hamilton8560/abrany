@@ -9,6 +9,7 @@ import {
 } from "@/lib/repo";
 import { streamText, withLlm, llmContext, type ChatMessage } from "@/lib/minimax";
 import { COACH_SYSTEM } from "@/lib/coach";
+import { languageMismatch } from "@/lib/langdetect";
 import { getSessionUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -29,6 +30,13 @@ export async function POST(request: Request) {
   if (!content) return NextResponse.json({ error: "Message is required" }, { status: 400 });
   const llm = llmContext(user);
   if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
+
+  // If they're clearly typing in another language, let the client offer to switch
+  // (unless they've already confirmed to continue as-is).
+  if (!body.confirmLang) {
+    const mismatch = languageMismatch(content, user.language);
+    if (mismatch) return NextResponse.json({ languageMismatch: mismatch }, { status: 409 });
+  }
 
   const ownsGoal = body.goalId != null && userOwnsGoal(user.id, Number(body.goalId));
   const threadId = getOrCreateDefaultThread(user.id, ownsGoal ? Number(body.goalId) : null);
@@ -72,7 +80,7 @@ export async function POST(request: Request) {
             full += chunk;
             controller.enqueue(encoder.encode(chunk));
           }
-        });
+        }, user.language);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Coach is unavailable";
         controller.enqueue(encoder.encode(`\n\n⚠️ ${message}`));

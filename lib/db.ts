@@ -189,6 +189,8 @@ function migrate(db: DatabaseSync) {
   addCol("lessons", "srs_last", "srs_last TEXT");
   // jobs run with the enqueuing user's AI credentials
   addCol("jobs", "user_id", "user_id INTEGER");
+  // each user's content is generated in their chosen language
+  addCol("users", "language", "language TEXT NOT NULL DEFAULT 'en'");
 }
 
 export function getDb(): DatabaseSync {

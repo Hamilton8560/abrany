@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
 import QueueBadge from "@/components/app/QueueBadge";
+import InstructorPanel from "@/components/app/InstructorPanel";
+import { LANGUAGES } from "@/lib/languages";
 import type { PublicUser } from "@/lib/user";
 
 type Meta = { label: string; defaultModel: string; keyUrl: string; modelHint: string };
@@ -22,14 +24,30 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [freeAi, setFreeAi] = useState(false);
   const [freeBusy, setFreeBusy] = useState(false);
+  const [language, setLanguage] = useState("en");
+  const [langBusy, setLangBusy] = useState(false);
 
   const load = () =>
     api<{ user: PublicUser }>("/api/auth/me").then((d) => {
       setMe(d.user);
       setFreeAi(!!d.user?.freeAiAccess);
+      setLanguage(d.user?.language || "en");
       if (d.user.provider) setProvider(d.user.provider);
       if (d.user.model) setModel(d.user.model);
     });
+
+  const saveLanguage = async (code: string) => {
+    const prev = language;
+    setLanguage(code); // optimistic
+    setLangBusy(true);
+    try {
+      await api("/api/settings/language", { method: "POST", body: JSON.stringify({ language: code }) });
+    } catch {
+      setLanguage(prev);
+    } finally {
+      setLangBusy(false);
+    }
+  };
 
   const toggleFreeAi = async (next: boolean) => {
     setFreeBusy(true);
@@ -89,6 +107,34 @@ export default function SettingsPage() {
         </h1>
       </header>
 
+      <section className="glass rounded-[var(--radius-card-lg)] p-6">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="language" className="text-[15px] font-semibold text-ink">
+            Language
+          </label>
+          <p className="text-[13.5px] text-muted">
+            Everything the AI writes for you — lessons, plans, coach replies, books — comes out in this
+            language. If you write to the coach in another language, it&apos;ll offer to switch.
+          </p>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <select
+            id="language"
+            value={language}
+            disabled={langBusy}
+            onChange={(e) => saveLanguage(e.target.value)}
+            className="w-full max-w-[280px] rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none focus:border-accent/50 disabled:opacity-60"
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.name} — {l.native}
+              </option>
+            ))}
+          </select>
+          {langBusy && <span className="text-[12px] text-muted">Saving…</span>}
+        </div>
+      </section>
+
       {me?.isOwner ? (
         <>
           <section className="glass rounded-[var(--radius-card-lg)] p-6">
@@ -134,6 +180,8 @@ export default function SettingsPage() {
               </span>
             </div>
           </section>
+
+          <InstructorPanel />
         </>
       ) : (
         <>

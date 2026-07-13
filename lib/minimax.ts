@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { acquireSlot, withQueue } from "./queue";
 import { isFreeAiEnabled, type User } from "./repo";
+import { languageDirective } from "./languages";
 
 /**
  * LLM layer — multi-provider, per-user.
@@ -36,12 +37,26 @@ const DEFAULTS: Record<Provider, { style: Style; baseURL: string; model: string 
 export const PROVIDERS = Object.keys(DEFAULTS) as Provider[];
 
 /* ── per-request credential context ────────────────────────── */
-type G = typeof globalThis & { __llmStore?: AsyncLocalStorage<LlmCreds | null>; __llmRR?: number; __llmClients?: Map<string, Resolved> };
+type LlmCtx = { creds: LlmCreds | null; lang?: string };
+type G = typeof globalThis & { __llmStore?: AsyncLocalStorage<LlmCtx | null>; __llmRR?: number; __llmClients?: Map<string, Resolved> };
 const g = globalThis as G;
-const store = (g.__llmStore ??= new AsyncLocalStorage<LlmCreds | null>());
+const store = (g.__llmStore ??= new AsyncLocalStorage<LlmCtx | null>());
 
-export function withLlm<T>(creds: LlmCreds | null, fn: () => Promise<T>): Promise<T> {
-  return store.run(creds, fn);
+/**
+ * Run `fn` with the given AI credentials (null → server keys) and, optionally,
+ * the language every generation inside should be written in. Both ride an
+ * AsyncLocalStorage so complete()/streamText() pick them up without threading
+ * args through each coach function.
+ */
+export function withLlm<T>(creds: LlmCreds | null, fn: () => Promise<T>, lang?: string): Promise<T> {
+  return store.run({ creds, lang }, fn);
+}
+
+/** Prepend the active language directive to a system prompt, if a language is set. */
+function withLanguage(system: string): string {
+  const lang = store.getStore()?.lang;
+  if (!lang) return system;
+  return `${languageDirective(lang)}\n\n${system}`;
 }
 
 /** How a user's generation should be powered. */
@@ -99,7 +114,7 @@ function serverResolved(): Resolved {
 }
 
 function resolve(): Resolved {
-  const creds = store.getStore();
+  const creds = store.getStore()?.creds ?? null;
   return creds ? clientFor(creds) : serverResolved();
 }
 
@@ -123,12 +138,13 @@ export async function complete(params: {
 }): Promise<string> {
   return withQueue(async () => {
     const r = resolve();
+    const system = withLanguage(params.system);
     if (r.style === "anthropic") {
       const res = await r.client.messages.create({
         model: r.model,
         max_tokens: params.maxTokens ?? 2048,
         temperature: params.temperature ?? 0.7,
-        system: params.system,
+        system,
         messages: params.messages,
       });
       return res.content
@@ -140,7 +156,7 @@ export async function complete(params: {
       model: r.model,
       max_tokens: params.maxTokens ?? 2048,
       temperature: params.temperature ?? 0.7,
-      messages: [{ role: "system", content: params.system }, ...params.messages],
+      messages: [{ role: "system", content: system }, ...params.messages],
     });
     return res.choices[0]?.message?.content ?? "";
   });
@@ -157,13 +173,14 @@ export async function* streamText(params: {
   const release = await acquireSlot();
   try {
     const r = resolve();
+    const system = withLanguage(params.system);
     if (r.style === "anthropic") {
       const stream = await r.client.messages.create(
         {
           model: r.model,
           max_tokens: params.maxTokens ?? 2048,
           temperature: params.temperature ?? 0.7,
-          system: params.system,
+          system,
           messages: params.messages,
           stream: true,
         },
@@ -180,7 +197,7 @@ export async function* streamText(params: {
           model: r.model,
           max_tokens: params.maxTokens ?? 2048,
           temperature: params.temperature ?? 0.7,
-          messages: [{ role: "system", content: params.system }, ...params.messages],
+          messages: [{ role: "system", content: system }, ...params.messages],
           stream: true,
         },
         { signal: params.signal },

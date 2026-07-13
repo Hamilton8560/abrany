@@ -24,7 +24,7 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/goals/[id]/pla
   if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
   const goal = getGoal(Number(id))!;
   try {
-    const generated = await withLlm(llm.creds, () => generatePlan(goal));
+    const generated = await withLlm(llm.creds, () => generatePlan(goal), user.language);
     const plan = createPlan(goal.id, generated.title, generated.summary, generated.items);
     return NextResponse.json({ plan }, { status: 201 });
   } catch (err) {

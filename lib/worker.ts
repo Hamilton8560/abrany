@@ -111,7 +111,7 @@ function tick() {
     // run generation with the enqueuing user's AI credentials (owner → server env)
     const user = job.user_id ? getUser(job.user_id) : undefined;
     const creds = user ? (() => { const r = resolveUserLlm(user); return r.mode === "byo" ? r.creds : null; })() : null;
-    withLlm(creds, () => processJob(job))
+    withLlm(creds, () => processJob(job), user?.language)
       .then(() => finishJob(job.id, "done"))
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);

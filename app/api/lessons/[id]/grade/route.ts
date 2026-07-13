@@ -24,15 +24,18 @@ export async function POST(request: Request, ctx: RouteContext<"/api/lessons/[id
   if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
 
   try {
-    const grade = await withLlm(llm.creds, () =>
-      gradeReviewQuiz({
-        lessonTitle: lesson.title,
-        content: lesson.content,
-        items: items.map((it: { question?: string; answer?: string }) => ({
-          question: (it.question ?? "").toString(),
-          answer: (it.answer ?? "").toString(),
-        })),
-      }),
+    const grade = await withLlm(
+      llm.creds,
+      () =>
+        gradeReviewQuiz({
+          lessonTitle: lesson.title,
+          content: lesson.content,
+          items: items.map((it: { question?: string; answer?: string }) => ({
+            question: (it.question ?? "").toString(),
+            answer: (it.answer ?? "").toString(),
+          })),
+        }),
+      user.language,
     );
     return NextResponse.json({ grade });
   } catch (err) {

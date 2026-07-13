@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Sidebar, { MobileBar } from "@/components/app/Sidebar";
-import { getSessionUser } from "@/lib/auth";
+import ImpersonationBanner from "@/components/app/ImpersonationBanner";
+import { getAuthState } from "@/lib/auth";
 import { publicUser } from "@/lib/user";
 
 export const metadata: Metadata = {
@@ -10,16 +11,19 @@ export const metadata: Metadata = {
 };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await getSessionUser();
-  if (!user) redirect("/login");
-  const me = publicUser(user);
+  const { effective, impersonating } = await getAuthState();
+  if (!effective) redirect("/login");
+  const me = publicUser(effective);
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-[1440px]">
-      <Sidebar user={me} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileBar user={me} />
-        <main className="flex-1 px-5 pb-24 pt-6 sm:px-8 lg:pb-10 lg:pt-8">{children}</main>
+    <div className="flex min-h-dvh flex-col">
+      {impersonating && <ImpersonationBanner email={effective.email} />}
+      <div className="mx-auto flex w-full max-w-[1440px] flex-1">
+        <Sidebar user={me} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MobileBar user={me} />
+          <main className="flex-1 px-5 pb-24 pt-6 sm:px-8 lg:pb-10 lg:pt-8">{children}</main>
+        </div>
       </div>
     </div>
   );

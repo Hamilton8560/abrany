@@ -21,13 +21,16 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/lessons/[id]/q
   }
   const context = planItemWithContext(lesson.plan_item_id);
   try {
-    const questions = await withLlm(llm.creds, () =>
-      generateReviewQuiz({
-        goalTitle: context?.goal.title ?? "",
-        lessonTitle: lesson.title,
-        lessonObjective: lesson.objective,
-        content: lesson.content,
-      }),
+    const questions = await withLlm(
+      llm.creds,
+      () =>
+        generateReviewQuiz({
+          goalTitle: context?.goal.title ?? "",
+          lessonTitle: lesson.title,
+          lessonObjective: lesson.objective,
+          content: lesson.content,
+        }),
+      user.language,
     );
     return NextResponse.json({ questions });
   } catch (err) {

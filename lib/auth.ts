@@ -11,6 +11,7 @@ import { createUser, getUser, getUserByEmail, backfillOwnerData, type User } fro
  */
 
 const COOKIE = "abrany_session";
+const ACT_COOKIE = "abrany_act_as"; // owner-only: id of the user being impersonated
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 const secret = () => process.env.SESSION_SECRET ?? "insecure-dev-secret";
 
@@ -63,28 +64,65 @@ export function ensureOwner(): void {
 }
 
 /* ── cookie helpers (call inside route handlers) ───────────── */
+const cookieOpts = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: MAX_AGE,
+};
+
 export async function startSession(userId: number): Promise<void> {
   const jar = await cookies();
-  jar.set(COOKIE, sign(userId), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: MAX_AGE,
-  });
+  jar.set(COOKIE, sign(userId), cookieOpts);
+  jar.delete(ACT_COOKIE); // a fresh login never carries a stale impersonation
 }
 
 export async function endSession(): Promise<void> {
   const jar = await cookies();
   jar.delete(COOKIE);
+  jar.delete(ACT_COOKIE);
 }
 
-/** Current user from the session cookie, or null. */
-export async function getSessionUser(): Promise<User | null> {
+/**
+ * Resolve the request's real user, and the "effective" user it's acting as.
+ * Impersonation is honored ONLY when the real signed-in user is the owner, so a
+ * forged act-as cookie is worthless without the owner's session.
+ */
+export async function getAuthState(): Promise<{
+  real: User | null;
+  effective: User | null;
+  impersonating: boolean;
+}> {
   const jar = await cookies();
-  const id = verify(jar.get(COOKIE)?.value);
-  if (id == null) return null;
-  return getUser(id) ?? null;
+  const realId = verify(jar.get(COOKIE)?.value);
+  const real = realId == null ? null : getUser(realId) ?? null;
+  if (!real) return { real: null, effective: null, impersonating: false };
+  if (real.is_owner) {
+    const actId = verify(jar.get(ACT_COOKIE)?.value);
+    if (actId != null && actId !== real.id) {
+      const target = getUser(actId);
+      if (target) return { real, effective: target, impersonating: true };
+    }
+  }
+  return { real, effective: real, impersonating: false };
+}
+
+/** Current EFFECTIVE user (the impersonated user when the owner is acting as one). */
+export async function getSessionUser(): Promise<User | null> {
+  return (await getAuthState()).effective;
+}
+
+/** Owner-only: begin acting as another user. */
+export async function startImpersonation(userId: number): Promise<void> {
+  const jar = await cookies();
+  jar.set(ACT_COOKIE, sign(userId), cookieOpts);
+}
+
+/** Stop acting as another user. */
+export async function stopImpersonation(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(ACT_COOKIE);
 }
 
 export const unauthorized = () => NextResponse.json({ error: "Unauthorized" }, { status: 401 });

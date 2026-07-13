@@ -7,10 +7,13 @@ import LiquidGlass from "./LiquidGlass";
 
 const LINKS = ["Features", "Pricing", "Trainers", "Method", "Journal", "Contact"];
 
-function SocialButton({ children }: { children: React.ReactNode }) {
+function SocialButton({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
   return (
     <a
-      href="#top"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={label}
       className="glassx grid size-[38px] place-items-center rounded-full text-muted transition-colors hover:text-ink"
     >
       {children}
@@ -69,13 +72,13 @@ export default function Footer() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <SocialButton>
+            <SocialButton href="https://x.com/DavidHa61646376" label="X (Twitter)">
               <XIcon className="size-4" />
             </SocialButton>
-            <SocialButton>
+            <SocialButton href="https://www.instagram.com/fight_or_flight_0331" label="Instagram">
               <InstagramIcon className="size-4" />
             </SocialButton>
-            <SocialButton>
+            <SocialButton href="https://www.linkedin.com/in/david-hamilton-277639217/" label="LinkedIn">
               <LinkedInIcon className="size-4" />
             </SocialButton>
           </div>

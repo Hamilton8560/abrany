@@ -10,6 +10,7 @@ export type User = {
   ai_provider: string;
   ai_key: string;
   ai_model: string;
+  language: string; // ISO-ish short code (see lib/languages); '' → default 'en'
   created_at: string;
 };
 
@@ -38,6 +39,17 @@ export function setUserAiCreds(id: number, provider: string, key: string, model:
   getDb()
     .prepare("UPDATE users SET ai_provider = ?, ai_key = ?, ai_model = ? WHERE id = ?")
     .run(provider, key, model, id);
+}
+
+export function setUserLanguage(id: number, language: string): void {
+  getDb().prepare("UPDATE users SET language = ? WHERE id = ?").run(language, id);
+}
+
+/** All users (owner-only use: the impersonation / instructor picker). */
+export function listUsers(): Pick<User, "id" | "email" | "is_owner" | "language" | "created_at">[] {
+  return getDb()
+    .prepare("SELECT id, email, is_owner, language, created_at FROM users ORDER BY is_owner DESC, email")
+    .all() as Pick<User, "id" | "email" | "is_owner" | "language" | "created_at">[];
 }
 
 /* ── app settings (key/value) ──────────────────────────────── */

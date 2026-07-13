@@ -12,6 +12,8 @@ export type PublicUser = {
   freeAiAccess: boolean;
   /** This user can generate right now — own key, owner, or free access is on. */
   canUseAi: boolean;
+  /** Language code content is generated in (see lib/languages). */
+  language: string;
 };
 
 export function publicUser(u: User): PublicUser {
@@ -26,5 +28,6 @@ export function publicUser(u: User): PublicUser {
     hasKey,
     freeAiAccess,
     canUseAi: hasKey || freeAiAccess,
+    language: u.language || "en",
   };
 }

@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { Message } from "@/lib/repo";
+import type { PublicUser } from "@/lib/user";
+import { languageName } from "@/lib/languages";
 import { BrainGlyph, SendIcon } from "@/components/icons";
 import Markdown from "./Markdown";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
+type Mismatch = { code: string; name: string };
 
 const STARTERS = [
   "I want to learn all of math — where do I even start?",
@@ -20,6 +23,8 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [myLang, setMyLang] = useState("en");
+  const [pending, setPending] = useState<{ text: string; mismatch: Mismatch } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -28,15 +33,25 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
       .then((d) => setMessages(d.messages.map((m) => ({ role: m.role, content: m.content }))))
       .catch(() => {})
       .finally(() => setLoaded(true));
+    api<{ user: PublicUser }>("/api/auth/me")
+      .then((d) => setMyLang(d.user?.language || "en"))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, streaming]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, opts?: { confirmLang?: boolean; setLangTo?: string }) => {
     const content = text.trim();
     if (!content || streaming) return;
+
+    // switch the preference first if the user chose to
+    if (opts?.setLangTo) {
+      await api("/api/settings/language", { method: "POST", body: JSON.stringify({ language: opts.setLangTo }) }).catch(() => {});
+      setMyLang(opts.setLangTo);
+    }
+
     setInput("");
     setMessages((m) => [...m, { role: "user", content }, { role: "assistant", content: "" }]);
     setStreaming(true);
@@ -47,9 +62,20 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content, goalId: goalId ?? null }),
+        body: JSON.stringify({ message: content, goalId: goalId ?? null, confirmLang: opts?.confirmLang ?? false }),
         signal: ctrl.signal,
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 409 && data.languageMismatch) {
+          // roll back the optimistic bubbles and ask before generating
+          setMessages((m) => m.slice(0, -2));
+          setInput(content);
+          setPending({ text: content, mismatch: data.languageMismatch as Mismatch });
+          return;
+        }
+        throw new Error((data as { error?: string }).error || "Coach is unavailable");
+      }
       if (!res.body) throw new Error("No response stream");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -74,7 +100,7 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
           if (last && last.role === "assistant" && !last.content) {
             copy[copy.length - 1] = {
               role: "assistant",
-              content: "⚠️ Coach is unavailable right now. Try again in a moment.",
+              content: `⚠️ ${(e as Error).message || "Coach is unavailable right now. Try again in a moment."}`,
             };
           }
           return copy;
@@ -157,6 +183,53 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
           </button>
         </div>
       </form>
+
+      {pending && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-ink/30 p-4 backdrop-blur-sm"
+          onClick={() => setPending(null)}
+        >
+          <div
+            className="glass w-full max-w-[420px] rounded-[var(--radius-card-lg)] p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-[20px] font-extrabold uppercase text-ink">Switch language?</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-muted">
+              You&apos;re writing in <span className="font-semibold text-ink">{pending.mismatch.name}</span>, but
+              your content language is set to <span className="font-semibold text-ink">{languageName(myLang)}</span>.
+              Switch to {pending.mismatch.name} so everything is generated in it?
+            </p>
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  const p = pending;
+                  setPending(null);
+                  send(p.text, { confirmLang: true, setLangTo: p.mismatch.code });
+                }}
+                className="glassx-dark rounded-full px-5 py-3 text-[13px] font-semibold text-white"
+              >
+                {`Switch to ${pending.mismatch.name} & continue`}
+              </button>
+              <button
+                onClick={() => {
+                  const p = pending;
+                  setPending(null);
+                  send(p.text, { confirmLang: true });
+                }}
+                className="glassx rounded-full px-5 py-3 text-[13px] font-semibold text-ink"
+              >
+                Keep {languageName(myLang)}
+              </button>
+              <button
+                onClick={() => setPending(null)}
+                className="px-5 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,8 +15,10 @@ export async function POST(request: Request) {
   const title = (body.title ?? "").toString().trim();
   if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });
   try {
-    const verdict = await withLlm(llm.creds, () =>
-      assessScope({ title, description: (body.description ?? "").toString() }),
+    const verdict = await withLlm(
+      llm.creds,
+      () => assessScope({ title, description: (body.description ?? "").toString() }),
+      user.language,
     );
     return NextResponse.json({ verdict });
   } catch {
