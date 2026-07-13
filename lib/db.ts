@@ -179,6 +179,8 @@ function migrate(db: DatabaseSync) {
   addCol("threads", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   addCol("presentations", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   addCol("books", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+  // lesson completion: set when the user reads/marks a section done (null = not done)
+  addCol("lessons", "completed_at", "completed_at TEXT");
   // spaced-repetition state (null due = not enrolled in reviews)
   addCol("lessons", "srs_due", "srs_due TEXT");
   addCol("lessons", "srs_interval", "srs_interval REAL NOT NULL DEFAULT 0");

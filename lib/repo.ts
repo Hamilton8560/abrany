@@ -136,6 +136,7 @@ export type Lesson = {
   error: string;
   needs_current: number; // 0/1 — flagged for web-grounding
   sources: string; // JSON array of {title,url,description}
+  completed_at: string | null; // null = not yet read/marked done
   srs_due: string | null; // null = not enrolled in spaced review
   srs_interval: number;
   srs_ease: number;
@@ -179,6 +180,12 @@ export type PlanItem = {
   estimate: string;
   order_index: number;
   status: "todo" | "doing" | "done";
+};
+
+/** A milestone plus how many of its lessons exist / are completed (for progress). */
+export type PlanItemWithProgress = PlanItem & {
+  lessons_total: number;
+  lessons_done: number;
 };
 
 export type Session = {
@@ -260,14 +267,19 @@ export function deleteGoal(id: number): void {
 /* ── Plans ─────────────────────────────────────────────── */
 
 /** Latest plan for a goal (MVP: one active plan, newest wins). */
-export function getPlanForGoal(goalId: number): (Plan & { items: PlanItem[] }) | undefined {
+export function getPlanForGoal(goalId: number): (Plan & { items: PlanItemWithProgress[] }) | undefined {
   const plan = getDb()
     .prepare("SELECT * FROM plans WHERE goal_id = ? ORDER BY created_at DESC, id DESC LIMIT 1")
     .get(goalId) as Plan | undefined;
   if (!plan) return undefined;
   const items = getDb()
-    .prepare("SELECT * FROM plan_items WHERE plan_id = ? ORDER BY order_index, id")
-    .all(plan.id) as PlanItem[];
+    .prepare(
+      `SELECT pi.*,
+         (SELECT COUNT(*) FROM lessons l WHERE l.plan_item_id = pi.id) AS lessons_total,
+         (SELECT COUNT(*) FROM lessons l WHERE l.plan_item_id = pi.id AND l.completed_at IS NOT NULL) AS lessons_done
+       FROM plan_items pi WHERE pi.plan_id = ? ORDER BY pi.order_index, pi.id`,
+    )
+    .all(plan.id) as PlanItemWithProgress[];
   return { ...plan, items };
 }
 
@@ -425,6 +437,14 @@ export function setLessonStatus(id: number, status: Lesson["status"], error = ""
   getDb()
     .prepare("UPDATE lessons SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
     .run(status, error, id);
+}
+
+/** Mark a lesson (small section) read/done, or clear it. Returns the updated row. */
+export function setLessonCompleted(id: number, done: boolean): Lesson | undefined {
+  getDb()
+    .prepare("UPDATE lessons SET completed_at = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(done ? new Date().toISOString() : null, id);
+  return getLesson(id);
 }
 
 export function setLessonContent(id: number, content: string, sources: object[] = []): void {

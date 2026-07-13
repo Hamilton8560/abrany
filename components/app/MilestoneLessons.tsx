@@ -20,9 +20,11 @@ const kindLabel = (k: string) => KIND_LABEL[k as Lesson["kind"]] ?? "Lesson";
 export default function MilestoneLessons({
   planItemId,
   milestoneTitle,
+  onProgress,
 }: {
   planItemId: number;
   milestoneTitle: string;
+  onProgress?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
@@ -30,6 +32,23 @@ export default function MilestoneLessons({
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Lesson | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Mark a section read/done (optimistic) and let the parent refresh the plan %.
+  const setDone = useCallback(
+    async (lesson: Lesson, done: boolean) => {
+      setLessons((ls) =>
+        ls?.map((l) => (l.id === lesson.id ? { ...l, completed_at: done ? new Date().toISOString() : null } : l)) ?? ls,
+      );
+      setViewing((v) => (v && v.id === lesson.id ? { ...v, completed_at: done ? new Date().toISOString() : null } : v));
+      try {
+        await api(`/api/lessons/${lesson.id}`, { method: "PATCH", body: JSON.stringify({ done }) });
+        onProgress?.();
+      } catch {
+        setLessons((ls) => ls?.map((l) => (l.id === lesson.id ? { ...l, completed_at: lesson.completed_at } : l)) ?? ls);
+      }
+    },
+    [onProgress],
+  );
 
   const refresh = useCallback(async () => {
     const d = await api<{ lessons: Lesson[] }>(`/api/plan-items/${planItemId}/lessons`);
@@ -97,20 +116,29 @@ export default function MilestoneLessons({
     refresh().catch(() => {});
   };
 
-  const readyCount = lessons?.filter((l) => l.status === "ready").length ?? 0;
   const total = lessons?.length ?? 0;
+  const doneCount = lessons?.filter((l) => l.completed_at).length ?? 0;
+  const readyCount = lessons?.filter((l) => l.status === "ready").length ?? 0;
   const anyPending = lessons?.some((l) => l.status === "queued" || l.status === "generating");
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   return (
     <div className="mt-2.5 border-t border-line/60 pt-2.5">
       <button
         onClick={toggle}
-        className="flex w-full items-center justify-between text-left text-[12px] font-semibold text-accent"
+        className="flex w-full items-center justify-between gap-3 text-left text-[12px] font-semibold text-accent"
       >
         <span>
-          {total > 0 ? `Lessons · ${readyCount}/${total} ready` : "Break into lessons & study"}
+          {total > 0 ? `Sections · ${doneCount}/${total} done` : "Break into lessons & study"}
         </span>
-        <ChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="flex items-center gap-2">
+          {total > 0 && (
+            <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-line sm:block">
+              <span className="block h-full rounded-full bg-up transition-all" style={{ width: `${pct}%` }} />
+            </span>
+          )}
+          <ChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+        </span>
       </button>
 
       {open && (
@@ -138,39 +166,64 @@ export default function MilestoneLessons({
                 )}
               </div>
               <ul className="flex flex-col gap-2">
-                {lessons.map((l) => (
-                  <li
-                    key={l.id}
-                    className="flex items-center gap-3 rounded-[12px] bg-white/60 px-3.5 py-2.5"
-                  >
-                    <span
-                      className={`grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-bold ${
-                        l.status === "ready" ? "bg-up/15 text-up" : "bg-accent/12 text-accent"
-                      }`}
+                {lessons.map((l) => {
+                  const done = !!l.completed_at;
+                  const canComplete = l.status === "ready";
+                  return (
+                    <li
+                      key={l.id}
+                      className="flex items-center gap-3 rounded-[12px] bg-white/60 px-3.5 py-2.5"
                     >
-                      {l.status === "ready" ? <CheckIcon className="size-3.5" /> : null}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-medium text-ink">{l.title}</p>
-                      <p className="flex items-center gap-1.5 text-[10.5px] text-muted">
-                        {kindLabel(l.kind)}
-                        {l.needs_current ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-1.5 py-0.5 font-semibold text-accent">
-                            <span className="size-1 rounded-full bg-accent" /> Live sources
-                          </span>
-                        ) : null}
-                      </p>
-                    </div>
-                    <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
-                  </li>
-                ))}
+                      {canComplete || done ? (
+                        <button
+                          onClick={() => setDone(l, !done)}
+                          aria-label={done ? "Mark section not done" : "Mark section done"}
+                          className={`grid size-6 shrink-0 place-items-center rounded-full border transition-all ${
+                            done
+                              ? "border-up bg-up text-white"
+                              : "border-line bg-white text-transparent hover:border-up"
+                          }`}
+                        >
+                          <CheckIcon className="size-3.5" />
+                        </button>
+                      ) : (
+                        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent/12 text-accent">
+                          {l.status === "queued" || l.status === "generating" ? (
+                            <span className="size-2 animate-pulse rounded-full bg-accent" />
+                          ) : null}
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate text-[13px] font-medium ${done ? "text-muted line-through" : "text-ink"}`}>
+                          {l.title}
+                        </p>
+                        <p className="flex items-center gap-1.5 text-[10.5px] text-muted">
+                          {kindLabel(l.kind)}
+                          {done && <span className="font-semibold text-up">· Done</span>}
+                          {l.needs_current ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-1.5 py-0.5 font-semibold text-accent">
+                              <span className="size-1 rounded-full bg-accent" /> Live sources
+                            </span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
         </div>
       )}
 
-      {viewing && <LessonViewer lesson={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <LessonViewer
+          lesson={viewing}
+          onClose={() => setViewing(null)}
+          onSetDone={(done) => setDone(viewing, done)}
+        />
+      )}
     </div>
   );
 }
@@ -216,9 +269,27 @@ function LessonAction({
   );
 }
 
-function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) {
+function LessonViewer({
+  lesson,
+  onClose,
+  onSetDone,
+}: {
+  lesson: Lesson;
+  onClose: () => void;
+  onSetDone: (done: boolean) => void;
+}) {
   const [enrolled, setEnrolled] = useState(lesson.srs_due != null);
   const [busy, setBusy] = useState(false);
+  const done = !!lesson.completed_at;
+
+  // Reading a section completes it — auto-mark done on open (once) if it has content.
+  const autoMarked = useRef(false);
+  useEffect(() => {
+    if (!autoMarked.current && lesson.content && !lesson.completed_at) {
+      autoMarked.current = true;
+      onSetDone(true);
+    }
+  }, [lesson.content, lesson.completed_at, onSetDone]);
 
   const toggleEnroll = async () => {
     setBusy(true);
@@ -252,6 +323,15 @@ function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void
             </h3>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            <button
+              onClick={() => onSetDone(!done)}
+              title={done ? "Marked done — click to undo" : "Mark this section done"}
+              className={`rounded-full px-3 py-1.5 text-[12px] font-semibold ${
+                done ? "bg-up/15 text-up" : "glassx text-ink"
+              }`}
+            >
+              {done ? "✓ Done" : "Mark done"}
+            </button>
             <button
               onClick={toggleEnroll}
               disabled={busy}

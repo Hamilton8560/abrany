@@ -4,11 +4,11 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
-import type { Goal, Plan, PlanItem } from "@/lib/repo";
+import type { Goal, Plan, PlanItem, PlanItemWithProgress } from "@/lib/repo";
 import { ArrowRight, CheckIcon, TargetIcon } from "@/components/icons";
 import MilestoneLessons from "@/components/app/MilestoneLessons";
 
-type FullPlan = Plan & { items: PlanItem[] };
+type FullPlan = Plan & { items: PlanItemWithProgress[] };
 type GoalResp = { goal: Goal; plan: FullPlan | null; children: Goal[] };
 
 export default function GoalDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -74,9 +74,26 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   if (!goal) return <p className="text-[14px] text-muted">Goal not found.</p>;
 
   const isUmbrella = children.length > 0;
-  const doneCount = plan?.items.filter((i) => i.status === "done").length ?? 0;
-  const total = plan?.items.length ?? 0;
-  const progress = total ? Math.round((doneCount / total) * 100) : 0;
+  const items = plan?.items ?? [];
+  const total = items.length;
+  // Section-weighted progress: a milestone split into lessons counts each read
+  // section; an un-expanded milestone counts as one unit (done when checked).
+  let units = 0;
+  let unitsDone = 0;
+  let sectionsTotal = 0;
+  let sectionsDone = 0;
+  for (const it of items) {
+    if (it.lessons_total > 0) {
+      units += it.lessons_total;
+      unitsDone += it.lessons_done;
+      sectionsTotal += it.lessons_total;
+      sectionsDone += it.lessons_done;
+    } else {
+      units += 1;
+      unitsDone += it.status === "done" ? 1 : 0;
+    }
+  }
+  const progress = units ? Math.round((unitsDone / units) * 100) : 0;
 
   return (
     <div className="mx-auto flex max-w-[760px] flex-col gap-7">
@@ -102,16 +119,21 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
         </div>
 
         {total > 0 && (
-          <div className="flex items-center gap-3">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-line">
-              <div
-                className="h-full rounded-full bg-accent transition-all"
-                style={{ width: `${progress}%` }}
-              />
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-3">
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-accent transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-[12px] font-semibold text-ink">{progress}%</span>
             </div>
-            <span className="text-[12px] font-semibold text-ink">
-              {doneCount}/{total}
-            </span>
+            <p className="text-[11px] text-muted">
+              {sectionsTotal > 0
+                ? `${sectionsDone}/${sectionsTotal} sections read`
+                : "Break a milestone into sections and check them off as you read"}
+            </p>
           </div>
         )}
 
@@ -264,7 +286,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                       {item.detail && (
                         <p className="mt-1 text-[13px] leading-snug text-muted">{item.detail}</p>
                       )}
-                      <MilestoneLessons planItemId={item.id} milestoneTitle={item.title} />
+                      <MilestoneLessons planItemId={item.id} milestoneTitle={item.title} onProgress={load} />
                     </div>
                   </li>
                 );

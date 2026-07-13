@@ -67,12 +67,12 @@ export default function Sidebar({ user }: { user: PublicUser }) {
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col gap-8 p-5 lg:flex">
-      <div className="glass flex h-full flex-col gap-7 rounded-[var(--radius-card-lg)] p-5">
-        <div className="px-1 pt-1">
+      <div className="glass flex h-full min-h-0 flex-col gap-7 overflow-hidden rounded-[var(--radius-card-lg)] p-5">
+        <div className="shrink-0 px-1 pt-1">
           <Logo />
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1.5">
+        <nav className="-mr-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-2">
           {NAV.map(({ href, label, Icon }) => {
             const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
             return (
@@ -101,7 +101,7 @@ export default function Sidebar({ user }: { user: PublicUser }) {
           })}
         </nav>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex shrink-0 flex-col gap-3">
           <QueueBadge />
           <Link
             href="/app/settings"
