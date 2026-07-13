@@ -19,6 +19,17 @@ function migrate(db: DatabaseSync) {
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
 
+    CREATE TABLE IF NOT EXISTS users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      is_owner      INTEGER NOT NULL DEFAULT 0,
+      ai_provider   TEXT NOT NULL DEFAULT '',  -- minimax|kimi|deepseek|openrouter (Phase 3)
+      ai_key        TEXT NOT NULL DEFAULT '',
+      ai_model      TEXT NOT NULL DEFAULT '',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS goals (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       title       TEXT NOT NULL,

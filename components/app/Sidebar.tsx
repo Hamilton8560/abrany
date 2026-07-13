@@ -14,8 +14,10 @@ import {
   ReviewIcon,
   SlidesIcon,
   BookIcon,
+  SettingsIcon,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
+import type { PublicUser } from "@/lib/user";
 
 const NAV: { href: string; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
   { href: "/app", label: "Dashboard", Icon: HomeIcon },
@@ -48,7 +50,12 @@ function useDueCount() {
   return due;
 }
 
-export default function Sidebar() {
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
+export default function Sidebar({ user }: { user: PublicUser }) {
   const pathname = usePathname();
   const due = useDueCount();
 
@@ -90,9 +97,32 @@ export default function Sidebar() {
 
         <div className="flex flex-col gap-3">
           <QueueBadge />
-          <p className="px-1 text-[10.5px] leading-relaxed text-muted/80">
-            Powered by MiniMax M3 · your training data lives locally.
-          </p>
+          <Link
+            href="/app/settings"
+            className={`flex items-center gap-3 rounded-[13px] px-3 py-2.5 text-[13.5px] transition-all ${
+              pathname.startsWith("/app/settings")
+                ? "glassx-dark font-semibold text-white"
+                : "font-medium text-muted hover:bg-white/50 hover:text-ink"
+            }`}
+          >
+            <SettingsIcon className="size-[18px]" />
+            AI & Settings
+            {!user.hasKey && <span className="ml-auto size-2 rounded-full bg-accent" />}
+          </Link>
+          <div className="flex items-center justify-between gap-2 px-1">
+            <div className="min-w-0">
+              <p className="truncate text-[11.5px] font-medium text-ink">{user.email}</p>
+              <p className="text-[10px] text-muted">
+                {user.isOwner ? "Owner · built-in AI" : user.hasKey ? user.provider || "your key" : "add your AI key"}
+              </p>
+            </div>
+            <button
+              onClick={logout}
+              className="shrink-0 text-[11px] font-semibold text-muted hover:text-accent"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </div>
     </aside>

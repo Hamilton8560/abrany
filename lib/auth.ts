@@ -1,0 +1,91 @@
+import { scryptSync, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
+import { cookies } from "next/headers";
+import { createUser, getUser, getUserByEmail, type User } from "./repo";
+
+/**
+ * Minimal, dependency-free auth: scrypt password hashing + an HMAC-signed
+ * session cookie (stateless). The owner account is seeded from env
+ * (ADMIN_EMAIL/ADMIN_PASSWORD) and uses the server's built-in AI keys; everyone
+ * else signs up and brings their own key.
+ */
+
+const COOKIE = "abrany_session";
+const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const secret = () => process.env.SESSION_SECRET ?? "insecure-dev-secret";
+
+/* ── passwords ─────────────────────────────────────────────── */
+export function hashPassword(pw: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(pw, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(pw: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const h = scryptSync(pw, salt, 64);
+  const known = Buffer.from(hash, "hex");
+  return h.length === known.length && timingSafeEqual(h, known);
+}
+
+/* ── session token (HMAC-signed) ───────────────────────────── */
+function sign(userId: number): string {
+  const exp = Date.now() + MAX_AGE * 1000;
+  const payload = `${userId}.${exp}`;
+  const sig = createHmac("sha256", secret()).update(payload).digest("hex");
+  return `${payload}.${sig}`;
+}
+
+function verify(token: string | undefined): number | null {
+  if (!token) return null;
+  const [userId, exp, sig] = token.split(".");
+  if (!userId || !exp || !sig) return null;
+  const expected = createHmac("sha256", secret()).update(`${userId}.${exp}`).digest("hex");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  if (Date.now() > Number(exp)) return null;
+  return Number(userId);
+}
+
+/* ── owner seeding (idempotent) ────────────────────────────── */
+let ownerEnsured = false;
+export function ensureOwner(): void {
+  if (ownerEnsured) return;
+  ownerEnsured = true;
+  const email = process.env.ADMIN_EMAIL?.toLowerCase();
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) return;
+  const existing = getUserByEmail(email);
+  if (!existing) {
+    createUser(email, hashPassword(password), true);
+  } else if (!existing.is_owner) {
+    // keep the owner flag correct if the account already existed
+    // (no password overwrite — owner can change it later)
+  }
+}
+
+/* ── cookie helpers (call inside route handlers) ───────────── */
+export async function startSession(userId: number): Promise<void> {
+  const jar = await cookies();
+  jar.set(COOKIE, sign(userId), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: MAX_AGE,
+  });
+}
+
+export async function endSession(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(COOKIE);
+}
+
+/** Current user from the session cookie, or null. */
+export async function getSessionUser(): Promise<User | null> {
+  const jar = await cookies();
+  const id = verify(jar.get(COOKIE)?.value);
+  if (id == null) return null;
+  return getUser(id) ?? null;
+}

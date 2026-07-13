@@ -1,5 +1,45 @@
 import { getDb } from "./db";
 
+/* ── Users / auth ──────────────────────────────────────────── */
+
+export type User = {
+  id: number;
+  email: string;
+  password_hash: string;
+  is_owner: number;
+  ai_provider: string;
+  ai_key: string;
+  ai_model: string;
+  created_at: string;
+};
+
+export function createUser(email: string, passwordHash: string, isOwner = false): User {
+  const info = getDb()
+    .prepare("INSERT INTO users (email, password_hash, is_owner) VALUES (?, ?, ?)")
+    .run(email.toLowerCase(), passwordHash, isOwner ? 1 : 0);
+  return getUser(Number(info.lastInsertRowid))!;
+}
+
+export function getUser(id: number): User | undefined {
+  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;
+}
+
+export function getUserByEmail(email: string): User | undefined {
+  return getDb().prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()) as
+    | User
+    | undefined;
+}
+
+export function setUserPassword(id: number, passwordHash: string): void {
+  getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, id);
+}
+
+export function setUserAiCreds(id: number, provider: string, key: string, model: string): void {
+  getDb()
+    .prepare("UPDATE users SET ai_provider = ?, ai_key = ?, ai_model = ? WHERE id = ?")
+    .run(provider, key, model, id);
+}
+
 export type Goal = {
   id: number;
   title: string;
