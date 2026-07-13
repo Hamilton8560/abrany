@@ -2,32 +2,70 @@ import Anthropic from "@anthropic-ai/sdk";
 import { acquireSlot, withQueue } from "./queue";
 
 /**
- * MiniMax exposes an Anthropic-compatible endpoint, so we drive it with the
- * official Anthropic SDK pointed at MiniMax's base URL. Every call routes
- * through the shared concurrency queue (see ./queue).
+ * LLM layer. Both MiniMax and Kimi Code expose Anthropic-compatible endpoints,
+ * so one Anthropic SDK client drives either. `LLM_PROVIDER` selects:
+ *   - "minimax" (default) — MiniMax M3
+ *   - "kimi"              — Kimi Code (K2.7 Code)
+ *   - "balanced"          — round-robin per call, to spread load across BOTH
+ *     coding-plan subscriptions and ease each one's shared concurrency limit.
+ * Every call still routes through the shared concurrency queue (see ./queue).
+ * (File name kept as minimax.ts to avoid churn; it's the general LLM layer.)
  */
 
-export const MODEL = process.env.MINIMAX_MODEL ?? "MiniMax-M3";
+type ProviderName = "minimax" | "kimi";
 
-type Global = typeof globalThis & { __abranyMinimax?: Anthropic };
+type Provider = { name: ProviderName; client: Anthropic; model: string };
+
+type Global = typeof globalThis & {
+  __llmClients?: Partial<Record<ProviderName, Provider>>;
+  __llmRR?: number;
+};
 const g = globalThis as Global;
 
-export function getClient(): Anthropic {
-  if (g.__abranyMinimax) return g.__abranyMinimax;
-  const apiKey = process.env.MINIMAX_API_KEY;
-  if (!apiKey) throw new Error("MINIMAX_API_KEY is not set");
-  const client = new Anthropic({
-    apiKey,
+function build(name: ProviderName): Provider {
+  if (!g.__llmClients) g.__llmClients = {};
+  const cached = g.__llmClients[name];
+  if (cached) return cached;
+
+  let client: Anthropic;
+  let model: string;
+  if (name === "kimi") {
+    const apiKey = process.env.KIMI_API_KEY;
+    if (!apiKey) throw new Error("KIMI_API_KEY is not set");
+    client = new Anthropic({ apiKey, baseURL: process.env.KIMI_BASE_URL ?? "https://api.kimi.com/coding" });
+    model = process.env.KIMI_MODEL ?? "k2.7-code";
+  } else {
+    const apiKey = process.env.MINIMAX_API_KEY;
+    if (!apiKey) throw new Error("MINIMAX_API_KEY is not set");
     // NB: the Anthropic SDK appends `/v1/messages`, so the base must NOT include `/v1`.
-    baseURL: process.env.MINIMAX_BASE_URL ?? "https://api.minimax.io/anthropic",
-  });
-  g.__abranyMinimax = client;
-  return client;
+    client = new Anthropic({ apiKey, baseURL: process.env.MINIMAX_BASE_URL ?? "https://api.minimax.io/anthropic" });
+    model = process.env.MINIMAX_MODEL ?? "MiniMax-M3";
+  }
+  const provider: Provider = { name, client, model };
+  g.__llmClients[name] = provider;
+  return provider;
+}
+
+/** Pick the provider for this call, honoring LLM_PROVIDER (incl. round-robin balancing). */
+function pick(): Provider {
+  const mode = (process.env.LLM_PROVIDER ?? "minimax").toLowerCase();
+  if (mode === "kimi") return build("kimi");
+  if (mode === "balanced") {
+    g.__llmRR = (g.__llmRR ?? 0) + 1;
+    return build(g.__llmRR % 2 === 0 ? "minimax" : "kimi");
+  }
+  return build("minimax");
+}
+
+export function activeProviderInfo(): { mode: string; providers: string[] } {
+  const mode = (process.env.LLM_PROVIDER ?? "minimax").toLowerCase();
+  const providers = mode === "balanced" ? ["minimax", "kimi"] : [mode === "kimi" ? "kimi" : "minimax"];
+  return { mode, providers };
 }
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
-/** Non-streaming completion (used for structured plan generation). Queued + retried. */
+/** Non-streaming completion (used for structured generation). Queued + retried. */
 export async function complete(params: {
   system: string;
   messages: ChatMessage[];
@@ -35,8 +73,9 @@ export async function complete(params: {
   temperature?: number;
 }): Promise<string> {
   return withQueue(async () => {
-    const res = await getClient().messages.create({
-      model: MODEL,
+    const { client, model } = pick();
+    const res = await client.messages.create({
+      model,
       max_tokens: params.maxTokens ?? 2048,
       temperature: params.temperature ?? 0.7,
       system: params.system,
@@ -51,7 +90,7 @@ export async function complete(params: {
 
 /**
  * Streaming completion. Holds a concurrency slot for the whole stream and
- * yields text deltas. The slot is released when iteration finishes or aborts.
+ * yields text deltas (thinking deltas are ignored). Slot released on finish/abort.
  */
 export async function* streamText(params: {
   system: string;
@@ -62,9 +101,10 @@ export async function* streamText(params: {
 }): AsyncGenerator<string, void, unknown> {
   const release = await acquireSlot();
   try {
-    const stream = await getClient().messages.create(
+    const { client, model } = pick();
+    const stream = await client.messages.create(
       {
-        model: MODEL,
+        model,
         max_tokens: params.maxTokens ?? 2048,
         temperature: params.temperature ?? 0.7,
         system: params.system,
