@@ -416,4 +416,59 @@ Rules: each slide is a SLIDE, not an essay — a heading plus a few bullets or o
   return { title, content: clean };
 }
 
+/* ── Books: outline, then chapter-by-chapter (bounded context) ── */
+
+export async function generateBookOutline(ctx: {
+  brief: string;
+}): Promise<{ title: string; chapters: { title: string; summary: string }[] }> {
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+You are outlining a BOOK. Respond with ONLY JSON, no prose or fences:
+{ "title": "book title", "chapters": [ { "title": "chapter title", "summary": "1-2 sentences on what this chapter covers" } ] }
+Rules: 6 to 14 chapters in a logical progression (foundations → advanced → synthesis). Titles concrete and specific to the topic. This is a real book, so the arc should build.`,
+    maxTokens: 2000,
+    temperature: 0.6,
+    messages: [{ role: "user", content: `Outline a book about: ${ctx.brief}` }],
+  });
+  let parsed: { title?: unknown; chapters?: unknown };
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    throw new Error("Coach returned an unparseable outline");
+  }
+  const chapters = (Array.isArray(parsed.chapters) ? parsed.chapters : [])
+    .filter((c): c is { title: string; summary?: string } => !!c && typeof (c as { title?: unknown }).title === "string" && !!(c as { title: string }).title.trim())
+    .slice(0, 16)
+    .map((c) => ({ title: c.title.slice(0, 160), summary: (c.summary ?? "").toString().slice(0, 300) }));
+  if (!chapters.length) throw new Error("Coach returned no chapters");
+  return {
+    title: (typeof parsed.title === "string" && parsed.title.trim() ? parsed.title : ctx.brief).slice(0, 160),
+    chapters,
+  };
+}
+
+export async function generateChapter(ctx: {
+  bookTitle: string;
+  bookBrief: string;
+  chapterNumber: number;
+  chapterTitle: string;
+  chapterSummary: string;
+  outlineTitles: string[];
+}): Promise<string> {
+  return complete({
+    system: `${COACH_SYSTEM}
+
+You are writing ONE chapter of a book — the real prose a reader reads, not an outline. Write in flowing, engaging narrative prose (not just bullet lists), with a few "## " section subheadings to structure it, concrete examples and analogies, and — only where a concept is genuinely structural or visual — a \`\`\`mermaid or \`\`\`arch diagram (same rules as elsewhere). Do NOT restate the whole book; write THIS chapter, assuming the reader has read the earlier ones. Do not include the chapter number/title as an H1 (the reader shows it). Aim for a substantial, complete chapter.`,
+    maxTokens: 4096,
+    temperature: 0.7,
+    messages: [
+      {
+        role: "user",
+        content: `Book: "${ctx.bookTitle}"\nAbout: ${ctx.bookBrief}\nFull chapter list: ${ctx.outlineTitles.map((t, i) => `${i + 1}. ${t}`).join(" | ")}\n\nWrite Chapter ${ctx.chapterNumber}: "${ctx.chapterTitle}".\nThis chapter covers: ${ctx.chapterSummary}\n\nWrite the chapter now.`,
+      },
+    ],
+  });
+}
+
 export { type ChatMessage };

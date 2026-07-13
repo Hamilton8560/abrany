@@ -106,6 +106,31 @@ function migrate(db: DatabaseSync) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- long-form books: outline of chapters, each generated independently
+    CREATE TABLE IF NOT EXISTS books (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      title      TEXT NOT NULL,
+      brief      TEXT NOT NULL DEFAULT '',
+      status     TEXT NOT NULL DEFAULT 'outlining', -- outlining|ready|error
+      error      TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS chapters (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id     INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      title       TEXT NOT NULL,
+      summary     TEXT NOT NULL DEFAULT '',
+      order_index INTEGER NOT NULL DEFAULT 0,
+      status      TEXT NOT NULL DEFAULT 'stub',       -- stub|queued|generating|ready|error
+      content     TEXT NOT NULL DEFAULT '',
+      error       TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chapters_book ON chapters(book_id);
+
     -- durable async job queue drained by the background worker
     CREATE TABLE IF NOT EXISTS jobs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,

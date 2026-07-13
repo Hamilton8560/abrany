@@ -21,4 +21,4 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [ ] Real image diagrams (Higgsfield / MiniMax Image — paid, on demand)
 - [x] Presentations (AI markdown decks, diagrams, present + PDF)
 - [x] Kimi Code as swappable / load-balanced 2nd LLM provider
-- [ ] Book-writing (later)
+- [x] Book-writing (outline → async chapters → reader)

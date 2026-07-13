@@ -13,6 +13,7 @@ import {
   JournalIcon,
   ReviewIcon,
   SlidesIcon,
+  BookIcon,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 
@@ -23,6 +24,7 @@ const NAV: { href: string; label: string; Icon: ComponentType<SVGProps<SVGSVGEle
   { href: "/app/review", label: "Review", Icon: ReviewIcon },
   { href: "/app/coach", label: "Coach", Icon: ChatIcon },
   { href: "/app/presentations", label: "Presentations", Icon: SlidesIcon },
+  { href: "/app/books", label: "Books", Icon: BookIcon },
   { href: "/app/log", label: "Training Log", Icon: JournalIcon },
 ];
 

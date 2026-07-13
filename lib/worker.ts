@@ -12,9 +12,13 @@ import {
   setPresentationContent,
   setPresentationStatus,
   getGoal,
+  chapterWithBook,
+  listChapters,
+  setChapterStatus,
+  setChapterContent,
   type Job,
 } from "./repo";
-import { generateLessonContent, generatePresentation } from "./coach";
+import { generateLessonContent, generatePresentation, generateChapter } from "./coach";
 import { braveSearch } from "./search";
 
 /**
@@ -72,6 +76,24 @@ async function processJob(job: Job): Promise<void> {
     return;
   }
 
+  if (job.type === "generate_chapter") {
+    const { chapterId } = JSON.parse(job.payload) as { chapterId: number };
+    const ctx = chapterWithBook(chapterId);
+    if (!ctx) return;
+    setChapterStatus(chapterId, "generating");
+    const outlineTitles = listChapters(ctx.book.id).map((c) => c.title);
+    const content = await generateChapter({
+      bookTitle: ctx.book.title,
+      bookBrief: ctx.book.brief,
+      chapterNumber: ctx.chapter.order_index + 1,
+      chapterTitle: ctx.chapter.title,
+      chapterSummary: ctx.chapter.summary,
+      outlineTitles,
+    });
+    setChapterContent(chapterId, content);
+    return;
+  }
+
   throw new Error(`Unknown job type: ${job.type}`);
 }
 
@@ -92,9 +114,14 @@ function tick() {
         if (finalError) finishJob(job.id, "error", msg);
         else requeueJob(job.id, msg);
         try {
-          const payload = JSON.parse(job.payload) as { lessonId?: number; presentationId?: number };
-          if (payload.lessonId) setLessonStatus(payload.lessonId, finalError ? "error" : "queued", finalError ? msg : "");
-          if (payload.presentationId && finalError) setPresentationStatus(payload.presentationId, "error", msg);
+          const p = JSON.parse(job.payload) as {
+            lessonId?: number;
+            presentationId?: number;
+            chapterId?: number;
+          };
+          if (p.lessonId) setLessonStatus(p.lessonId, finalError ? "error" : "queued", finalError ? msg : "");
+          if (p.presentationId && finalError) setPresentationStatus(p.presentationId, "error", msg);
+          if (p.chapterId) setChapterStatus(p.chapterId, finalError ? "error" : "queued", finalError ? msg : "");
         } catch {
           /* ignore */
         }
@@ -126,6 +153,14 @@ export function enqueueLesson(lessonId: number): Job {
 export function enqueuePresentation(presentationId: number): Job {
   setPresentationStatus(presentationId, "generating");
   const job = enqueueJobRow("generate_presentation", { presentationId });
+  ensureWorker();
+  return job;
+}
+
+/** Queue one book chapter for background generation. */
+export function enqueueChapter(chapterId: number): Job {
+  setChapterStatus(chapterId, "queued");
+  const job = enqueueJobRow("generate_chapter", { chapterId });
   ensureWorker();
   return job;
 }

@@ -364,6 +364,98 @@ export function deletePresentation(id: number): void {
   getDb().prepare("DELETE FROM presentations WHERE id = ?").run(id);
 }
 
+/* ── Books (long-form, chapter-by-chapter) ─────────────────── */
+
+export type Book = {
+  id: number;
+  title: string;
+  brief: string;
+  status: "outlining" | "ready" | "error";
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Chapter = {
+  id: number;
+  book_id: number;
+  title: string;
+  summary: string;
+  order_index: number;
+  status: "stub" | "queued" | "generating" | "ready" | "error";
+  content: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function createBook(title: string, brief: string): Book {
+  const info = getDb().prepare("INSERT INTO books (title, brief) VALUES (?, ?)").run(title, brief);
+  return getBook(Number(info.lastInsertRowid))!;
+}
+
+export function getBook(id: number): Book | undefined {
+  return getDb().prepare("SELECT * FROM books WHERE id = ?").get(id) as Book | undefined;
+}
+
+export function listBooks(): Book[] {
+  return getDb().prepare("SELECT * FROM books ORDER BY created_at DESC, id DESC").all() as Book[];
+}
+
+export function setBookStatus(id: number, status: Book["status"], error = ""): void {
+  getDb()
+    .prepare("UPDATE books SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
+}
+
+export function deleteBook(id: number): void {
+  getDb().prepare("DELETE FROM books WHERE id = ?").run(id);
+}
+
+export function createChapterStubs(
+  bookId: number,
+  stubs: { title: string; summary?: string }[],
+): Chapter[] {
+  const db = getDb();
+  const ins = db.prepare(
+    "INSERT INTO chapters (book_id, title, summary, order_index) VALUES (?, ?, ?, ?)",
+  );
+  stubs.forEach((s, i) => ins.run(bookId, s.title, s.summary ?? "", i));
+  return listChapters(bookId);
+}
+
+export function listChapters(bookId: number): Chapter[] {
+  return getDb()
+    .prepare("SELECT * FROM chapters WHERE book_id = ? ORDER BY order_index, id")
+    .all(bookId) as Chapter[];
+}
+
+export function getChapter(id: number): Chapter | undefined {
+  return getDb().prepare("SELECT * FROM chapters WHERE id = ?").get(id) as Chapter | undefined;
+}
+
+export function chapterWithBook(id: number): { chapter: Chapter; book: Book } | undefined {
+  const chapter = getChapter(id);
+  if (!chapter) return undefined;
+  const book = getBook(chapter.book_id);
+  if (!book) return undefined;
+  return { chapter, book };
+}
+
+export function setChapterStatus(id: number, status: Chapter["status"], error = ""): void {
+  getDb()
+    .prepare("UPDATE chapters SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
+}
+
+export function setChapterContent(id: number, content: string): void {
+  getDb()
+    .prepare(
+      "UPDATE chapters SET content = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
+    )
+    .run(content, id);
+}
+
 /* ── Spaced repetition (assessments / follow-ups) ──────────── */
 
 /** Enroll a lesson in spaced review — due today, fresh SM-2 state. Idempotent. */
