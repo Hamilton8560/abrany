@@ -44,7 +44,15 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
         <Link href="/app/goals" className="text-[13px] font-medium text-muted hover:text-ink">
           ← Back to goals
         </Link>
-        <CredentialActions verifyUrl={verifyUrl} />
+        <CredentialActions
+          verifyUrl={verifyUrl}
+          linkedin={{
+            name: `${cert.title} — Abrany`,
+            issueYear: new Date(cert.issued_at.replace(" ", "T") + "Z").getUTCFullYear(),
+            issueMonth: new Date(cert.issued_at.replace(" ", "T") + "Z").getUTCMonth() + 1,
+            certId: cert.id,
+          }}
+        />
       </div>
 
       <section className="flex flex-col gap-8">
