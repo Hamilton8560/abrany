@@ -164,7 +164,7 @@ export default function ReviewPage() {
             <p className="mb-3 text-[12px] font-medium text-muted">
               {suggested ? "Confirm your rating (coach suggests the highlighted one):" : "How well did you remember it?"}
             </p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {RATINGS.map((r) => {
                 const next = schedule(
                   {

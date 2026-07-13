@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
+import QueueBadge from "@/components/app/QueueBadge";
 import type { PublicUser } from "@/lib/user";
 
 type Meta = { label: string; defaultModel: string; keyUrl: string; modelHint: string };
@@ -19,13 +20,32 @@ export default function SettingsPage() {
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [freeAi, setFreeAi] = useState(false);
+  const [freeBusy, setFreeBusy] = useState(false);
 
   const load = () =>
     api<{ user: PublicUser }>("/api/auth/me").then((d) => {
       setMe(d.user);
+      setFreeAi(!!d.user?.freeAiAccess);
       if (d.user.provider) setProvider(d.user.provider);
       if (d.user.model) setModel(d.user.model);
     });
+
+  const toggleFreeAi = async (next: boolean) => {
+    setFreeBusy(true);
+    setFreeAi(next); // optimistic
+    try {
+      const r = await api<{ enabled: boolean }>("/api/settings/free-ai", {
+        method: "POST",
+        body: JSON.stringify({ enabled: next }),
+      });
+      setFreeAi(r.enabled);
+    } catch {
+      setFreeAi(!next); // revert on failure
+    } finally {
+      setFreeBusy(false);
+    }
+  };
 
   useEffect(() => {
     load().catch(() => {});
@@ -70,18 +90,71 @@ export default function SettingsPage() {
       </header>
 
       {me?.isOwner ? (
-        <section className="glass rounded-[var(--radius-card-lg)] p-6">
-          <p className="text-[15px] font-semibold text-ink">You&apos;re the owner.</p>
-          <p className="mt-1.5 text-[14px] text-muted">
-            You use the app&apos;s built-in AI — nothing to set up. Everyone else brings their own key below.
-          </p>
-        </section>
+        <>
+          <section className="glass rounded-[var(--radius-card-lg)] p-6">
+            <p className="text-[15px] font-semibold text-ink">You&apos;re the owner.</p>
+            <p className="mt-1.5 text-[14px] text-muted">
+              You use the app&apos;s built-in AI — nothing to set up. Everyone else brings their own key
+              below, unless you open up free access.
+            </p>
+          </section>
+
+          <section className="glass rounded-[var(--radius-card-lg)] p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-ink">Free AI access for everyone</p>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">
+                  Let signed-in users generate with your built-in AI — no key required. Everyone shares
+                  one fair concurrency queue, so it keeps working continuously instead of getting
+                  overrun by too many requests at once. Users can still add their own key to skip the
+                  line.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={freeAi}
+                disabled={freeBusy}
+                onClick={() => toggleFreeAi(!freeAi)}
+                className={`relative mt-1 h-[30px] w-[52px] shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+                  freeAi ? "bg-up" : "bg-line"
+                }`}
+              >
+                <span
+                  className={`absolute top-[3px] size-[24px] rounded-full bg-white shadow transition-all ${
+                    freeAi ? "left-[25px]" : "left-[3px]"
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <QueueBadge />
+              <span className="text-[12.5px] font-medium text-muted">
+                {freeAi ? "Free access is ON — everyone can use the built-in AI." : "Free access is off — only you use the built-in AI."}
+              </span>
+            </div>
+          </section>
+        </>
       ) : (
         <>
           <section className="glass rounded-[var(--radius-card-lg)] p-6">
+            {me?.freeAiAccess && (
+              <div className="mb-4 rounded-[14px] border border-up/30 bg-up/10 p-4">
+                <p className="text-[13.5px] font-semibold text-ink">Free shared AI is available 🎉</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted">
+                  You can generate right now with the built-in AI — no key needed. It&apos;s a shared
+                  queue, so during busy times your request waits its turn. Add your own key below to skip
+                  the line.
+                </p>
+                <div className="mt-3">
+                  <QueueBadge />
+                </div>
+              </div>
+            )}
             <p className="text-[14px] text-muted">
-              Abrany is free — you just connect your own AI. Pick a provider, paste your API key, and
-              you&apos;re set. DeepSeek and OpenRouter are the cheapest to start with.
+              {me?.freeAiAccess
+                ? "Prefer your own AI? Pick a provider and paste your key — DeepSeek and OpenRouter are the cheapest to start with."
+                : "Abrany is free — you just connect your own AI. Pick a provider, paste your API key, and you're set. DeepSeek and OpenRouter are the cheapest to start with."}
             </p>
             {me && (
               <p className="mt-3 text-[13px]">
@@ -91,6 +164,8 @@ export default function SettingsPage() {
                     Connected to {PROVIDERS[me.provider]?.label ?? me.provider}
                     {me.model ? ` (${me.model})` : ""}
                   </span>
+                ) : me.freeAiAccess ? (
+                  <span className="font-semibold text-up">Using free shared AI</span>
                 ) : (
                   <span className="font-semibold text-accent">No key yet — add one below</span>
                 )}

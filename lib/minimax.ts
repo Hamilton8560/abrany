@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { acquireSlot, withQueue } from "./queue";
-import type { User } from "./repo";
+import { isFreeAiEnabled, type User } from "./repo";
 
 /**
  * LLM layer — multi-provider, per-user.
@@ -55,6 +55,9 @@ export function resolveUserLlm(
       creds: { provider: user.ai_provider as Provider, key: user.ai_key, model: user.ai_model || "" },
     };
   }
+  // Keyless user, but the owner opened up the built-in AI to everyone: run on the
+  // server keys, which all funnel through the one shared concurrency queue.
+  if (isFreeAiEnabled()) return { mode: "server" };
   return { mode: "nokey" };
 }
 

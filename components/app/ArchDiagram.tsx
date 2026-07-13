@@ -25,8 +25,46 @@ const GROUPS: Record<string, { fill: string; border: string; text: string }> = {
 };
 
 const g = (group: string) => GROUPS[group] ?? GROUPS.default;
-const NODE_H = 48;
-const nodeW = (label: string) => Math.min(260, Math.max(120, label.length * 8 + 34));
+
+/* Node text metrics — labels WRAP to fit the box (no more clipped words). */
+const FONT = 13.5;
+const CHAR_W = 7.15; // ~avg glyph width at FONT / weight 600
+const LINE_H = 17;
+const PAD_X = 16; // per side
+const PAD_Y = 13; // per side
+const MAX_CHARS = 26; // preferred wrap width (~200px of text)
+const HARD_CHARS = 34; // absolute cap before a long word is hyphen-broken
+const MAX_LINES = 4;
+
+/** Greedy word-wrap; hyphen-breaks any single word wider than the hard cap. */
+function wrapLabel(label: string): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  for (let word of label.trim().split(/\s+/).filter(Boolean)) {
+    while (word.length > HARD_CHARS) {
+      if (cur) { lines.push(cur); cur = ""; }
+      lines.push(word.slice(0, HARD_CHARS - 1) + "-");
+      word = word.slice(HARD_CHARS - 1);
+    }
+    if (!cur) cur = word;
+    else if ((cur + " " + word).length <= MAX_CHARS) cur += " " + word;
+    else { lines.push(cur); cur = word; }
+  }
+  if (cur) lines.push(cur);
+  if (!lines.length) lines.push(label);
+  if (lines.length > MAX_LINES) {
+    lines.length = MAX_LINES;
+    lines[MAX_LINES - 1] = lines[MAX_LINES - 1].replace(/.{1}$/, "…");
+  }
+  return lines;
+}
+
+const nodeSize = (lines: string[]) => {
+  const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
+  const w = Math.min(HARD_CHARS * CHAR_W + PAD_X * 2, Math.max(120, longest * CHAR_W + PAD_X * 2));
+  const h = Math.max(46, lines.length * LINE_H + PAD_Y * 2);
+  return { w, h };
+};
 
 export default function ArchDiagram({ spec }: { spec: string }) {
   const layout = useMemo(() => {
@@ -34,12 +72,15 @@ export default function ArchDiagram({ spec }: { spec: string }) {
       const { nodes, edges } = parseArchSpec(spec);
       if (!nodes.length) return null;
 
+      const wrapped = new Map(nodes.map((n) => [n.id, wrapLabel(n.label)] as const));
+
       const graph = new dagre.graphlib.Graph({ multigraph: true });
       graph.setGraph({ rankdir: "TB", nodesep: 38, ranksep: 58, marginx: 18, marginy: 18 });
       graph.setDefaultEdgeLabel(() => ({}));
-      nodes.forEach((n) =>
-        graph.setNode(n.id, { width: nodeW(n.label), height: NODE_H, label: n.label, group: n.group }),
-      );
+      nodes.forEach((n) => {
+        const { w, h } = nodeSize(wrapped.get(n.id)!);
+        graph.setNode(n.id, { width: w, height: h, label: n.label, group: n.group });
+      });
       edges.forEach((e, i) =>
         graph.setEdge(
           e.from,
@@ -56,7 +97,7 @@ export default function ArchDiagram({ spec }: { spec: string }) {
         height: gg.height ?? 300,
         nodes: nodes.map((n) => {
           const p = graph.node(n.id);
-          return { ...n, x: p.x, y: p.y, w: p.width, h: p.height };
+          return { ...n, x: p.x, y: p.y, w: p.width, h: p.height, lines: wrapped.get(n.id)! };
         }),
         edges: edges.map((e, i) => {
           const ge = graph.edge(e.from, e.to, `e${i}`) as { points: { x: number; y: number }[] };
@@ -123,6 +164,7 @@ export default function ArchDiagram({ spec }: { spec: string }) {
 
         {nodes.map((n) => {
           const c = g(n.group);
+          const totalH = n.lines.length * LINE_H;
           return (
             <g key={n.id}>
               <rect
@@ -135,16 +177,20 @@ export default function ArchDiagram({ spec }: { spec: string }) {
                 stroke={c.border}
                 strokeWidth="1.5"
               />
-              <text
-                x={n.x}
-                y={n.y + 4.5}
-                textAnchor="middle"
-                fontSize="13.5"
-                fontWeight="600"
-                fill={c.text}
-              >
-                {n.label}
-              </text>
+              {n.lines.map((line, i) => (
+                <text
+                  key={i}
+                  x={n.x}
+                  y={n.y - totalH / 2 + LINE_H * (i + 0.5)}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={FONT}
+                  fontWeight="600"
+                  fill={c.text}
+                >
+                  {line}
+                </text>
+              ))}
             </g>
           );
         })}

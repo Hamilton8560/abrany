@@ -15,20 +15,26 @@ import {
   SlidesIcon,
   BookIcon,
   SettingsIcon,
+  MoreIcon,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 import type { PublicUser } from "@/lib/user";
 
-const NAV: { href: string; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
-  { href: "/app", label: "Dashboard", Icon: HomeIcon },
-  { href: "/app/timer", label: "Focus Timer", Icon: TimerIcon },
-  { href: "/app/goals", label: "Goals & Plans", Icon: TargetIcon },
-  { href: "/app/review", label: "Review", Icon: ReviewIcon },
-  { href: "/app/coach", label: "Coach", Icon: ChatIcon },
-  { href: "/app/presentations", label: "Presentations", Icon: SlidesIcon },
-  { href: "/app/books", label: "Books", Icon: BookIcon },
-  { href: "/app/log", label: "Training Log", Icon: JournalIcon },
+type NavItem = { href: string; label: string; short?: string; Icon: ComponentType<SVGProps<SVGSVGElement>> };
+
+const NAV: NavItem[] = [
+  { href: "/app", label: "Dashboard", short: "Home", Icon: HomeIcon },
+  { href: "/app/timer", label: "Focus Timer", short: "Timer", Icon: TimerIcon },
+  { href: "/app/goals", label: "Goals & Plans", short: "Goals", Icon: TargetIcon },
+  { href: "/app/review", label: "Review", short: "Review", Icon: ReviewIcon },
+  { href: "/app/coach", label: "Coach", short: "Coach", Icon: ChatIcon },
+  { href: "/app/presentations", label: "Presentations", short: "Slides", Icon: SlidesIcon },
+  { href: "/app/books", label: "Books", short: "Books", Icon: BookIcon },
+  { href: "/app/log", label: "Training Log", short: "Log", Icon: JournalIcon },
 ];
+
+// Phone bottom bar shows 4 primaries + a "More" sheet holding the rest + Settings.
+const MOBILE_PRIMARY = ["/app", "/app/timer", "/app/goals", "/app/coach"];
 
 /** Poll the number of lessons due for spaced review (for the nav badge). */
 function useDueCount() {
@@ -107,13 +113,19 @@ export default function Sidebar({ user }: { user: PublicUser }) {
           >
             <SettingsIcon className="size-[18px]" />
             AI & Settings
-            {!user.hasKey && <span className="ml-auto size-2 rounded-full bg-accent" />}
+            {!user.canUseAi && <span className="ml-auto size-2 rounded-full bg-accent" />}
           </Link>
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="min-w-0">
               <p className="truncate text-[11.5px] font-medium text-ink">{user.email}</p>
               <p className="text-[10px] text-muted">
-                {user.isOwner ? "Owner · built-in AI" : user.hasKey ? user.provider || "your key" : "add your AI key"}
+                {user.isOwner
+                  ? "Owner · built-in AI"
+                  : user.hasKey
+                    ? user.provider || "your key"
+                    : user.freeAiAccess
+                      ? "free shared AI"
+                      : "add your AI key"}
               </p>
             </div>
             <button
@@ -129,32 +141,131 @@ export default function Sidebar({ user }: { user: PublicUser }) {
   );
 }
 
-/** Compact top bar for mobile (sidebar hidden below lg). */
-export function MobileBar() {
+/** Compact top bar + bottom tab bar for mobile (sidebar hidden below lg). */
+export function MobileBar({ user }: { user: PublicUser }) {
   const pathname = usePathname();
+  const due = useDueCount();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const primary = NAV.filter((n) => MOBILE_PRIMARY.includes(n.href));
+  const overflow = NAV.filter((n) => !MOBILE_PRIMARY.includes(n.href));
+  const isActive = (href: string) => (href === "/app" ? pathname === "/app" : pathname.startsWith(href));
+  const moreActive = overflow.some((n) => isActive(n.href)) || pathname.startsWith("/app/settings");
+
   return (
-    <div className="glassx sticky top-0 z-40 flex items-center justify-between px-5 py-3 lg:hidden">
-      <Logo compact />
-      <div className="flex items-center gap-3">
+    <>
+      <div className="glassx sticky top-0 z-40 flex items-center justify-between px-5 py-3 lg:hidden">
+        <Logo compact />
         <QueueBadge />
       </div>
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-line bg-white/70 px-2 py-2 backdrop-blur-xl">
-        {NAV.map(({ href, label, Icon }) => {
-          const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
+
+      {/* Bottom tab bar: 4 primaries + More */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-white/80 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
+        {primary.map(({ href, short, label, Icon }) => {
+          const active = isActive(href);
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] ${
+              className={`flex flex-col items-center gap-1 rounded-lg py-1 text-[10px] font-medium ${
                 active ? "text-accent" : "text-muted"
               }`}
             >
-              <Icon className="size-[19px]" />
-              {label.split(" ")[0]}
+              <span className="relative">
+                <Icon className="size-[20px]" />
+                {href === "/app/review" && due > 0 && (
+                  <span className="absolute -right-2 -top-1.5 grid min-w-[15px] place-items-center rounded-full bg-accent px-1 text-[9px] font-bold text-white">
+                    {due}
+                  </span>
+                )}
+              </span>
+              {short ?? label}
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          className={`flex flex-col items-center gap-1 rounded-lg py-1 text-[10px] font-medium ${
+            moreActive ? "text-accent" : "text-muted"
+          }`}
+        >
+          <span className="relative">
+            <MoreIcon className="size-[20px]" />
+            {due > 0 && !primary.some((n) => n.href === "/app/review") && (
+              <span className="absolute -right-2 -top-1.5 grid min-w-[15px] place-items-center rounded-full bg-accent px-1 text-[9px] font-bold text-white">
+                {due}
+              </span>
+            )}
+          </span>
+          More
+        </button>
       </nav>
-    </div>
+
+      {/* More sheet */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-t-[24px] border-t border-line bg-white/95 p-5 pb-[max(20px,env(safe-area-inset-bottom))] backdrop-blur-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
+            <div className="grid grid-cols-3 gap-2.5">
+              {overflow.map(({ href, label, Icon }) => {
+                const active = isActive(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMoreOpen(false)}
+                    className={`flex flex-col items-center gap-2 rounded-[16px] px-2 py-4 text-center text-[11.5px] font-medium ${
+                      active ? "glassx-dark text-white" : "glassx text-ink"
+                    }`}
+                  >
+                    <Icon className={`size-[22px] ${active ? "text-white" : "text-muted"}`} />
+                    <span className="leading-tight">{label}</span>
+                    {href === "/app/review" && due > 0 && (
+                      <span className="rounded-full bg-accent px-1.5 text-[9px] font-bold text-white">{due} due</span>
+                    )}
+                  </Link>
+                );
+              })}
+              <Link
+                href="/app/settings"
+                onClick={() => setMoreOpen(false)}
+                className={`flex flex-col items-center gap-2 rounded-[16px] px-2 py-4 text-center text-[11.5px] font-medium ${
+                  pathname.startsWith("/app/settings") ? "glassx-dark text-white" : "glassx text-ink"
+                }`}
+              >
+                <SettingsIcon className={`size-[22px] ${pathname.startsWith("/app/settings") ? "text-white" : "text-muted"}`} />
+                <span className="leading-tight">AI &amp; Settings</span>
+                {!user.canUseAi && <span className="size-1.5 rounded-full bg-accent" />}
+              </Link>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-4">
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-medium text-ink">{user.email}</p>
+                <p className="text-[10.5px] text-muted">
+                  {user.isOwner
+                    ? "Owner · built-in AI"
+                    : user.hasKey
+                      ? user.provider || "your key"
+                      : user.freeAiAccess
+                        ? "free shared AI"
+                        : "add your AI key"}
+                </p>
+              </div>
+              <button
+                onClick={logout}
+                className="shrink-0 rounded-full glassx px-4 py-2 text-[12px] font-semibold text-muted"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

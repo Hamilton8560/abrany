@@ -7,7 +7,14 @@ import type { Goal } from "@/lib/repo";
 
 type Mode = "focus" | "break";
 const PRESETS = [15, 25, 45, 50];
+const STORE_KEY = "abrany.timer.v1";
 
+/**
+ * Wall-clock timer, not a counter. The countdown is derived from an absolute
+ * end timestamp, so background-tab interval throttling can never make it drift
+ * or "go inactive" — every render just re-reads the clock. State is mirrored to
+ * localStorage so a reload (or returning after the block ended) resumes exactly.
+ */
 export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
   const [focusMin, setFocusMin] = useState(25);
   const [breakMin, setBreakMin] = useState(5);
@@ -22,63 +29,167 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
     [focusMin, breakMin],
   );
 
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // running-block timing lives in refs (wall-clock ms), not in the render loop.
+  const endAtRef = useRef<number | null>(null); // when the current block ends
+  const focusAccumRef = useRef(0); // focus seconds banked from prior running segments
+  const focusStartRef = useRef<number | null>(null); // ms the current focus segment began
 
-  // keep left in sync when durations change while idle
-  useEffect(() => {
-    if (!running) setLeft(totalFor(mode));
-  }, [focusMin, breakMin, mode, running, totalFor]);
+  const save = useCallback(
+    (patch: Record<string, unknown> = {}) => {
+      try {
+        localStorage.setItem(
+          STORE_KEY,
+          JSON.stringify({
+            mode,
+            focusMin,
+            breakMin,
+            running,
+            left,
+            endAt: endAtRef.current,
+            focusAccum: focusAccumRef.current,
+            focusStart: focusStartRef.current,
+            ...patch,
+          }),
+        );
+      } catch {
+        /* storage unavailable — timer still works, just won't survive reload */
+      }
+    },
+    [mode, focusMin, breakMin, running, left],
+  );
 
-  const stopTick = () => {
-    if (tickRef.current) clearInterval(tickRef.current);
-    tickRef.current = null;
+  const foldFocus = (now: number) => {
+    if (focusStartRef.current != null) {
+      focusAccumRef.current += Math.floor((now - focusStartRef.current) / 1000);
+      focusStartRef.current = null;
+    }
   };
 
   const finish = useCallback(() => {
-    stopTick();
+    foldFocus(Date.now());
+    endAtRef.current = null;
     setRunning(false);
     setLeft(0);
     if (mode === "focus") {
+      setElapsed(focusAccumRef.current);
       setRecording(true); // prompt to log what you did
     }
-  }, [mode]);
+    save({ running: false, endAt: null, left: 0 });
+  }, [mode, save]);
+
+  // Derive the display from the wall clock; also fires on tab refocus.
+  const recompute = useCallback(() => {
+    if (!running || endAtRef.current == null) return;
+    const now = Date.now();
+    const l = Math.max(0, Math.round((endAtRef.current - now) / 1000));
+    setLeft(l);
+    if (mode === "focus" && focusStartRef.current != null) {
+      setElapsed(focusAccumRef.current + Math.floor((now - focusStartRef.current) / 1000));
+    }
+    if (l <= 0) finish();
+  }, [running, mode, finish]);
 
   useEffect(() => {
-    if (!running) {
-      stopTick();
+    if (!running) return;
+    recompute();
+    const id = setInterval(recompute, 500);
+    const onVisible = () => {
+      if (!document.hidden) recompute();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [running, recompute]);
+
+  // Rehydrate on mount: resume a running block, or recover one that ended while away.
+  useEffect(() => {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(STORE_KEY);
+    } catch {
       return;
     }
-    tickRef.current = setInterval(() => {
-      setLeft((prev) => {
-        if (prev <= 1) return 0;
-        return prev - 1;
-      });
-      if (mode === "focus") setElapsed((e) => e + 1);
-    }, 1000);
-    return stopTick;
-  }, [running, mode]);
-
-  useEffect(() => {
-    if (running && left === 0) finish();
-  }, [left, running, finish]);
+    if (!raw) return;
+    try {
+      const s = JSON.parse(raw) as {
+        mode?: Mode; focusMin?: number; breakMin?: number; running?: boolean;
+        left?: number; endAt?: number | null; focusAccum?: number; focusStart?: number | null;
+      };
+      const m: Mode = s.mode === "break" ? "break" : "focus";
+      setMode(m);
+      if (typeof s.focusMin === "number") setFocusMin(s.focusMin);
+      if (typeof s.breakMin === "number") setBreakMin(s.breakMin);
+      focusAccumRef.current = s.focusAccum || 0;
+      const now = Date.now();
+      if (s.running && s.endAt && s.endAt > now) {
+        endAtRef.current = s.endAt;
+        focusStartRef.current = m === "focus" ? s.focusStart ?? now : null;
+        setLeft(Math.round((s.endAt - now) / 1000));
+        setRunning(true);
+      } else if (s.running && s.endAt && s.endAt <= now) {
+        // the block completed while the tab was closed/backgrounded
+        if (m === "focus" && s.focusStart) {
+          focusAccumRef.current += Math.floor((s.endAt - s.focusStart) / 1000);
+          setElapsed(focusAccumRef.current);
+          setRecording(true);
+        }
+        setLeft(0);
+      } else {
+        setElapsed(focusAccumRef.current);
+        if (typeof s.left === "number") setLeft(s.left);
+      }
+    } catch {
+      /* corrupt state — ignore and start fresh */
+    }
+    // mount-only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const start = () => {
-    if (left === 0) setLeft(totalFor(mode));
+    const base = left > 0 ? left : totalFor(mode);
+    const now = Date.now();
+    endAtRef.current = now + base * 1000;
+    if (mode === "focus") focusStartRef.current = now;
+    setLeft(base);
     setRunning(true);
+    save({ running: true, endAt: endAtRef.current, left: base, focusStart: focusStartRef.current });
   };
-  const pause = () => setRunning(false);
+  const pause = () => {
+    foldFocus(Date.now());
+    endAtRef.current = null;
+    setRunning(false);
+    save({ running: false, endAt: null, focusStart: null });
+  };
   const reset = () => {
-    stopTick();
+    endAtRef.current = null;
+    focusStartRef.current = null;
+    focusAccumRef.current = 0;
     setRunning(false);
     setElapsed(0);
     setLeft(totalFor(mode));
+    save({ running: false, endAt: null, left: totalFor(mode), focusAccum: 0, focusStart: null });
   };
   const switchMode = (m: Mode) => {
-    stopTick();
+    endAtRef.current = null;
+    focusStartRef.current = null;
+    focusAccumRef.current = 0;
     setRunning(false);
     setMode(m);
     setElapsed(0);
     setLeft(totalFor(m));
+    save({ mode: m, running: false, endAt: null, left: totalFor(m), focusAccum: 0, focusStart: null });
+  };
+  const setDuration = (minutes: number) => {
+    if (mode === "focus") setFocusMin(minutes);
+    else setBreakMin(minutes);
+    if (!running) {
+      setLeft(minutes * 60);
+      save({ [mode === "focus" ? "focusMin" : "breakMin"]: minutes, left: minutes * 60 });
+    }
   };
 
   const total = totalFor(mode);
@@ -107,8 +218,8 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
       </div>
 
       {/* ring + clock */}
-      <div className="relative grid place-items-center">
-        <svg width="300" height="300" viewBox="0 0 300 300" className="-rotate-90">
+      <div className="relative grid aspect-square w-full max-w-[300px] place-items-center">
+        <svg viewBox="0 0 300 300" className="h-full w-full -rotate-90">
           <circle cx="150" cy="150" r={R} fill="none" stroke="var(--color-line)" strokeWidth="10" />
           <circle
             cx="150"
@@ -124,7 +235,7 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
         </svg>
         <div className="absolute inset-0 grid place-items-center">
           <div className="flex flex-col items-center">
-            <span className="font-display text-[64px] font-extrabold tabular-nums leading-none text-ink">
+            <span className="font-display text-[clamp(46px,16vw,64px)] font-extrabold tabular-nums leading-none text-ink">
               {fmtClock(left)}
             </span>
             <span
@@ -175,12 +286,11 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
           <div className="flex gap-2">
             {PRESETS.map((p) => {
               const cur = mode === "focus" ? focusMin : breakMin;
-              const set = mode === "focus" ? setFocusMin : setBreakMin;
               return (
                 <button
                   key={p}
                   type="button"
-                  onClick={() => set(p)}
+                  onClick={() => setDuration(p)}
                   className={`rounded-full px-3 py-1 text-[12px] font-medium transition-all ${
                     cur === p ? "bg-ink text-white" : "glassx text-muted hover:text-ink"
                   }`}

@@ -40,6 +40,33 @@ export function setUserAiCreds(id: number, provider: string, key: string, model:
     .run(provider, key, model, id);
 }
 
+/* ── app settings (key/value) ──────────────────────────────── */
+
+export function getSetting(key: string): string | undefined {
+  const row = getDb().prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value;
+}
+
+export function setSetting(key: string, value: string): void {
+  getDb()
+    .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(key, value);
+}
+
+/**
+ * When the owner turns this on, keyless users share the owner's built-in AI
+ * (through the same concurrency queue) instead of being asked for their own key.
+ */
+export function isFreeAiEnabled(): boolean {
+  return getSetting("free_ai_access") === "1";
+}
+
+export function setFreeAiEnabled(on: boolean): void {
+  setSetting("free_ai_access", on ? "1" : "0");
+}
+
 /** One-time: adopt pre-multi-tenant rows (NULL user_id) into the owner account. */
 export function backfillOwnerData(ownerId: number): void {
   const db = getDb();

@@ -62,7 +62,7 @@ export default function SlideDeck({ content }: { content: string }) {
       <div className={`relative ${fs ? "flex-1" : ""}`}>
         <div
           className={`glass mx-auto flex w-full flex-col overflow-hidden rounded-[var(--radius-card-lg)] ${
-            fs ? "h-full" : "aspect-[16/9]"
+            fs ? "h-full" : "aspect-[4/5] sm:aspect-[16/9]"
           }`}
         >
           <div className="flex-1 overflow-y-auto px-8 py-7 sm:px-12 sm:py-10 [&_h1]:text-[clamp(28px,4vw,46px)] [&_h2]:text-[clamp(22px,2.8vw,32px)] [&_h2]:mt-0 [&_li]:text-[clamp(14px,1.5vw,18px)] [&_p]:text-[clamp(14px,1.5vw,18px)]">
@@ -82,18 +82,22 @@ export default function SlideDeck({ content }: { content: string }) {
           <ArrowRight className="size-4 rotate-180" />
         </button>
 
-        <div className="flex items-center gap-2">
-          {slides.map((_, k) => (
-            <button
-              key={k}
-              onClick={() => setI(k)}
-              aria-label={`Slide ${k + 1}`}
-              className={`h-2 rounded-full transition-all ${
-                k === i ? "w-6 bg-accent" : "w-2 bg-line hover:bg-muted"
-              }`}
-            />
-          ))}
-          <span className="ml-2 text-[12px] tabular-nums text-muted">
+        <div className="flex min-w-0 items-center gap-2">
+          {slides.length <= 16 && (
+            <div className="hidden items-center gap-2 sm:flex">
+              {slides.map((_, k) => (
+                <button
+                  key={k}
+                  onClick={() => setI(k)}
+                  aria-label={`Slide ${k + 1}`}
+                  className={`h-2 rounded-full transition-all ${
+                    k === i ? "w-6 bg-accent" : "w-2 bg-line hover:bg-muted"
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+          <span className="text-[12px] tabular-nums text-muted sm:ml-2">
             {i + 1} / {slides.length}
           </span>
         </div>

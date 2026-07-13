@@ -242,16 +242,16 @@ function LessonViewer({ lesson, onClose }: { lesson: Lesson; onClose: () => void
         className="glass my-auto w-full max-w-[680px] rounded-[var(--radius-card-lg)] p-6 sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
               {kindLabel(lesson.kind)}
             </p>
-            <h3 className="mt-1 font-display text-[24px] font-extrabold uppercase leading-[1.05] text-ink">
+            <h3 className="mt-1 font-display text-[clamp(20px,5vw,24px)] font-extrabold uppercase leading-[1.05] text-ink">
               {lesson.title}
             </h3>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             <button
               onClick={toggleEnroll}
               disabled={busy}
