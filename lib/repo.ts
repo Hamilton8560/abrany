@@ -313,6 +313,57 @@ export function setLessonContent(id: number, content: string, sources: object[] 
     .run(content, JSON.stringify(sources), id);
 }
 
+/* ── Presentations (AI slide decks) ────────────────────────── */
+
+export type Presentation = {
+  id: number;
+  goal_id: number | null;
+  title: string;
+  topic: string;
+  content: string;
+  status: "generating" | "ready" | "error";
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function createPresentation(title: string, topic: string, goalId: number | null = null): Presentation {
+  const info = getDb()
+    .prepare("INSERT INTO presentations (title, topic, goal_id) VALUES (?, ?, ?)")
+    .run(title, topic, goalId);
+  return getPresentation(Number(info.lastInsertRowid))!;
+}
+
+export function getPresentation(id: number): Presentation | undefined {
+  return getDb().prepare("SELECT * FROM presentations WHERE id = ?").get(id) as
+    | Presentation
+    | undefined;
+}
+
+export function listPresentations(): Presentation[] {
+  return getDb()
+    .prepare("SELECT * FROM presentations ORDER BY created_at DESC, id DESC")
+    .all() as Presentation[];
+}
+
+export function setPresentationContent(id: number, title: string, content: string): void {
+  getDb()
+    .prepare(
+      "UPDATE presentations SET title = ?, content = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
+    )
+    .run(title, content, id);
+}
+
+export function setPresentationStatus(id: number, status: Presentation["status"], error = ""): void {
+  getDb()
+    .prepare("UPDATE presentations SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
+}
+
+export function deletePresentation(id: number): void {
+  getDb().prepare("DELETE FROM presentations WHERE id = ?").run(id);
+}
+
 /* ── Spaced repetition (assessments / follow-ups) ──────────── */
 
 /** Enroll a lesson in spaced review — due today, fresh SM-2 state. Idempotent. */

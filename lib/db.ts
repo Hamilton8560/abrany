@@ -93,6 +93,19 @@ function migrate(db: DatabaseSync) {
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- AI-generated slide decks (markdown, slides split on '---')
+    CREATE TABLE IF NOT EXISTS presentations (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id    INTEGER REFERENCES goals(id) ON DELETE SET NULL,
+      title      TEXT NOT NULL,
+      topic      TEXT NOT NULL DEFAULT '',
+      content    TEXT NOT NULL DEFAULT '',
+      status     TEXT NOT NULL DEFAULT 'generating', -- generating|ready|error
+      error      TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- durable async job queue drained by the background worker
     CREATE TABLE IF NOT EXISTS jobs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,

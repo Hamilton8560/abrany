@@ -8,9 +8,13 @@ import {
   setLessonStatus,
   setLessonContent,
   planItemWithContext,
+  getPresentation,
+  setPresentationContent,
+  setPresentationStatus,
+  getGoal,
   type Job,
 } from "./repo";
-import { generateLessonContent } from "./coach";
+import { generateLessonContent, generatePresentation } from "./coach";
 import { braveSearch } from "./search";
 
 /**
@@ -54,6 +58,20 @@ async function processJob(job: Job): Promise<void> {
     setLessonContent(lessonId, content, sources);
     return;
   }
+
+  if (job.type === "generate_presentation") {
+    const { presentationId } = JSON.parse(job.payload) as { presentationId: number };
+    const pres = getPresentation(presentationId);
+    if (!pres) return;
+    const goal = pres.goal_id ? getGoal(pres.goal_id) : undefined;
+    const { title, content } = await generatePresentation({
+      topic: pres.topic,
+      goalTitle: goal?.title,
+    });
+    setPresentationContent(presentationId, title, content);
+    return;
+  }
+
   throw new Error(`Unknown job type: ${job.type}`);
 }
 
@@ -70,23 +88,15 @@ function tick() {
       .then(() => finishJob(job.id, "done"))
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        if (job.attempts < MAX_ATTEMPTS) {
-          requeueJob(job.id, msg);
-          // reflect retry state on the lesson if applicable
-          try {
-            const { lessonId } = JSON.parse(job.payload) as { lessonId?: number };
-            if (lessonId) setLessonStatus(lessonId, "queued");
-          } catch {
-            /* ignore */
-          }
-        } else {
-          finishJob(job.id, "error", msg);
-          try {
-            const { lessonId } = JSON.parse(job.payload) as { lessonId?: number };
-            if (lessonId) setLessonStatus(lessonId, "error", msg);
-          } catch {
-            /* ignore */
-          }
+        const finalError = job.attempts >= MAX_ATTEMPTS;
+        if (finalError) finishJob(job.id, "error", msg);
+        else requeueJob(job.id, msg);
+        try {
+          const payload = JSON.parse(job.payload) as { lessonId?: number; presentationId?: number };
+          if (payload.lessonId) setLessonStatus(payload.lessonId, finalError ? "error" : "queued", finalError ? msg : "");
+          if (payload.presentationId && finalError) setPresentationStatus(payload.presentationId, "error", msg);
+        } catch {
+          /* ignore */
         }
       })
       .finally(() => {
@@ -108,6 +118,14 @@ export function ensureWorker(): void {
 export function enqueueLesson(lessonId: number): Job {
   setLessonStatus(lessonId, "queued");
   const job = enqueueJobRow("generate_lesson", { lessonId });
+  ensureWorker();
+  return job;
+}
+
+/** Queue a presentation deck for background generation. */
+export function enqueuePresentation(presentationId: number): Job {
+  setPresentationStatus(presentationId, "generating");
+  const job = enqueueJobRow("generate_presentation", { presentationId });
   ensureWorker();
   return job;
 }

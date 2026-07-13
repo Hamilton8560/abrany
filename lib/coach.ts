@@ -384,4 +384,36 @@ The results array MUST have exactly one entry per question, in order.`,
   };
 }
 
+/* ── Presentations: generate a markdown slide deck ─────────── */
+
+export async function generatePresentation(ctx: {
+  topic: string;
+  goalTitle?: string;
+}): Promise<{ title: string; content: string }> {
+  const content = await complete({
+    system: `${COACH_SYSTEM}
+
+You are creating a PRESENTATION DECK. Output GitHub-flavored markdown only. Separate every slide with a line containing only three dashes (---). Structure:
+- Slide 1 (title slide): a single "# Deck Title" and one italic subtitle line.
+- 6 to 10 content slides, each starting with "## Slide heading" followed by CONCISE content — short bullet points (not paragraphs), a small table where it helps, and where a concept is structural or visual, a diagram: a \`\`\`mermaid block for flows/timelines/hierarchies/sequences, or an \`\`\`arch block (nodes[N]{id,label,group} + edges[M]{from,to,label}) for system/architecture diagrams.
+- A final "## Key takeaways" slide with 3-5 bullets.
+Rules: each slide is a SLIDE, not an essay — a heading plus a few bullets or one diagram, nothing dense. Adapt depth and tone to the topic. Do not wrap the whole thing in a code fence.`,
+    maxTokens: 4096,
+    temperature: 0.6,
+    messages: [
+      {
+        role: "user",
+        content: `Create a presentation deck about: ${ctx.topic}${
+          ctx.goalTitle ? `\n(Related to the learner's goal: ${ctx.goalTitle})` : ""
+        }`,
+      },
+    ],
+  });
+
+  const clean = content.replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  const h1 = clean.match(/^#\s+(.+)$/m);
+  const title = (h1 ? h1[1] : ctx.topic).trim().slice(0, 140);
+  return { title, content: clean };
+}
+
 export { type ChatMessage };

@@ -19,4 +19,5 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [ ] Kokoro free-neural TTS bridge (optional, self-hosted)
 - [x] Architecture diagrams (TOON → dagre → branded SVG, deterministic)
 - [ ] Real image diagrams (Higgsfield / MiniMax Image — paid, on demand)
-- [ ] Presentation generation, book-writing (later)
+- [x] Presentations (AI markdown decks, diagrams, present + PDF)
+- [ ] Book-writing (later)
