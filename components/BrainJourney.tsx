@@ -226,12 +226,15 @@ export default function BrainJourney() {
   const [loadPct, setLoadPct] = useState(0);
   const [ready, setReady] = useState(false);
 
-  // decide mode after mount (SSR-safe: starts "static")
+  // decide mode after mount (SSR-safe: starts "static").
+  // The scroll-scrub fly-through now runs on every viewport, phones
+  // included — the only opt-out is an explicit reduced-motion request.
   useEffect(() => {
-    const mq = window.matchMedia(
-      "(min-width: 1024px) and (prefers-reduced-motion: no-preference)"
-    );
-    setMode(mq.matches ? "scroll" : "static");
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => setMode(mq.matches ? "static" : "scroll");
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   // canvas scrubber — runs once the canvas is actually mounted
@@ -350,8 +353,8 @@ export default function BrainJourney() {
   /* ───────── SCROLL MODE ───────── */
   if (mode === "scroll") {
     return (
-      <section ref={sectionRef} className="relative" style={{ height: `${TOTAL_W * 82}vh` }}>
-        <div className="sticky top-0 h-screen w-full overflow-hidden">
+      <section ref={sectionRef} className="relative" style={{ height: `${TOTAL_W * 82}svh` }}>
+        <div className="sticky top-0 h-[100svh] w-full overflow-hidden">
           {/* poster while frames decode */}
           <div
             className="absolute inset-0 transition-opacity duration-700"
