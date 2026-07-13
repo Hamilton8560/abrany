@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { getSessionUser } from "@/lib/auth";
-import { getCertificate, goalStats } from "@/lib/repo";
+import { getCertificate, goalStats, examsForGoal } from "@/lib/repo";
 import { qrDataUrl } from "@/lib/qr";
 import Certificate, { type CertData } from "@/components/app/Certificate";
 import Transcript from "@/components/app/Transcript";
@@ -23,6 +23,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
   const base = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const verifyUrl = `${base}/verify/${cert.id}`;
   const rows = cert.goal_id ? goalStats(cert.goal_id).rows : [];
+  const exams = cert.goal_id ? examsForGoal(cert.goal_id) : [];
   const qr = await qrDataUrl(verifyUrl);
 
   const c: CertData = {
@@ -57,7 +58,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
 
       <section className="flex flex-col gap-8">
         <Certificate c={c} />
-        <Transcript c={c} rows={rows} />
+        <Transcript c={c} rows={rows} exams={exams} />
       </section>
 
       <p className="text-center text-[12.5px] text-muted print:hidden">

@@ -4,9 +4,10 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
-import type { Goal, Plan, PlanItem, PlanItemWithProgress } from "@/lib/repo";
+import type { Goal, Plan, PlanItem, PlanItemWithProgress, Exam } from "@/lib/repo";
 import { ArrowRight, CheckIcon, TargetIcon } from "@/components/icons";
 import MilestoneLessons from "@/components/app/MilestoneLessons";
+import ExamModal from "@/components/app/ExamModal";
 
 type FullPlan = Plan & { items: PlanItemWithProgress[] };
 type GoalResp = { goal: Goal; plan: FullPlan | null; children: Goal[] };
@@ -24,6 +25,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [examOpen, setExamOpen] = useState<Exam | null>(null);
+
+  const loadExams = useCallback(() => {
+    api<{ exams: Exam[] }>(`/api/goals/${id}/exams`)
+      .then((r) => setExams(r.exams ?? []))
+      .catch(() => {});
+  }, [id]);
 
   const load = useCallback(async () => {
     const d = await api<GoalResp>(`/api/goals/${id}`);
@@ -34,7 +43,8 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     api<{ certificate: { id: string } | null }>(`/api/goals/${id}/complete`)
       .then((r) => setCert(r.certificate))
       .catch(() => {});
-  }, [id]);
+    if (!d.children?.length && d.plan) loadExams();
+  }, [id, loadExams]);
 
   const completeGoal = async () => {
     setCompleting(true);
@@ -119,6 +129,9 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     }
   }
   const progress = units ? Math.round((unitsDone / units) * 100) : 0;
+  const finalExam = exams.find((e) => e.kind === "final");
+  const finalPassed = !!finalExam?.passed;
+  const canComplete = !finalExam || finalPassed;
 
   return (
     <div className="mx-auto flex max-w-[760px] flex-col gap-7">
@@ -315,7 +328,51 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       </section>
       )}
 
-      {/* completion CTA — issuing a credential requires an explicit confirmation */}
+      {/* course exams — the final gates the certificate; reviews stay optional */}
+      {!isUmbrella && exams.length > 0 && (
+        <section className="glass rounded-[var(--radius-card-lg)] p-6">
+          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">Course exams</h2>
+          <p className="mt-1.5 text-[13.5px] text-muted">
+            Each exam comes with a study guide. Pass the final (70%) to earn your certificate. The
+            spaced reviews are optional practice to help you pass.
+          </p>
+          <div className="mt-4 flex flex-col gap-2.5">
+            {exams.map((e) => (
+              <div key={e.id} className="flex items-center gap-3 rounded-[14px] bg-white/55 px-4 py-3.5">
+                <span
+                  className={`grid size-9 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
+                    e.passed ? "bg-up/15 text-up" : "bg-accent/12 text-accent"
+                  }`}
+                >
+                  {e.passed ? <CheckIcon className="size-4" /> : e.kind === "final" ? "F" : "M"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14.5px] font-semibold text-ink">
+                    {e.kind === "final" ? "Final exam" : "Midterm exam"}
+                  </p>
+                  <p className="text-[12.5px] text-muted">
+                    {e.passed
+                      ? `Passed · best score ${e.best_score}%`
+                      : e.attempts > 0
+                        ? `Best ${e.best_score}% · not passed yet (need 70%)`
+                        : "Not attempted · includes a study guide"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setExamOpen(e)}
+                  className={`shrink-0 rounded-full px-4 py-2 text-[12.5px] font-semibold ${
+                    e.passed ? "glassx text-ink" : "glassx-dark text-white"
+                  }`}
+                >
+                  {e.passed ? "Review" : "Study & take"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* completion CTA — the certificate is earned by passing the final exam */}
       {!isUmbrella && (
         <section className="glass rounded-[var(--radius-card-lg)] p-6">
           {cert ? (
@@ -333,10 +390,30 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 View certificate
               </Link>
             </div>
+          ) : !canComplete ? (
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[15px] font-semibold text-ink">Pass the final exam to graduate</p>
+                <p className="mt-1 text-[13.5px] text-muted">
+                  Your certificate is earned, not clicked — pass the final exam (70%) and it&apos;s issued
+                  automatically.
+                </p>
+              </div>
+              {finalExam && (
+                <button
+                  onClick={() => setExamOpen(finalExam)}
+                  className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
+                >
+                  Take the final exam
+                </button>
+              )}
+            </div>
           ) : (
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[15px] font-semibold text-ink">Finished this goal?</p>
+                <p className="text-[15px] font-semibold text-ink">
+                  {finalPassed ? "🎉 Final exam passed — claim your certificate" : "Finished this goal?"}
+                </p>
                 <p className="mt-1 text-[13.5px] text-muted">
                   Confirm you&apos;ve completed everything — we&apos;ll issue your certificate and transcript.
                 </p>
@@ -349,11 +426,21 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 }}
                 className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
               >
-                Mark this goal complete
+                {finalPassed ? "Claim certificate" : "Mark this goal complete"}
               </button>
             </div>
           )}
         </section>
+      )}
+
+      {examOpen && (
+        <ExamModal
+          examId={examOpen.id}
+          title={goal.title}
+          kind={examOpen.kind}
+          onClose={() => setExamOpen(null)}
+          onGraded={loadExams}
+        />
       )}
 
       {confirmOpen && (

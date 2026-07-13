@@ -157,6 +157,24 @@ function migrate(db: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS idx_chapters_book ON chapters(book_id);
 
+    -- midterm + final exams that gate course completion (each with a study guide)
+    CREATE TABLE IF NOT EXISTS exams (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id     INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+      kind        TEXT NOT NULL,                       -- midterm | final
+      title       TEXT NOT NULL,
+      study_guide TEXT NOT NULL DEFAULT '',
+      status      TEXT NOT NULL DEFAULT 'stub',         -- stub|generating|ready|error
+      best_score  INTEGER NOT NULL DEFAULT 0,           -- 0-100
+      passed      INTEGER NOT NULL DEFAULT 0,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      error       TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(goal_id, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_exams_goal ON exams(goal_id);
+
     -- issued completion credentials (certificate + transcript, publicly verifiable)
     CREATE TABLE IF NOT EXISTS certificates (
       id             TEXT PRIMARY KEY,               -- e.g. ABR-2026-8F3A21

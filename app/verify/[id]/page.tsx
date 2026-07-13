@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { getCertificate, goalStats } from "@/lib/repo";
+import { getCertificate, goalStats, examsForGoal } from "@/lib/repo";
 import { qrDataUrl } from "@/lib/qr";
 import Certificate, { type CertData } from "@/components/app/Certificate";
 import Transcript from "@/components/app/Transcript";
@@ -31,6 +31,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
   const h = await headers();
   const base = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const rows = cert.goal_id ? goalStats(cert.goal_id).rows : [];
+  const exams = cert.goal_id ? examsForGoal(cert.goal_id) : [];
   const verifyUrl = `${base}/verify/${cert.id}`;
   const c: CertData = {
     id: cert.id,
@@ -62,7 +63,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
       </div>
 
       <Certificate c={c} />
-      <Transcript c={c} rows={rows} />
+      <Transcript c={c} rows={rows} exams={exams} />
 
       <p className="text-center text-[12.5px] text-muted">
         <Link href="/" className="font-semibold text-accent">Abrany</Link> — the first personal brain trainer.

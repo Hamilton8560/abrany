@@ -591,6 +591,11 @@ function overallLabel(rows: TranscriptRow[], sectionsTotal: number, sectionsDone
   return sectionsTotal > 0 && sectionsDone >= sectionsTotal ? "Completed" : "In progress";
 }
 
+/** Map a 0-100 score to a letter grade (shared by exams + certificate). */
+export function scoreToLetter(pct: number): string {
+  return pct >= 93 ? "A" : pct >= 85 ? "A−" : pct >= 78 ? "B+" : pct >= 70 ? "B" : pct >= 60 ? "C+" : pct >= 50 ? "C" : "D";
+}
+
 /** Issue (or return the existing) credential for a completed goal. */
 export function issueCertificate(userId: number, goalId: number): Certificate {
   const db = getDb();
@@ -604,6 +609,14 @@ export function issueCertificate(userId: number, goalId: number): Certificate {
   const stats = goalStats(goalId);
   const year = new Date().getFullYear();
   const id = `ABR-${year}-${randomBytes(3).toString("hex").toUpperCase()}`;
+  // prefer the final-exam grade as the headline result; else fall back to sections
+  const finalExam = db.prepare("SELECT best_score, passed FROM exams WHERE goal_id = ? AND kind = 'final'").get(goalId) as
+    | { best_score: number; passed: number }
+    | undefined;
+  const overall =
+    finalExam && finalExam.passed
+      ? scoreToLetter(finalExam.best_score)
+      : overallLabel(stats.rows, stats.sectionsTotal, stats.sectionsDone);
   db.prepare(
     `INSERT INTO certificates (id, user_id, goal_id, recipient_name, title, sections_total, sections_done, minutes_total, overall)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -616,7 +629,7 @@ export function issueCertificate(userId: number, goalId: number): Certificate {
     stats.sectionsTotal,
     stats.sectionsDone,
     stats.minutesTotal,
-    overallLabel(stats.rows, stats.sectionsTotal, stats.sectionsDone),
+    overall,
   );
   return db.prepare("SELECT * FROM certificates WHERE id = ?").get(id) as Certificate;
 }
@@ -635,6 +648,101 @@ export function listCertificates(userId: number): Certificate[] {
   return getDb()
     .prepare("SELECT * FROM certificates WHERE user_id = ? ORDER BY issued_at DESC")
     .all(userId) as Certificate[];
+}
+
+/* ── Exams (midterm + final; gate the certificate) ─────────── */
+
+export type ExamKind = "midterm" | "final";
+export type Exam = {
+  id: number;
+  goal_id: number;
+  kind: ExamKind;
+  title: string;
+  study_guide: string;
+  status: "stub" | "generating" | "ready" | "error";
+  best_score: number;
+  passed: number;
+  attempts: number;
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export const PASS_SCORE = 70;
+
+export function examsForGoal(goalId: number): Exam[] {
+  return getDb()
+    .prepare("SELECT * FROM exams WHERE goal_id = ? ORDER BY CASE kind WHEN 'midterm' THEN 0 ELSE 1 END")
+    .all(goalId) as Exam[];
+}
+
+/** Create the midterm (if the course is big enough) + final for a planned goal. */
+export function ensureExams(goalId: number): Exam[] {
+  const plan = getPlanForGoal(goalId);
+  if (!plan || plan.items.length === 0) return examsForGoal(goalId);
+  const goal = getGoal(goalId);
+  const db = getDb();
+  const mk = (kind: ExamKind, title: string) =>
+    db.prepare("INSERT OR IGNORE INTO exams (goal_id, kind, title) VALUES (?, ?, ?)").run(goalId, kind, title);
+  if (plan.items.length >= 4) mk("midterm", `Midterm — ${goal?.title ?? "Course"}`);
+  mk("final", `Final exam — ${goal?.title ?? "Course"}`);
+  return examsForGoal(goalId);
+}
+
+export function getExam(id: number): Exam | undefined {
+  return getDb().prepare("SELECT * FROM exams WHERE id = ?").get(id) as Exam | undefined;
+}
+
+export const userOwnsExam = (userId: number, examId: number) =>
+  owns(
+    "SELECT 1 FROM exams e JOIN goals g ON g.id = e.goal_id WHERE e.id = ? AND g.user_id = ?",
+    examId,
+    userId,
+  );
+
+/** The section content an exam covers — midterm = first half of milestones, final = all. */
+export function examScope(exam: Exam): { title: string; objective: string; content: string }[] {
+  const plan = getPlanForGoal(exam.goal_id);
+  if (!plan || !plan.items.length) return [];
+  const items = exam.kind === "midterm" ? plan.items.slice(0, Math.ceil(plan.items.length / 2)) : plan.items;
+  const ids = items.map((i) => i.id);
+  if (!ids.length) return [];
+  return getDb()
+    .prepare(
+      `SELECT title, objective, content FROM lessons
+        WHERE plan_item_id IN (${ids.map(() => "?").join(",")}) AND status = 'ready'
+        ORDER BY plan_item_id, order_index`,
+    )
+    .all(...ids) as { title: string; objective: string; content: string }[];
+}
+
+export function setExamStatus(id: number, status: Exam["status"], error = ""): void {
+  getDb().prepare("UPDATE exams SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?").run(status, error, id);
+}
+
+export function setExamStudyGuide(id: number, studyGuide: string): void {
+  getDb()
+    .prepare("UPDATE exams SET study_guide = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?")
+    .run(studyGuide, id);
+}
+
+/** Record an attempt; keep the best score; latch 'passed' once earned. */
+export function recordExamAttempt(id: number, score: number): Exam | undefined {
+  const e = getExam(id);
+  if (!e) return undefined;
+  const best = Math.max(e.best_score, score);
+  const passed = e.passed || score >= PASS_SCORE ? 1 : 0;
+  getDb()
+    .prepare("UPDATE exams SET attempts = attempts + 1, best_score = ?, passed = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(best, passed, id);
+  return getExam(id);
+}
+
+export function finalPassed(goalId: number): boolean {
+  const r = getDb().prepare("SELECT passed FROM exams WHERE goal_id = ? AND kind = 'final'").get(goalId) as
+    | { passed: number }
+    | undefined;
+  return !!r && r.passed === 1;
 }
 
 export function setLessonContent(id: number, content: string, sources: object[] = []): void {

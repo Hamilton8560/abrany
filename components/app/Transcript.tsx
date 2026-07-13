@@ -23,8 +23,10 @@ function GradePill({ grade, done }: { grade: string; done: boolean }) {
   return <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${tone}`}>{grade}</span>;
 }
 
+export type ExamRow = { kind: string; best_score: number; passed: number };
+
 /** On-brand curriculum transcript — the graded record of everything done. */
-export default function Transcript({ c, rows }: { c: CertData; rows: TranscriptRow[] }) {
+export default function Transcript({ c, rows, exams = [] }: { c: CertData; rows: TranscriptRow[]; exams?: ExamRow[] }) {
   const issued = new Date(c.issuedAt.replace(" ", "T") + (c.issuedAt.includes("Z") ? "" : "Z")).toLocaleDateString("en-US", {
     year: "numeric", month: "long", day: "numeric",
   });
@@ -87,6 +89,23 @@ export default function Transcript({ c, rows }: { c: CertData; rows: TranscriptR
             </div>
           ))}
         </div>
+
+        {/* examinations */}
+        {exams.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[10.5px] font-medium tracking-[1px] text-muted">EXAMINATIONS · with study guides</p>
+            <div className="flex flex-wrap gap-2">
+              {exams.map((e, i) => (
+                <span
+                  key={i}
+                  className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold ${e.passed ? "bg-up/15 text-[#1f8043]" : "bg-ink/6 text-muted"}`}
+                >
+                  {e.kind === "final" ? "Final exam" : "Midterm"} — {e.best_score}%{e.passed ? " · Passed ✓" : ""}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* footer */}
         <div className="flex items-center justify-between gap-3">

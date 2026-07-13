@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateGoal, issueCertificate, getCertificateForGoal, userOwnsGoal } from "@/lib/repo";
+import { updateGoal, issueCertificate, getCertificateForGoal, examsForGoal, finalPassed, userOwnsGoal } from "@/lib/repo";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -20,6 +20,15 @@ export async function POST(request: Request, ctx: RouteContext<"/api/goals/[id]/
   const body = await request.json().catch(() => ({}));
   if (body.confirm !== true) {
     return NextResponse.json({ error: "Confirmation required" }, { status: 400 });
+  }
+
+  // The certificate is earned by passing the final exam, not by clicking a button.
+  const hasFinal = examsForGoal(goalId).some((e) => e.kind === "final");
+  if (hasFinal && !finalPassed(goalId)) {
+    return NextResponse.json(
+      { error: "Pass the final exam to earn your certificate.", needsFinal: true },
+      { status: 403 },
+    );
   }
 
   updateGoal(goalId, { status: "done" });

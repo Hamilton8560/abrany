@@ -282,15 +282,6 @@ function LessonViewer({
   const [busy, setBusy] = useState(false);
   const done = !!lesson.completed_at;
 
-  // Reading a section completes it — auto-mark done on open (once) if it has content.
-  const autoMarked = useRef(false);
-  useEffect(() => {
-    if (!autoMarked.current && lesson.content && !lesson.completed_at) {
-      autoMarked.current = true;
-      onSetDone(true);
-    }
-  }, [lesson.content, lesson.completed_at, onSetDone]);
-
   const toggleEnroll = async () => {
     setBusy(true);
     const next = !enrolled;
@@ -355,6 +346,22 @@ function LessonViewer({
           <Markdown>{lesson.content}</Markdown>
         ) : (
           <p className="text-[14px] text-muted">This lesson has no content yet.</p>
+        )}
+
+        {lesson.content && (
+          <div className="mt-6 flex flex-col items-center gap-2 border-t border-line/70 pt-6">
+            <button
+              onClick={() => onSetDone(!done)}
+              className={`rounded-full px-6 py-3 text-[14px] font-semibold transition-all ${
+                done ? "bg-up/15 text-up" : "glassx-dark text-white"
+              }`}
+            >
+              {done ? "✓ Section complete — tap to undo" : "Mark section complete"}
+            </button>
+            <p className="text-[11.5px] text-muted">
+              {done ? "Counted toward your progress and transcript." : "Finished reading? Mark it done to track your progress."}
+            </p>
+          </div>
         )}
       </div>
     </div>

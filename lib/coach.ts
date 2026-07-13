@@ -331,6 +331,48 @@ Rules: 3 to 5 questions, answerable in a sentence or two. Do NOT include answers
   return clean;
 }
 
+/** A midterm/final exam: a study guide (Markdown) + a set of exam questions. */
+export async function generateExam(ctx: {
+  goalTitle: string;
+  scope: "midterm" | "final";
+  sections: { title: string; objective: string; content: string }[];
+}): Promise<{ studyGuide: string; questions: { question: string }[] }> {
+  const scopeLabel = ctx.scope === "midterm" ? "midterm (covering the first half of the course)" : "final (covering the whole course)";
+  const n = ctx.scope === "final" ? 8 : 6;
+  const material = ctx.sections
+    .map((s, i) => `### ${i + 1}. ${s.title}\n${s.objective}\n${s.content.slice(0, 2200)}`)
+    .join("\n\n")
+    .slice(0, 14000);
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+You are setting a ${scopeLabel} exam for the course "${ctx.goalTitle}". Produce two things:
+1. A concise STUDY GUIDE in Markdown — the key concepts, definitions, and skills a learner must know to pass, organized by topic with short bullet points and a "how to prepare" note. This is what they revise from.
+2. Exactly ${n} exam QUESTIONS that fairly test understanding across ALL the material (mix recall, explanation, and application; adapt to the subject). Each answerable in a few sentences. Do NOT include answers.
+Respond with ONLY JSON, no prose or fences:
+{ "studyGuide": "# Study Guide\\n...markdown...", "questions": [ "question one", "question two" ] }`,
+    maxTokens: 2800,
+    temperature: 0.5,
+    messages: [
+      { role: "user", content: `COURSE MATERIAL:\n${material}\n\nWrite the ${scopeLabel} study guide and ${n} questions.` },
+    ],
+  });
+  let parsed: { studyGuide?: unknown; questions?: unknown };
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    throw new Error("Coach returned an unparseable exam");
+  }
+  const rawQs = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const questions = rawQs
+    .map((q) => (typeof q === "string" ? q : (q as { question?: string })?.question))
+    .filter((q): q is string => typeof q === "string" && q.trim().length > 0)
+    .slice(0, n)
+    .map((q) => ({ question: q.slice(0, 500) }));
+  if (!questions.length) throw new Error("Coach returned no exam questions");
+  return { studyGuide: typeof parsed.studyGuide === "string" ? parsed.studyGuide : "", questions };
+}
+
 export type QuizVerdict = "correct" | "partial" | "incorrect";
 
 export type QuizGrade = {
