@@ -21,7 +21,8 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 RUN mkdir -p /data
-VOLUME /data
+# Note: no Docker VOLUME directive — Railway rejects it; the persistent disk is
+# attached via a Railway Volume mounted at /data (DATA_DIR points there).
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
