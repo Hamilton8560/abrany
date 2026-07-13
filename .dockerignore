@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.data
+.env.local
+.env
+docs/cockpit
+cockpit.html
+CLAUDE-cockpit-block.md
+*.log

@@ -8,7 +8,8 @@ import { join } from "node:path";
  * don't open a new handle on every module re-evaluation.
  */
 
-const DB_DIR = join(process.cwd(), ".data");
+// DATA_DIR lets a host mount a persistent volume (e.g. /data) for the SQLite file.
+const DB_DIR = process.env.DATA_DIR || join(process.cwd(), ".data");
 const DB_PATH = join(DB_DIR, "abrany.db");
 
 type Global = typeof globalThis & { __abranyDb?: DatabaseSync };
