@@ -1,0 +1,6 @@
+# Assets not needed in the deployed image — kept in the repo for local dev.
+# The landing-page hero uses the pre-extracted public/frames/*.webp sequence
+# (see components/BrainJourney.tsx); this source clip is only used by
+# scripts/extract-frames.sh to regenerate those frames, never served at runtime.
+# Excluding it keeps the `railway up` upload small enough to finish on slow links.
+public/brain-flythrough.mp4
