@@ -191,6 +191,98 @@ function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_cert_user ON certificates(user_id);
     CREATE INDEX IF NOT EXISTS idx_cert_goal ON certificates(goal_id);
 
+    -- businesses: white-label branding + a partner API key for API/MCP access
+    CREATE TABLE IF NOT EXISTS orgs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL,
+      logo          TEXT NOT NULL DEFAULT '',        -- data URL, rendered on certs & org pages
+      tagline       TEXT NOT NULL DEFAULT '',
+      owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      api_key       TEXT NOT NULL UNIQUE,            -- bearer key for /api/v1 + /api/mcp
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS org_members (
+      org_id     INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role       TEXT NOT NULL DEFAULT 'member',     -- admin | member
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (org_id, user_id)
+    );
+
+    -- invites for people who don't have an account yet (auto-accepted at signup)
+    CREATE TABLE IF NOT EXISTS org_invites (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id     INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      email      TEXT NOT NULL,
+      role       TEXT NOT NULL DEFAULT 'member',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(org_id, email)
+    );
+
+    -- education a company assigned to an employee (the goal belongs to the employee)
+    CREATE TABLE IF NOT EXISTS assignments (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id       INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      goal_id      INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+      assigned_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      note         TEXT NOT NULL DEFAULT '',
+      due_at       TEXT,                             -- ISO date; null = no deadline
+      status       TEXT NOT NULL DEFAULT 'assigned', -- assigned|in_progress|passed|failed
+      completed_at TEXT,                             -- when it flipped to passed
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_assign_org  ON assignments(org_id);
+    CREATE INDEX IF NOT EXISTS idx_assign_user ON assignments(user_id);
+    CREATE INDEX IF NOT EXISTS idx_members_user ON org_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_invites_email ON org_invites(email);
+
+    -- marketplace: a published course points at the author's goal; cloning copies it
+    CREATE TABLE IF NOT EXISTS course_listings (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id       INTEGER NOT NULL UNIQUE REFERENCES goals(id) ON DELETE CASCADE,
+      owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title         TEXT NOT NULL,
+      blurb         TEXT NOT NULL DEFAULT '',
+      tags          TEXT NOT NULL DEFAULT '',              -- comma-separated
+      age_group     TEXT NOT NULL DEFAULT 'adults',        -- kids|teens|adults|seniors|all
+      clones        INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- community forums (seeded by age group + learning interest)
+    CREATE TABLE IF NOT EXISTS forums (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug        TEXT NOT NULL UNIQUE,
+      kind        TEXT NOT NULL,                           -- age | interest
+      title       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      order_index INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS forum_threads (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      forum_id   INTEGER NOT NULL REFERENCES forums(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS forum_posts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id  INTEGER NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_threads_forum ON forum_threads(forum_id);
+    CREATE INDEX IF NOT EXISTS idx_posts_thread  ON forum_posts(thread_id);
+    CREATE INDEX IF NOT EXISTS idx_listings_owner ON course_listings(owner_user_id);
+
     -- durable async job queue drained by the background worker
     CREATE TABLE IF NOT EXISTS jobs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,6 +335,39 @@ function migrate(db: DatabaseSync) {
   addCol("users", "name", "name TEXT NOT NULL DEFAULT ''");
   // a graded section keeps its result (e.g. "A", "92%") for the transcript
   addCol("lessons", "grade", "grade TEXT NOT NULL DEFAULT ''");
+  // accumulated seconds the learner spent reading this section (heartbeat-fed)
+  addCol("lessons", "read_sec", "read_sec INTEGER NOT NULL DEFAULT 0");
+  // V2 plans: legacy rows stay version 1 and render exactly as before
+  addCol("plans", "version", "version INTEGER NOT NULL DEFAULT 1");
+  addCol("plans", "intake", "intake TEXT NOT NULL DEFAULT ''"); // JSON: level/hoursPerWeek/targetDate/focus
+  addCol("plan_items", "outcomes", "outcomes TEXT NOT NULL DEFAULT '[]'"); // measurable "you can …"
+  addCol("plan_items", "hours", "hours REAL NOT NULL DEFAULT 0");
+  addCol("plan_items", "difficulty", "difficulty TEXT NOT NULL DEFAULT ''"); // intro|core|advanced
+  // white-label: certs issued for org-assigned training carry the company brand
+  addCol("certificates", "org_id", "org_id INTEGER REFERENCES orgs(id) ON DELETE SET NULL");
+  addCol("certificates", "org_name", "org_name TEXT NOT NULL DEFAULT ''");
+  addCol("certificates", "org_logo", "org_logo TEXT NOT NULL DEFAULT ''");
+
+  // seed the community forums (idempotent; slugs are stable identifiers)
+  const seedForum = db.prepare(
+    "INSERT OR IGNORE INTO forums (slug, kind, title, description, order_index) VALUES (?, ?, ?, ?, ?)",
+  );
+  (
+    [
+      ["kids-parents", "age", "Kids & Parents", "Learning together under 13 — parents welcome", 0],
+      ["teens", "age", "Teens", "13–17: school, skills, and what comes next", 1],
+      ["adults", "age", "Adults", "Careers, upskilling, and lifelong learning", 2],
+      ["fifty-plus", "age", "50+", "It's never too late — learning after fifty", 3],
+      ["languages", "interest", "Languages", "Vocab streaks, immersion tips, conversation partners", 10],
+      ["stem-coding", "interest", "STEM & Coding", "Math, science, engineering, programming", 11],
+      ["trades-safety", "interest", "Trades & Safety", "Welding, electrical, OSHA, certifications on the job", 12],
+      ["business-money", "interest", "Business & Money", "Entrepreneurship, sales, finance, investing", 13],
+      ["arts-music", "interest", "Arts & Music", "Instruments, drawing, writing, performance", 14],
+      ["faith-philosophy", "interest", "Faith & Philosophy", "Scripture, ethics, big questions, reflective study", 15],
+      ["test-prep", "interest", "Test Prep & Certs", "Exams, licenses, and how to pass them", 16],
+      ["health-fitness", "interest", "Health & Fitness", "Training the body alongside the mind", 17],
+    ] as const
+  ).forEach(([slug, kind, title, description, order]) => seedForum.run(slug, kind, title, description, order));
 }
 
 export function getDb(): DatabaseSync {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserByEmail, createUser } from "@/lib/repo";
 import { hashPassword, startSession, ensureOwner, getSessionUser } from "@/lib/auth";
 import { publicUser } from "@/lib/user";
+import { acceptInvitesForUser } from "@/lib/org";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "An account with that email already exists" }, { status: 409 });
 
   const user = createUser(email, hashPassword(password), false);
+  acceptInvitesForUser(user); // employer invited this email → they join the org now
   await startSession(user.id);
   return NextResponse.json({ user: publicUser(user) }, { status: 201 });
 }

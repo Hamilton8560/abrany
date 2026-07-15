@@ -27,6 +27,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   const [completing, setCompleting] = useState(false);
   const [exams, setExams] = useState<Exam[]>([]);
   const [examOpen, setExamOpen] = useState<Exam | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [newMilestone, setNewMilestone] = useState("");
+  // V2 intake — the coach calibrates the plan to these
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [level, setLevel] = useState<"new" | "some" | "solid">("some");
+  const [hoursPerWeek, setHoursPerWeek] = useState(5);
+  const [targetDate, setTargetDate] = useState("");
+  const [focus, setFocus] = useState("");
 
   const loadExams = useCallback(() => {
     api<{ exams: Exam[] }>(`/api/goals/${id}/exams`)
@@ -72,13 +80,40 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     setGenerating(true);
     setError(null);
     try {
-      const d = await api<{ plan: FullPlan }>(`/api/goals/${id}/plan`, { method: "POST" });
+      const d = await api<{ plan: FullPlan }>(`/api/goals/${id}/plan`, {
+        method: "POST",
+        body: JSON.stringify({ level, hoursPerWeek, targetDate: targetDate || undefined, focus: focus || undefined }),
+      });
       setPlan(d.plan);
+      setIntakeOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "The coach couldn't build a plan right now.");
     } finally {
       setGenerating(false);
     }
+  };
+
+  /* ── course editing (edit mode) ── */
+  const saveItem = async (itemId: number, fields: { title?: string; detail?: string }) => {
+    await api(`/api/plan-items/${itemId}`, { method: "PATCH", body: JSON.stringify(fields) }).catch(() => {});
+  };
+  const moveItem = async (itemId: number, move: "up" | "down") => {
+    await api(`/api/plan-items/${itemId}`, { method: "PATCH", body: JSON.stringify({ move }) }).catch(() => {});
+    load();
+  };
+  const removeItem = async (item: PlanItem) => {
+    if (!window.confirm(`Delete milestone “${item.title}” and its sections?`)) return;
+    await api(`/api/plan-items/${item.id}`, { method: "DELETE" }).catch(() => {});
+    load();
+  };
+  const addMilestone = async () => {
+    if (!newMilestone.trim()) return;
+    await api("/api/plan-items", {
+      method: "POST",
+      body: JSON.stringify({ goalId: Number(id), title: newMilestone }),
+    }).catch(() => {});
+    setNewMilestone("");
+    load();
   };
 
   const toggleItem = async (item: PlanItem) => {
@@ -238,35 +273,96 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
             Learning plan
+            {plan && plan.version >= 2 && (
+              <span className="ml-2 rounded-full bg-up/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-up">
+                V2
+              </span>
+            )}
           </h2>
           {plan && (
-            <button
-              onClick={generate}
-              disabled={generating}
-              className="text-[12px] font-medium text-accent hover:underline disabled:opacity-50"
-            >
-              {generating ? "Rebuilding…" : "Rebuild plan"}
-            </button>
+            <span className="flex items-center gap-3">
+              <button
+                onClick={() => setEditing((v) => !v)}
+                className={`text-[12px] font-medium ${editing ? "text-up" : "text-accent"} hover:underline`}
+              >
+                {editing ? "Done editing" : "Edit course"}
+              </button>
+              <button
+                onClick={() => setIntakeOpen((v) => !v)}
+                disabled={generating}
+                className="text-[12px] font-medium text-accent hover:underline disabled:opacity-50"
+              >
+                {generating ? "Rebuilding…" : "Rebuild plan"}
+              </button>
+            </span>
           )}
         </div>
 
         {error && <p className="mt-3 text-[13px] text-accent">{error}</p>}
 
-        {!plan && (
-          <div className="mt-5 flex flex-col items-center gap-4 rounded-[16px] border border-dashed border-line px-6 py-10 text-center">
-            <p className="max-w-[360px] text-[14px] text-muted">
-              No plan yet. Let your coach break this goal into realistic, staged milestones.
-            </p>
-            <button
-              onClick={generate}
-              disabled={generating}
-              className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-60"
-            >
-              {generating ? "Building your plan…" : "Build my plan with AI"}
-            </button>
+        {(!plan || intakeOpen) && (
+          <div className={`mt-4 flex flex-col gap-3 rounded-[16px] border border-dashed border-line px-5 py-5 ${plan ? "" : "items-stretch"}`}>
+            {!plan && (
+              <p className="text-center text-[14px] text-muted">
+                No plan yet. Tell your coach where you&apos;re starting from and it builds an
+                outcome-based plan sized to your real time.
+              </p>
+            )}
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Current level
+                <select
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value as typeof level)}
+                  className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
+                >
+                  <option value="new">Complete beginner</option>
+                  <option value="some">Some experience</option>
+                  <option value="solid">Solid — want depth</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Hours per week
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={hoursPerWeek}
+                  onChange={(e) => setHoursPerWeek(Number(e.target.value) || 1)}
+                  className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Target date (optional)
+                <input
+                  type="date"
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                  className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Why / focus (optional)
+                <input
+                  value={focus}
+                  onChange={(e) => setFocus(e.target.value)}
+                  placeholder="e.g. conversation for a trip in October"
+                  className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
+                />
+              </label>
+            </div>
+            <div className="flex justify-center">
+              <button
+                onClick={generate}
+                disabled={generating}
+                className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-60"
+              >
+                {generating ? "Building your plan…" : plan ? "Rebuild my plan (V2)" : "Build my plan with AI"}
+              </button>
+            </div>
             {generating && (
-              <p className="text-[11.5px] text-muted">
-                Queued through MiniMax — this can take a few seconds.
+              <p className="text-center text-[11.5px] text-muted">
+                Queued through your AI — this can take a few seconds.
               </p>
             )}
           </div>
@@ -282,6 +378,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             <ol className="mt-4 flex flex-col gap-2.5">
               {plan.items.map((item, i) => {
                 const done = item.status === "done";
+                let outcomes: string[] = [];
+                try {
+                  outcomes = JSON.parse(item.outcomes || "[]");
+                } catch { /* legacy rows */ }
                 return (
                   <li
                     key={item.id}
@@ -299,30 +399,96 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                       <CheckIcon className="size-3.5" />
                     </button>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <p
-                          className={`text-[14.5px] font-semibold ${
-                            done ? "text-muted line-through" : "text-ink"
-                          }`}
-                        >
-                          <span className="mr-1.5 text-muted">{i + 1}.</span>
-                          {item.title}
-                        </p>
-                        {item.estimate && (
-                          <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10.5px] font-medium text-accent">
-                            {item.estimate}
-                          </span>
-                        )}
-                      </div>
-                      {item.detail && (
-                        <p className="mt-1 text-[13px] leading-snug text-muted">{item.detail}</p>
+                      {editing ? (
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <input
+                              defaultValue={item.title}
+                              onBlur={(e) => e.target.value.trim() && e.target.value !== item.title && saveItem(item.id, { title: e.target.value }).then(load)}
+                              className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-1.5 text-[13.5px] font-semibold text-ink outline-none focus:border-accent"
+                            />
+                            <button onClick={() => moveItem(item.id, "up")} disabled={i === 0} title="Move up" className="text-[13px] font-bold text-muted hover:text-ink disabled:opacity-30">↑</button>
+                            <button onClick={() => moveItem(item.id, "down")} disabled={i === plan.items.length - 1} title="Move down" className="text-[13px] font-bold text-muted hover:text-ink disabled:opacity-30">↓</button>
+                            <button onClick={() => removeItem(item)} title="Delete milestone" className="text-[13px] font-bold text-muted hover:text-accent">✕</button>
+                          </div>
+                          <input
+                            defaultValue={item.detail}
+                            placeholder="What to do and how to know you're done"
+                            onBlur={(e) => e.target.value !== item.detail && saveItem(item.id, { detail: e.target.value }).then(load)}
+                            className="rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] text-muted outline-none focus:border-accent"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <p
+                              className={`text-[14.5px] font-semibold ${
+                                done ? "text-muted line-through" : "text-ink"
+                              }`}
+                            >
+                              <span className="mr-1.5 text-muted">{i + 1}.</span>
+                              {item.title}
+                            </p>
+                            <span className="flex shrink-0 items-center gap-1.5">
+                              {item.difficulty && (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                                    item.difficulty === "intro"
+                                      ? "bg-up/12 text-up"
+                                      : item.difficulty === "advanced"
+                                        ? "bg-ink/10 text-ink"
+                                        : "bg-accent/10 text-accent"
+                                  }`}
+                                >
+                                  {item.difficulty}
+                                </span>
+                              )}
+                              {item.estimate && (
+                                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10.5px] font-medium text-accent">
+                                  {item.estimate}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          {item.detail && (
+                            <p className="mt-1 text-[13px] leading-snug text-muted">{item.detail}</p>
+                          )}
+                          {outcomes.length > 0 && (
+                            <ul className="mt-1.5 flex flex-col gap-0.5">
+                              {outcomes.map((o, j) => (
+                                <li key={j} className="flex items-start gap-1.5 text-[12px] leading-snug text-muted">
+                                  <CheckIcon className="mt-0.5 size-3 shrink-0 text-up" />
+                                  <span>{o}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
                       )}
-                      <MilestoneLessons planItemId={item.id} milestoneTitle={item.title} onProgress={load} />
+                      <MilestoneLessons planItemId={item.id} milestoneTitle={item.title} onProgress={load} editing={editing} />
                     </div>
                   </li>
                 );
               })}
             </ol>
+            {editing && (
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={newMilestone}
+                  onChange={(e) => setNewMilestone(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addMilestone()}
+                  placeholder="Add a milestone…"
+                  className="min-w-0 flex-1 rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
+                />
+                <button
+                  onClick={addMilestone}
+                  disabled={!newMilestone.trim()}
+                  className="glassx-dark shrink-0 rounded-full px-4 py-2.5 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>

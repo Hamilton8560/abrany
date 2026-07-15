@@ -251,6 +251,8 @@ export type Plan = {
   goal_id: number;
   title: string;
   summary: string;
+  version: number; // 1 = legacy, 2 = outcome-based (intake, hours, difficulty)
+  intake: string; // JSON snapshot of the V2 intake ('' on legacy plans)
   created_at: string;
 };
 
@@ -262,6 +264,9 @@ export type PlanItem = {
   estimate: string;
   order_index: number;
   status: "todo" | "doing" | "done";
+  outcomes: string; // JSON array of measurable "you can …" statements ('[]' on v1)
+  hours: number; // estimated hours (0 on v1)
+  difficulty: string; // intro|core|advanced ('' on v1)
 };
 
 /** A milestone plus how many of its lessons exist / are completed (for progress). */
@@ -369,22 +374,107 @@ export function createPlan(
   goalId: number,
   title: string,
   summary: string,
-  items: { title: string; detail?: string; estimate?: string }[],
+  items: {
+    title: string;
+    detail?: string;
+    estimate?: string;
+    outcomes?: string[];
+    hours?: number;
+    difficulty?: string;
+  }[],
+  opts: { version?: number; intake?: object } = {},
 ): Plan & { items: PlanItem[] } {
   const db = getDb();
   const info = db
-    .prepare("INSERT INTO plans (goal_id, title, summary) VALUES (?, ?, ?)")
-    .run(goalId, title, summary);
+    .prepare("INSERT INTO plans (goal_id, title, summary, version, intake) VALUES (?, ?, ?, ?, ?)")
+    .run(goalId, title, summary, opts.version ?? 1, opts.intake ? JSON.stringify(opts.intake) : "");
   const planId = Number(info.lastInsertRowid);
   const insItem = db.prepare(
-    "INSERT INTO plan_items (plan_id, title, detail, estimate, order_index) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO plan_items (plan_id, title, detail, estimate, order_index, outcomes, hours, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   );
-  items.forEach((it, i) => insItem.run(planId, it.title, it.detail ?? "", it.estimate ?? "", i));
+  items.forEach((it, i) =>
+    insItem.run(
+      planId,
+      it.title,
+      it.detail ?? "",
+      it.estimate ?? "",
+      i,
+      JSON.stringify(it.outcomes ?? []),
+      it.hours ?? 0,
+      it.difficulty ?? "",
+    ),
+  );
   return getPlanForGoal(goalId)!;
 }
 
 export function updatePlanItem(itemId: number, status: PlanItem["status"]): void {
   getDb().prepare("UPDATE plan_items SET status = ? WHERE id = ?").run(status, itemId);
+}
+
+/* ── course editing (structural + textual, content untouched) ── */
+
+export function getPlanItem(id: number): PlanItem | undefined {
+  return getDb().prepare("SELECT * FROM plan_items WHERE id = ?").get(id) as PlanItem | undefined;
+}
+
+export function updatePlanItemFields(
+  id: number,
+  fields: Partial<Pick<PlanItem, "title" | "detail" | "estimate">>,
+): void {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (fields.title !== undefined && fields.title.trim()) { sets.push("title = ?"); vals.push(fields.title.trim().slice(0, 160)); }
+  if (fields.detail !== undefined) { sets.push("detail = ?"); vals.push(fields.detail.slice(0, 400)); }
+  if (fields.estimate !== undefined) { sets.push("estimate = ?"); vals.push(fields.estimate.slice(0, 40)); }
+  if (sets.length) getDb().prepare(`UPDATE plan_items SET ${sets.join(", ")} WHERE id = ?`).run(...(vals as never[]), id);
+}
+
+export function deletePlanItem(id: number): void {
+  getDb().prepare("DELETE FROM plan_items WHERE id = ?").run(id);
+}
+
+/** Move a milestone one slot up or down (swaps order_index with its neighbor). */
+export function movePlanItem(id: number, dir: "up" | "down"): void {
+  const db = getDb();
+  const item = getPlanItem(id);
+  if (!item) return;
+  const neighbor = db
+    .prepare(
+      `SELECT * FROM plan_items WHERE plan_id = ? AND order_index ${dir === "up" ? "<" : ">"} ?
+       ORDER BY order_index ${dir === "up" ? "DESC" : "ASC"} LIMIT 1`,
+    )
+    .get(item.plan_id, item.order_index) as PlanItem | undefined;
+  if (!neighbor) return;
+  db.prepare("UPDATE plan_items SET order_index = ? WHERE id = ?").run(neighbor.order_index, item.id);
+  db.prepare("UPDATE plan_items SET order_index = ? WHERE id = ?").run(item.order_index, neighbor.id);
+}
+
+/** Append a new milestone to a goal's latest plan. */
+export function addPlanItem(planId: number, title: string, detail = ""): PlanItem {
+  const db = getDb();
+  const max = db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM plan_items WHERE plan_id = ?").get(planId) as { m: number };
+  const info = db
+    .prepare("INSERT INTO plan_items (plan_id, title, detail, order_index) VALUES (?, ?, ?, ?)")
+    .run(planId, title.trim().slice(0, 160), detail.slice(0, 400), max.m + 1);
+  return getPlanItem(Number(info.lastInsertRowid))!;
+}
+
+export function updateLessonFields(
+  id: number,
+  fields: Partial<Pick<Lesson, "title" | "objective">>,
+): void {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (fields.title !== undefined && fields.title.trim()) { sets.push("title = ?"); vals.push(fields.title.trim().slice(0, 160)); }
+  if (fields.objective !== undefined) { sets.push("objective = ?"); vals.push(fields.objective.slice(0, 300)); }
+  if (sets.length) {
+    sets.push("updated_at = datetime('now')");
+    getDb().prepare(`UPDATE lessons SET ${sets.join(", ")} WHERE id = ?`).run(...(vals as never[]), id);
+  }
+}
+
+export function deleteLesson(id: number): void {
+  getDb().prepare("DELETE FROM lessons WHERE id = ?").run(id);
 }
 
 /* ── Sessions ──────────────────────────────────────────── */
@@ -547,6 +637,10 @@ export type Certificate = {
   minutes_total: number;
   overall: string;
   issued_at: string;
+  /** White-label snapshot: set when the goal was assigned by an organization. */
+  org_id: number | null;
+  org_name: string;
+  org_logo: string;
 };
 
 export type TranscriptRow = { title: string; kind: string; completed_at: string | null; grade: string };
@@ -617,9 +711,15 @@ export function issueCertificate(userId: number, goalId: number): Certificate {
     finalExam && finalExam.passed
       ? scoreToLetter(finalExam.best_score)
       : overallLabel(stats.rows, stats.sectionsTotal, stats.sectionsDone);
+  // white-label: org-assigned training issues under the company's brand
+  const org = db
+    .prepare(
+      "SELECT o.id, o.name, o.logo FROM assignments a JOIN orgs o ON o.id = a.org_id WHERE a.goal_id = ? ORDER BY a.id LIMIT 1",
+    )
+    .get(goalId) as { id: number; name: string; logo: string } | undefined;
   db.prepare(
-    `INSERT INTO certificates (id, user_id, goal_id, recipient_name, title, sections_total, sections_done, minutes_total, overall)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO certificates (id, user_id, goal_id, recipient_name, title, sections_total, sections_done, minutes_total, overall, org_id, org_name, org_logo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -630,6 +730,9 @@ export function issueCertificate(userId: number, goalId: number): Certificate {
     stats.sectionsDone,
     stats.minutesTotal,
     overall,
+    org?.id ?? null,
+    org?.name ?? "",
+    org?.logo ?? "",
   );
   return db.prepare("SELECT * FROM certificates WHERE id = ?").get(id) as Certificate;
 }

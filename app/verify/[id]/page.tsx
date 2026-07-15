@@ -44,6 +44,8 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
     issuedAt: cert.issued_at,
     verifyUrl,
     qr: await qrDataUrl(verifyUrl),
+    orgName: cert.org_name,
+    orgLogo: cert.org_logo,
   };
 
   return (
@@ -56,8 +58,15 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
           <p className="font-display text-[18px] font-extrabold uppercase text-ink">Verified credential</p>
           <p className="mt-1 text-[14px] text-muted">
             <span className="font-semibold text-ink">{cert.recipient_name}</span> completed{" "}
-            <span className="font-semibold text-ink">{cert.title}</span> on Abrany. Credential{" "}
-            <span className="font-semibold text-ink">{cert.id}</span>.
+            <span className="font-semibold text-ink">{cert.title}</span>
+            {cert.org_name ? (
+              <>
+                {" "}under <span className="font-semibold text-ink">{cert.org_name}</span> on Abrany
+              </>
+            ) : (
+              " on Abrany"
+            )}
+            . Credential <span className="font-semibold text-ink">{cert.id}</span>.
           </p>
         </div>
       </div>

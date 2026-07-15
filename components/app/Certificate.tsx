@@ -11,6 +11,9 @@ export type CertData = {
   issuedAt: string;
   verifyUrl: string;
   qr?: string; // data URL of a QR pointing at verifyUrl
+  /** White-label: the certificate is issued under this company's brand. */
+  orgName?: string;
+  orgLogo?: string; // data URL
 };
 
 const fmtDate = (iso: string) =>
@@ -55,14 +58,28 @@ export default function Certificate({ c }: { c: CertData }) {
         </div>
       )}
 
-      {/* top content */}
+      {/* top content — white-labeled when the training was company-assigned */}
       <div className="absolute inset-x-0 flex flex-col items-center text-center" style={{ top: "8.5cqw", gap: "1.7cqw" }}>
-        <div className="flex items-center" style={{ gap: "1cqw" }}>
-          <span className="grid place-items-center rounded-full bg-ink text-white" style={{ width: "4.6cqw", height: "4.6cqw" }}>
-            <BrainGlyph style={{ width: "2.6cqw", height: "2.6cqw" }} />
-          </span>
-          <span className="font-display font-extrabold" style={{ fontSize: "2cqw", letterSpacing: "0.2cqw" }}>ABRANY</span>
-        </div>
+        {c.orgName ? (
+          <div className="flex flex-col items-center" style={{ gap: "0.7cqw" }}>
+            {c.orgLogo ? (
+              <img src={c.orgLogo} alt={c.orgName} style={{ height: "5cqw", maxWidth: "26cqw", objectFit: "contain" }} />
+            ) : null}
+            <span className="font-display font-extrabold uppercase" style={{ fontSize: "2cqw", letterSpacing: "0.2cqw" }}>
+              {c.orgName}
+            </span>
+            <span className="font-medium text-muted" style={{ fontSize: "0.95cqw", letterSpacing: "0.16cqw" }}>
+              ISSUED IN PARTNERSHIP WITH ABRANY
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center" style={{ gap: "1cqw" }}>
+            <span className="grid place-items-center rounded-full bg-ink text-white" style={{ width: "4.6cqw", height: "4.6cqw" }}>
+              <BrainGlyph style={{ width: "2.6cqw", height: "2.6cqw" }} />
+            </span>
+            <span className="font-display font-extrabold" style={{ fontSize: "2cqw", letterSpacing: "0.2cqw" }}>ABRANY</span>
+          </div>
+        )}
         <p className="font-display font-bold text-accent" style={{ fontSize: "1.15cqw", letterSpacing: "0.34cqw" }}>
           CERTIFICATE OF COMPLETION
         </p>

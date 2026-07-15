@@ -2,6 +2,7 @@ import { scryptSync, randomBytes, timingSafeEqual, createHmac } from "node:crypt
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createUser, getUser, getUserByEmail, backfillOwnerData, type User } from "./repo";
+import { createOrg, orgForUser } from "./org";
 
 /**
  * Minimal, dependency-free auth: scrypt password hashing + an HMAC-signed
@@ -61,6 +62,8 @@ export function ensureOwner(): void {
   const owner = getUserByEmail(email) ?? createUser(email, hashPassword(password), true);
   // one-time: adopt any pre-multi-tenant rows (NULL user_id) so they belong to the owner
   backfillOwnerData(owner.id);
+  // the owner also runs an organization (rename/brand it in /app/org → Branding)
+  if (!orgForUser(owner.id)) createOrg(owner.id, process.env.ADMIN_ORG || "Abrany");
 }
 
 /* ── cookie helpers (call inside route handlers) ───────────── */

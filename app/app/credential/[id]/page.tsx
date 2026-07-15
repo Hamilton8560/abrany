@@ -37,6 +37,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
     issuedAt: cert.issued_at,
     verifyUrl,
     qr,
+    orgName: cert.org_name,
+    orgLogo: cert.org_logo,
   };
 
   return (

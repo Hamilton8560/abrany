@@ -101,6 +101,103 @@ export async function generatePlan(goal: {
   return clean;
 }
 
+/* ── V2 plans: outcome-first, time-budgeted, capstone-anchored ── */
+
+export type PlanIntake = {
+  level: "new" | "some" | "solid";
+  hoursPerWeek: number;
+  targetDate?: string; // ISO date, optional
+  focus?: string; // why they're learning / what to emphasize
+};
+
+export const DEFAULT_INTAKE: PlanIntake = { level: "some", hoursPerWeek: 5 };
+
+export type GeneratedPlanV2 = {
+  title: string;
+  summary: string;
+  items: {
+    title: string;
+    detail: string;
+    estimate: string;
+    outcomes: string[];
+    hours: number;
+    difficulty: "intro" | "core" | "advanced";
+  }[];
+};
+
+export async function generatePlanV2(
+  goal: { title: string; description: string },
+  intake: PlanIntake,
+): Promise<GeneratedPlanV2> {
+  const system = `${COACH_SYSTEM}
+
+You are generating a STRUCTURED LEARNING PLAN, V2. Design OUTCOME-FIRST (backward design): for each milestone, first decide the 2-4 measurable "you can …" outcomes, then name the milestone after them. Respond with ONLY a single JSON object, no prose, no markdown fences. Shape:
+{
+  "title": "short plan title",
+  "summary": "3-4 sentences: scope, the stated hours/week assumption, total estimated hours, and — if a target date was given — whether it fits (if it does NOT fit, say so plainly and state what you trimmed to make it fit)",
+  "items": [
+    {
+      "title": "milestone title",
+      "detail": "what to do and how to know you're done",
+      "estimate": "e.g. '2 weeks at 5 h/wk'",
+      "outcomes": ["you can …", "you can …"],
+      "hours": 8,
+      "difficulty": "intro|core|advanced"
+    }
+  ]
+}
+Rules:
+- 5 to 9 items ordered foundation → advanced; "difficulty" must ramp (intro items first, advanced last).
+- Every item has 2-4 OUTCOMES, each a concrete, checkable "you can …" statement — no vague "understand X".
+- "hours" is a realistic number for THIS learner's level; the sum across items is the course's total hours. Estimates derive from the hours/week budget (e.g. 8 hours at 4 h/wk → "2 weeks").
+- The FINAL item is a CAPSTONE: one integrating project whose outcomes restate the goal in demonstrable form. Mark it difficulty "advanced".
+- Calibrate to the learner: "new" starts from zero; "some" skips true basics; "solid" goes straight to gaps and advanced work.
+- Be honest about timelines. Never over-promise.`;
+
+  const deadlineLine = intake.targetDate ? `\nTarget date: ${intake.targetDate} (today is ${new Date().toISOString().slice(0, 10)})` : "";
+  const raw = await complete({
+    system,
+    maxTokens: 3000,
+    temperature: 0.55,
+    messages: [
+      {
+        role: "user",
+        content: `Build a V2 learning plan.\n\nGoal: ${goal.title}\n${goal.description ? `Details: ${goal.description}\n` : ""}Current level: ${intake.level === "new" ? "complete beginner" : intake.level === "some" ? "some experience" : "solid foundation, wants depth"}\nTime budget: ${intake.hoursPerWeek} hours/week${deadlineLine}${intake.focus ? `\nWhy / focus: ${intake.focus}` : ""}`,
+      },
+    ],
+  });
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    throw new Error("Coach returned an unparseable plan");
+  }
+  const p = parsed as Partial<GeneratedPlanV2>;
+  const items = Array.isArray(p.items) ? p.items : [];
+  const diffs = new Set(["intro", "core", "advanced"]);
+  const clean: GeneratedPlanV2 = {
+    title: (p.title || goal.title).toString().slice(0, 120),
+    summary: (p.summary || "").toString().slice(0, 900),
+    items: items
+      .filter((it) => it && typeof it.title === "string" && it.title.trim())
+      .slice(0, 12)
+      .map((it) => ({
+        title: it.title.toString().slice(0, 160),
+        detail: (it.detail || "").toString().slice(0, 400),
+        estimate: (it.estimate || "").toString().slice(0, 40),
+        outcomes: (Array.isArray(it.outcomes) ? it.outcomes : [])
+          .filter((o): o is string => typeof o === "string" && o.trim().length > 0)
+          .slice(0, 5)
+          .map((o) => o.slice(0, 200)),
+        hours: Math.max(0, Math.min(200, Number(it.hours) || 0)),
+        difficulty: diffs.has(it.difficulty as string) ? (it.difficulty as GeneratedPlanV2["items"][number]["difficulty"]) : "core",
+      })),
+  };
+  if (!clean.items.length) throw new Error("Coach returned an empty plan");
+  return clean;
+}
+
 /* ── Scope gate: is this goal feasible as one plan, or must it decompose? ── */
 
 export type ScopeVerdict =

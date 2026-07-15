@@ -21,10 +21,13 @@ export default function MilestoneLessons({
   planItemId,
   milestoneTitle,
   onProgress,
+  editing = false,
 }: {
   planItemId: number;
   milestoneTitle: string;
   onProgress?: () => void;
+  /** Course-edit mode: allows renaming/removing sections. */
+  editing?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
@@ -207,7 +210,34 @@ export default function MilestoneLessons({
                           ) : null}
                         </p>
                       </div>
-                      <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
+                      {editing ? (
+                        <span className="flex shrink-0 items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              const title = window.prompt("Rename this section:", l.title);
+                              if (!title || !title.trim() || title === l.title) return;
+                              await api(`/api/lessons/${l.id}`, { method: "PATCH", body: JSON.stringify({ title }) }).catch(() => {});
+                              refresh().catch(() => {});
+                            }}
+                            className="text-[11.5px] font-semibold text-muted hover:text-ink"
+                          >
+                            Rename
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Delete section “${l.title}”?`)) return;
+                              await api(`/api/lessons/${l.id}`, { method: "DELETE" }).catch(() => {});
+                              refresh().catch(() => {});
+                              onProgress?.();
+                            }}
+                            className="text-[11.5px] font-semibold text-muted hover:text-accent"
+                          >
+                            Delete
+                          </button>
+                        </span>
+                      ) : (
+                        <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
+                      )}
                     </li>
                   );
                 })}
@@ -269,6 +299,23 @@ function LessonAction({
   );
 }
 
+/** While a lesson is open and the tab visible, bank reading time in 20s beats. */
+function useReadingHeartbeat(lessonId: number, active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const BEAT = 20; // seconds per ping (server clamps at 60)
+    const send = () => {
+      if (document.visibilityState !== "visible") return;
+      api(`/api/lessons/${lessonId}/heartbeat`, {
+        method: "POST",
+        body: JSON.stringify({ sec: BEAT }),
+      }).catch(() => {});
+    };
+    const id = setInterval(send, BEAT * 1000);
+    return () => clearInterval(id);
+  }, [lessonId, active]);
+}
+
 function LessonViewer({
   lesson,
   onClose,
@@ -281,6 +328,7 @@ function LessonViewer({
   const [enrolled, setEnrolled] = useState(lesson.srs_due != null);
   const [busy, setBusy] = useState(false);
   const done = !!lesson.completed_at;
+  useReadingHeartbeat(lesson.id, lesson.status === "ready" && !!lesson.content);
 
   const toggleEnroll = async () => {
     setBusy(true);

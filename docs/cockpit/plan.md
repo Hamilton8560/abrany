@@ -22,3 +22,15 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Presentations (AI markdown decks, diagrams, present + PDF)
 - [x] Kimi Code as swappable / load-balanced 2nd LLM provider
 - [x] Book-writing (outline → async chapters → reader)
+- [x] Business orgs: employers sign employees up, invites auto-accept at signup
+- [x] Assigned education with deadlines + pass/fail (exam-gated, late-pass aware)
+- [x] Per-section reading-time tracking (lesson viewer heartbeat)
+- [x] Employer dashboard (/app/org): team, assignments + live progress, branding, API key
+- [x] Partner REST API (/api/v1) — author curricula with any AI model
+- [x] MCP endpoint (/api/mcp) — plug Abrany into Claude Code / any MCP client
+- [x] White-label certificates (company logo + name, "in partnership with Abrany")
+- [x] Strategy report: why plans feel generalized + V2 design (docs/reports/…)
+- [x] V2 plans: intake → outcome-first milestones, hours math, difficulty ramp, capstone (legacy v1 untouched)
+- [x] Course editing: rename/reorder/add/delete milestones & sections (Edit course mode)
+- [x] Course marketplace: publish with tags/age group, browse, one-click clone (progress reset)
+- [x] Community forums: 4 age groups + 8 interests, threads & replies
