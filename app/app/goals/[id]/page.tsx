@@ -10,14 +10,15 @@ import MilestoneLessons from "@/components/app/MilestoneLessons";
 import ExamModal from "@/components/app/ExamModal";
 
 type FullPlan = Plan & { items: PlanItemWithProgress[] };
-type GoalResp = { goal: Goal; plan: FullPlan | null; children: Goal[] };
+type TrackChild = Goal & { hasPlan: boolean; milestones: number; sectionsTotal: number; sectionsDone: number };
+type GoalResp = { goal: Goal; plan: FullPlan | null; children: TrackChild[] };
 
 export default function GoalDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [goal, setGoal] = useState<Goal | null>(null);
   const [plan, setPlan] = useState<FullPlan | null>(null);
-  const [children, setChildren] = useState<Goal[]>([]);
+  const [children, setChildren] = useState<TrackChild[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +261,15 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                     <p className="truncate text-[12.5px] text-muted">{c.description}</p>
                   )}
                 </div>
+                {c.hasPlan ? (
+                  <span className="shrink-0 rounded-full bg-up/12 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wide text-up">
+                    {c.sectionsTotal > 0 ? `${c.sectionsDone}/${c.sectionsTotal} sections` : `Plan ready · ${c.milestones}`}
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-ink/6 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted">
+                    Not started
+                  </span>
+                )}
                 <ArrowRight className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
               </Link>
             ))}
