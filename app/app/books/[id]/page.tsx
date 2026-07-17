@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import type { Book, Chapter } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
+import QueueHint from "@/components/app/QueueHint";
 import { ArrowRight, CheckIcon } from "@/components/icons";
 
 type Resp = { book: Book; chapters: Chapter[] };
@@ -101,7 +102,12 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
           {current.status === "ready" ? (
             <Markdown>{current.content}</Markdown>
           ) : current.status === "queued" || current.status === "generating" ? (
-            <p className="py-8 text-center text-[14px] text-muted">Writing this chapter…</p>
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <p className="text-[14px] text-muted">Writing this chapter…</p>
+              <div className="max-w-[400px]">
+                <QueueHint background />
+              </div>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-4 py-8 text-center">
               <p className="text-[14px] text-muted">This chapter hasn&apos;t been written yet.</p>

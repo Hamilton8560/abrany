@@ -8,6 +8,7 @@ import type { Goal, Plan, PlanItem, PlanItemWithProgress, Exam } from "@/lib/rep
 import { ArrowRight, CheckIcon, TargetIcon } from "@/components/icons";
 import MilestoneLessons from "@/components/app/MilestoneLessons";
 import ExamModal from "@/components/app/ExamModal";
+import QueueHint from "@/components/app/QueueHint";
 
 type FullPlan = Plan & { items: PlanItemWithProgress[] };
 type TrackChild = Goal & { hasPlan: boolean; milestones: number; sectionsTotal: number; sectionsDone: number };
@@ -371,9 +372,9 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
               </button>
             </div>
             {generating && (
-              <p className="text-center text-[11.5px] text-muted">
-                Queued through your AI — this can take a few seconds.
-              </p>
+              <div className="mx-auto max-w-[420px] text-center">
+                <QueueHint />
+              </div>
             )}
           </div>
         )}

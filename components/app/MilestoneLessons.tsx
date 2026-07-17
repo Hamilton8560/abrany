@@ -5,6 +5,7 @@ import { api } from "@/lib/client";
 import type { Lesson } from "@/lib/repo";
 import Markdown from "./Markdown";
 import ListenButton from "./ListenButton";
+import QueueHint from "./QueueHint";
 import { ChevronDown, CheckIcon } from "@/components/icons";
 
 const KIND_LABEL: Record<Lesson["kind"], string> = {
@@ -168,6 +169,11 @@ export default function MilestoneLessons({
                   </button>
                 )}
               </div>
+              {anyPending && (
+                <div className="mb-2.5 rounded-[12px] bg-white/55 px-3.5 py-2.5">
+                  <QueueHint background />
+                </div>
+              )}
               <ul className="flex flex-col gap-2">
                 {lessons.map((l) => {
                   const done = !!l.completed_at;

@@ -36,7 +36,7 @@ type Resolved =
 
 const DEFAULTS: Record<Provider, { style: Style; baseURL: string; model: string }> = {
   minimax: { style: "anthropic", baseURL: "https://api.minimax.io/anthropic", model: "MiniMax-M3" },
-  kimi: { style: "anthropic", baseURL: "https://api.kimi.com/coding", model: "k2.7-code" },
+  kimi: { style: "anthropic", baseURL: "https://api.kimi.com/coding", model: "k3" },
   deepseek: { style: "openai", baseURL: "https://api.deepseek.com", model: "deepseek-chat" },
   openrouter: { style: "openai", baseURL: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat" },
   // top-tier "bring your own" providers

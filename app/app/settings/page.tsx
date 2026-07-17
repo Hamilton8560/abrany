@@ -32,7 +32,7 @@ const PROVIDERS: Record<string, Meta> = {
   openrouter: { label: "OpenRouter", keyUrl: "https://openrouter.ai/keys", modelHint: "deepseek/deepseek-chat" },
   deepseek: { label: "DeepSeek", keyUrl: "https://platform.deepseek.com", modelHint: "deepseek-chat", models: ["deepseek-chat", "deepseek-reasoner"] },
   minimax: { label: "MiniMax", keyUrl: "https://platform.minimax.io", modelHint: "MiniMax-M3", models: ["MiniMax-M3"] },
-  kimi: { label: "Kimi Code", keyUrl: "https://platform.moonshot.ai", modelHint: "k2.7-code", models: ["k2.7-code"] },
+  kimi: { label: "Kimi", keyUrl: "https://platform.moonshot.ai", modelHint: "k3", models: ["k3", "kimi-for-coding", "kimi-for-coding-highspeed"] },
 };
 
 export default function SettingsPage() {

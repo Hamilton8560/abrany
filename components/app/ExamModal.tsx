@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import Markdown from "./Markdown";
+import QueueHint from "./QueueHint";
 
 type Phase = "loading" | "study" | "answering" | "grading" | "result" | "error";
 type Verdict = "correct" | "partial" | "incorrect";
@@ -90,7 +91,20 @@ export default function ExamModal({
         </div>
 
         {phase === "loading" && (
-          <p className="py-10 text-center text-[14px] text-muted">Preparing your study guide and exam…</p>
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-[14px] text-muted">Preparing your study guide and exam…</p>
+            <div className="max-w-[420px]">
+              <QueueHint />
+            </div>
+          </div>
+        )}
+        {phase === "grading" && (
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-[14px] text-muted">Grading your answers…</p>
+            <div className="max-w-[420px]">
+              <QueueHint />
+            </div>
+          </div>
         )}
 
         {phase === "study" && (
@@ -131,8 +145,6 @@ export default function ExamModal({
             </div>
           </div>
         )}
-
-        {phase === "grading" && <p className="py-10 text-center text-[14px] text-muted">Grading your answers…</p>}
 
         {phase === "result" && result && (
           <div className="flex flex-col gap-5">

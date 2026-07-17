@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import type { Presentation } from "@/lib/repo";
 import SlideDeck from "@/components/app/SlideDeck";
+import QueueHint from "@/components/app/QueueHint";
 
 export default function PresentationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -71,9 +72,9 @@ export default function PresentationPage({ params }: { params: Promise<{ id: str
         <div className="glass flex flex-col items-center gap-3 rounded-[var(--radius-card-lg)] px-6 py-16 text-center">
           <span className="size-3 animate-pulse rounded-full bg-accent" />
           <p className="text-[15px] font-semibold text-ink">Building your deck…</p>
-          <p className="max-w-[360px] text-[13px] text-muted">
-            Your coach is writing the slides (queued through MiniMax). This usually takes 10–30 seconds.
-          </p>
+          <div className="max-w-[400px]">
+            <QueueHint background />
+          </div>
         </div>
       )}
 
