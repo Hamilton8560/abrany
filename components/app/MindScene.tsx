@@ -9,6 +9,7 @@ import * as THREE from "three";
 import gsap from "gsap";
 import { api } from "@/lib/client";
 
+type RegionId = "prefrontal" | "temporal" | "hippocampus" | "cerebellum" | "association";
 type MindNode = {
   id: string;
   label: string;
@@ -17,12 +18,13 @@ type MindNode = {
   clusterId: string;
   kind?: string;
   snippet: string;
+  region: RegionId;
   xp: number;
-  mastery: number; // 0..1
-  heat: number; // 0..1 recency
+  mastery: number;
+  heat: number;
 };
 type MindLink = { source: string; target: string; cross: boolean };
-type Region = { id: string; name: string; stat: string; detail: string; xp: number; level: number; progress: number };
+type Region = { id: RegionId; name: string; stat: string; detail: string; xp: number; level: number; progress: number };
 type ClusterStat = { clusterId: string; cluster: string; xp: number; level: number; progress: number };
 type Stats = {
   mindLevel: number;
@@ -38,6 +40,7 @@ const ACCENT = new THREE.Color("#ff4326");
 const STALE = new THREE.Color("#3a4353");
 const TINTS = ["#e7c9a6", "#a8c8d6", "#a9d2b4", "#c9b6e0", "#e0b6a2", "#b6c4e0"].map((c) => new THREE.Color(c));
 const BG = "#0b0f16";
+const R = 24; // brain scale
 
 function hash(s: string): number {
   let h = 2166136261;
@@ -50,28 +53,37 @@ function hashInt(s: string): number {
   return h;
 }
 
+/* ── anatomy: region anchors inside the brain (x: width, y: height, z: front+) ── */
+const REGION_ANCHORS: Record<RegionId, { anchors: [number, number, number][]; scatter: number }> = {
+  prefrontal: { anchors: [[0, 0.28 * R, 0.62 * R]], scatter: 0.24 * R },
+  temporal: { anchors: [[-0.56 * R, -0.16 * R, 0.10 * R], [0.56 * R, -0.16 * R, 0.10 * R]], scatter: 0.22 * R },
+  hippocampus: { anchors: [[-0.26 * R, -0.10 * R, -0.06 * R], [0.26 * R, -0.10 * R, -0.06 * R]], scatter: 0.15 * R },
+  cerebellum: { anchors: [[0, -0.42 * R, -0.62 * R]], scatter: 0.20 * R },
+  association: { anchors: [[0, 0.40 * R, -0.30 * R]], scatter: 0.24 * R },
+};
+const REGION_NAME: Record<RegionId, string> = {
+  prefrontal: "Prefrontal cortex",
+  temporal: "Temporal lobe",
+  hippocampus: "Hippocampus",
+  cerebellum: "Cerebellum",
+  association: "Association cortex",
+};
+
 type Placed = MindNode & { pos: THREE.Vector3; color: THREE.Color; r: number };
 
+/** Place each node inside its anatomical region (deterministic per node id). */
 function layout(graph: Graph): { placed: Placed[]; byId: Map<string, Placed> } {
-  const clusters = [...new Set(graph.nodes.map((n) => n.clusterId))];
-  const centers = new Map<string, THREE.Vector3>();
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  clusters.forEach((cid, i) => {
-    const y = clusters.length === 1 ? 0 : 1 - (i / (clusters.length - 1)) * 2;
-    const rad = Math.sqrt(Math.max(0, 1 - y * y));
-    const theta = golden * i;
-    centers.set(cid, new THREE.Vector3(Math.cos(theta) * rad, y * 0.7, Math.sin(theta) * rad).multiplyScalar(26));
-  });
-  const idx = new Map<string, number>();
   const placed = graph.nodes.map((n) => {
-    const c = centers.get(n.clusterId)!;
-    const k = (idx.get(n.clusterId) ?? 0) + 1;
-    idx.set(n.clusterId, k);
+    const def = REGION_ANCHORS[n.region] ?? REGION_ANCHORS.association;
+    const anchor = def.anchors[def.anchors.length > 1 ? (hashInt(n.clusterId + n.id) & 1) : 0];
     const h1 = hash(n.id), h2 = hash(n.id + "y"), h3 = hash(n.id + "z");
-    const spread = 5 + k * 1.4;
-    const pos = c.clone().add(new THREE.Vector3((h1 - 0.5) * spread, (h2 - 0.5) * spread, (h3 - 0.5) * spread));
+    // scatter within the region, gently flattened so nodes hug the region's mass
+    const pos = new THREE.Vector3(
+      anchor[0] + (h1 - 0.5) * 2 * def.scatter,
+      anchor[1] + (h2 - 0.5) * 1.6 * def.scatter,
+      anchor[2] + (h3 - 0.5) * 2 * def.scatter,
+    );
     const color = TINTS[Math.abs(hashInt(n.clusterId)) % TINTS.length];
-    // trained knowledge is literally bigger: size grows with mastery
     const base = n.type === "guide" ? 0.85 : n.type === "chapter" ? 0.75 : 0.55;
     const r = base * (0.8 + n.mastery * 0.9);
     return { ...n, pos, color, r };
@@ -80,15 +92,151 @@ function layout(graph: Graph): { placed: Placed[]; byId: Map<string, Placed> } {
   return { placed, byId };
 }
 
-/* ── synapses: one material per tube so each can pulse and FIRE independently ── */
-type Tube = {
-  key: number;
-  geo: THREE.TubeGeometry;
-  mat: THREE.ShaderMaterial;
-  a: string;
-  b: string;
-  heat: number; // avg endpoint recency — hot synapses fire more
-};
+/* ── the translucent brain shell: a procedural cortex point cloud ── */
+function brainPoints(count: number, seedTag: string): Float32Array {
+  const pts = new Float32Array(count * 3);
+  let placedCount = 0;
+  let i = 0;
+  while (placedCount < count && i < count * 30) {
+    i++;
+    const u = hash(seedTag + i), v = hash(seedTag + "v" + i), w = hash(seedTag + "w" + i);
+    const theta = u * Math.PI * 2;
+    const phi = Math.acos(2 * v - 1);
+    let x = Math.sin(phi) * Math.cos(theta);
+    let y = Math.cos(phi);
+    let z = Math.sin(phi) * Math.sin(theta);
+    // cerebrum: wider than tall, longer front-back; flatten the underside
+    let sx = 1.0, sy = 0.82, sz = 1.18;
+    if (y < 0) sy *= 0.72;
+    x *= sx; y *= sy; z *= sz;
+    // carve the longitudinal fissure along the top
+    if (y > 0.15) y -= 0.16 * Math.exp(-((x / 0.16) ** 2)) * y;
+    // gyri wrinkle
+    const wr = 1 + 0.035 * Math.sin(9 * theta) * Math.sin(7 * phi) + 0.02 * Math.sin(13 * phi + 3 * theta);
+    x *= wr; y *= wr; z *= wr;
+    // drop points that would sit where the cerebellum notch is
+    if (z < -0.55 && y < -0.1) continue;
+    // slight shell thickness
+    const t = 0.97 + w * 0.05;
+    pts[placedCount * 3] = x * R * t;
+    pts[placedCount * 3 + 1] = y * R * t;
+    pts[placedCount * 3 + 2] = z * R * t;
+    placedCount++;
+  }
+  return pts.slice(0, placedCount * 3);
+}
+function cerebellumPoints(count: number): Float32Array {
+  const pts = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const u = hash("cb" + i), v = hash("cbv" + i);
+    const theta = u * Math.PI * 2;
+    const phi = Math.acos(2 * v - 1);
+    const wr = 1 + 0.06 * Math.sin(16 * theta); // tight cerebellar folds
+    const x = Math.sin(phi) * Math.cos(theta) * 0.42 * wr;
+    const y = Math.cos(phi) * 0.26 * wr;
+    const z = Math.sin(phi) * Math.sin(theta) * 0.34 * wr;
+    pts[i * 3] = x * R;
+    pts[i * 3 + 1] = (y - 0.42) * R;
+    pts[i * 3 + 2] = (z - 0.62) * R;
+  }
+  return pts;
+}
+function stemPoints(count: number): Float32Array {
+  const pts = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const u = hash("st" + i), v = hash("stv" + i), w = hash("stw" + i);
+    const a = u * Math.PI * 2;
+    const rr = 0.09 * Math.sqrt(v);
+    const yy = -0.5 - w * 0.28;
+    pts[i * 3] = Math.cos(a) * rr * R;
+    pts[i * 3 + 1] = yy * R;
+    pts[i * 3 + 2] = (-0.25 + Math.sin(a) * rr * 0.8) * R;
+  }
+  return pts;
+}
+
+function BrainShell({ reduced }: { reduced: boolean }) {
+  const cortex = useMemo(() => brainPoints(reduced ? 1400 : 3200, "cx"), [reduced]);
+  const cereb = useMemo(() => cerebellumPoints(reduced ? 260 : 620), [reduced]);
+  const stem = useMemo(() => stemPoints(reduced ? 60 : 140), [reduced]);
+  const group = useRef<THREE.Group>(null);
+  useFrame((state) => {
+    if (!group.current || reduced) return;
+    // the whole organ breathes, barely
+    const s = 1 + Math.sin(state.clock.elapsedTime * 0.6) * 0.006;
+    group.current.scale.setScalar(s);
+  });
+  const cloud = (positions: Float32Array, size: number, color: string, opacity: number, key: string) => (
+    <points key={key}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        size={size}
+        color={color}
+        transparent
+        opacity={opacity}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+        sizeAttenuation
+      />
+    </points>
+  );
+  return (
+    <group ref={group}>
+      {cloud(cortex, 0.26, "#5f88b8", 0.34, "cortex")}
+      {cloud(cereb, 0.22, "#5f88b8", 0.4, "cereb")}
+      {cloud(stem, 0.2, "#4f7096", 0.35, "stem")}
+    </group>
+  );
+}
+
+/* ── region glows: soft volumes whose brightness = that region's level; they FLARE on level-up ── */
+function RegionGlows({
+  stats,
+  flare,
+}: {
+  stats: Stats;
+  flare: React.MutableRefObject<Partial<Record<RegionId, number>>>;
+}) {
+  const mats = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
+  const byId = useMemo(() => new Map(stats.regions.map((r) => [r.id as RegionId, r])), [stats]);
+  useFrame((state, dt) => {
+    for (const [key, mat] of mats.current) {
+      const rid = key.split("|")[0] as RegionId;
+      const level = byId.get(rid)?.level ?? 1;
+      const boost = flare.current[rid] ?? 0;
+      if (boost > 0) flare.current[rid] = Math.max(0, boost - dt * 0.9);
+      const idle = 0.02 + Math.min(level, 8) * 0.011 + Math.sin(state.clock.elapsedTime * 0.9 + hash(key) * 6) * 0.008;
+      mat.opacity = idle + boost * 0.5;
+      mat.color.lerpColors(new THREE.Color("#4a7fb5"), ACCENT, Math.min(1, boost));
+    }
+  });
+  return (
+    <>
+      {(Object.keys(REGION_ANCHORS) as RegionId[]).flatMap((rid) =>
+        REGION_ANCHORS[rid].anchors.map((a, i) => (
+          <mesh key={`${rid}|${i}`} position={a}>
+            <sphereGeometry args={[REGION_ANCHORS[rid].scatter + 0.6, 24, 24]} />
+            <meshBasicMaterial
+              ref={(m) => {
+                if (m) mats.current.set(`${rid}|${i}`, m);
+              }}
+              transparent
+              opacity={0.08}
+              color="#4a7fb5"
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        )),
+      )}
+    </>
+  );
+}
+
+/* ── synapses (per-tube pulse, ambient firing, region-aware bursts) ── */
+type Tube = { key: number; geo: THREE.TubeGeometry; mat: THREE.ShaderMaterial; a: string; b: string; heat: number; regions: RegionId[] };
 
 function makeTubeMaterial(cross: boolean, heat: number, phase: number) {
   return new THREE.ShaderMaterial({
@@ -101,10 +249,7 @@ function makeTubeMaterial(cross: boolean, heat: number, phase: number) {
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    vertexShader: `
-      varying vec2 vUv;
-      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
-    `,
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `
       uniform float uTime; uniform float uBoost; uniform float uHeat; uniform vec3 uColor;
       varying vec2 vUv;
@@ -127,11 +272,13 @@ function Synapses({
   byId,
   selectedId,
   reduced,
+  regionBurst,
 }: {
   links: MindLink[];
   byId: Map<string, Placed>;
   selectedId: string | null;
   reduced: boolean;
+  regionBurst: React.MutableRefObject<RegionId | "all" | null>;
 }) {
   const fireTimer = useRef(0);
   const tubes = useMemo<Tube[]>(() => {
@@ -144,27 +291,37 @@ function Synapses({
         const curve = new THREE.QuadraticBezierCurve3(a.pos, mid, b.pos);
         const heat = (a.heat + b.heat) / 2;
         const geo = new THREE.TubeGeometry(curve, 24, 0.05 + heat * 0.03, 6, false);
-        return { key: i, geo, mat: makeTubeMaterial(l.cross, heat, hash(l.source + l.target)), a: l.source, b: l.target, heat };
+        return {
+          key: i, geo,
+          mat: makeTubeMaterial(l.cross, heat, hash(l.source + l.target)),
+          a: l.source, b: l.target, heat,
+          regions: [a.region, b.region],
+        };
       })
       .filter(Boolean) as Tube[];
   }, [links, byId]);
 
-  // click ripple: firing bursts outward from the selected node
   useEffect(() => {
     if (!selectedId) return;
-    for (const t of tubes) {
-      if (t.a === selectedId || t.b === selectedId) t.mat.uniforms.uBoost.value = 1.6;
-    }
+    for (const t of tubes) if (t.a === selectedId || t.b === selectedId) t.mat.uniforms.uBoost.value = 1.6;
   }, [selectedId, tubes]);
 
   useFrame((_, dt) => {
-    // advance pulses (hot synapses run faster) and decay bursts
+    // a level-up storm: every synapse in (or touching) the region fires at once
+    if (regionBurst.current) {
+      const target = regionBurst.current;
+      for (const t of tubes) {
+        if (target === "all" || t.regions.includes(target)) {
+          t.mat.uniforms.uBoost.value = Math.max(t.mat.uniforms.uBoost.value, 1.9);
+        }
+      }
+      regionBurst.current = null;
+    }
     for (const t of tubes) {
       t.mat.uniforms.uTime.value += dt * (0.6 + t.heat * 1.3);
       t.mat.uniforms.uBoost.value *= Math.exp(-dt * 1.8);
     }
     if (reduced || tubes.length === 0) return;
-    // ambient firing — a living brain: random synapse fires, weighted toward recent training
     fireTimer.current -= dt;
     if (fireTimer.current <= 0) {
       fireTimer.current = 0.5 + Math.random() * 1.1;
@@ -193,17 +350,11 @@ function Synapses({
 function Node({ node, selected, onSelect }: { node: Placed; selected: boolean; onSelect: (n: Placed) => void }) {
   const ref = useRef<THREE.Mesh>(null);
   const [hover, setHover] = useState(false);
-  // stale topics fade toward grey — knowledge you're forgetting literally dims
-  const displayColor = useMemo(() => {
-    const c = node.color.clone().lerp(STALE, (1 - node.heat) * 0.65);
-    return c;
-  }, [node.color, node.heat]);
+  const displayColor = useMemo(() => node.color.clone().lerp(STALE, (1 - node.heat) * 0.65), [node.color, node.heat]);
   useFrame((state) => {
     if (!ref.current) return;
-    // hot nodes beat like a pulse; cold ones sit still
     const beat = Math.sin(state.clock.elapsedTime * (1.2 + node.heat * 2.2) + node.pos.x) * (0.04 + node.heat * 0.07);
-    const s = (selected ? 1.7 : hover ? 1.3 : 1) * (1 + beat);
-    ref.current.scale.setScalar(s);
+    ref.current.scale.setScalar((selected ? 1.7 : hover ? 1.3 : 1) * (1 + beat));
   });
   const emissive = selected ? ACCENT : displayColor;
   const intensity = selected ? 3.2 : hover ? 2.2 : 0.55 + node.heat * 1.6 + node.mastery * 0.5;
@@ -211,19 +362,9 @@ function Node({ node, selected, onSelect }: { node: Placed; selected: boolean; o
     <mesh
       ref={ref}
       position={node.pos}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        setHover(true);
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        setHover(false);
-        document.body.style.cursor = "default";
-      }}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect(node);
-      }}
+      onPointerOver={(e) => { e.stopPropagation(); setHover(true); document.body.style.cursor = "pointer"; }}
+      onPointerOut={() => { setHover(false); document.body.style.cursor = "default"; }}
+      onClick={(e) => { e.stopPropagation(); onSelect(node); }}
     >
       <sphereGeometry args={[node.r, 24, 24]} />
       <meshStandardMaterial color={emissive} emissive={emissive} emissiveIntensity={intensity} roughness={0.35} metalness={0.1} />
@@ -231,13 +372,9 @@ function Node({ node, selected, onSelect }: { node: Placed; selected: boolean; o
         <Html center distanceFactor={26} style={{ pointerEvents: "none" }}>
           <div
             style={{
-              transform: "translateY(-2.4em)",
-              whiteSpace: "nowrap",
-              font: "600 13px -apple-system,system-ui,sans-serif",
-              color: "#eef1f5",
-              background: "rgba(11,15,22,.7)",
-              padding: "2px 8px",
-              borderRadius: 8,
+              transform: "translateY(-2.4em)", whiteSpace: "nowrap",
+              font: "600 13px -apple-system,system-ui,sans-serif", color: "#eef1f5",
+              background: "rgba(11,15,22,.7)", padding: "2px 8px", borderRadius: 8,
               border: "1px solid rgba(255,255,255,.12)",
             }}
           >
@@ -265,13 +402,7 @@ function Rig({ target, controls }: { target: THREE.Vector3 | null; controls: Rea
 }
 
 function Scene({
-  graph,
-  placed,
-  byId,
-  selectedId,
-  onSelect,
-  reduced,
-  flyTarget,
+  graph, placed, byId, selectedId, onSelect, reduced, flyTarget, regionBurst, glowFlare,
 }: {
   graph: Graph;
   placed: Placed[];
@@ -280,16 +411,20 @@ function Scene({
   onSelect: (n: Placed) => void;
   reduced: boolean;
   flyTarget: THREE.Vector3 | null;
+  regionBurst: React.MutableRefObject<RegionId | "all" | null>;
+  glowFlare: React.MutableRefObject<Partial<Record<RegionId, number>>>;
 }) {
   const controls = useRef<any>(null);
   return (
     <>
       <color attach="background" args={[BG]} />
-      <fogExp2 attach="fog" args={[BG, 0.018]} />
+      <fogExp2 attach="fog" args={[BG, 0.016]} />
       <ambientLight intensity={0.4} />
       <pointLight position={[0, 0, 0]} intensity={2.2} distance={120} color="#9fb4d6" />
-      <Stars radius={120} depth={60} count={reduced ? 800 : 2600} factor={3} saturation={0} fade speed={reduced ? 0 : 0.5} />
-      <Synapses links={graph.links} byId={byId} selectedId={selectedId} reduced={reduced} />
+      <Stars radius={140} depth={60} count={reduced ? 800 : 2400} factor={3} saturation={0} fade speed={reduced ? 0 : 0.4} />
+      <BrainShell reduced={reduced} />
+      <RegionGlows stats={graph.stats} flare={glowFlare} />
+      <Synapses links={graph.links} byId={byId} selectedId={selectedId} reduced={reduced} regionBurst={regionBurst} />
       {placed.map((n) => (
         <Node key={n.id} node={n} selected={n.id === selectedId} onSelect={onSelect} />
       ))}
@@ -299,10 +434,10 @@ function Scene({
         enablePan={false}
         enableDamping
         dampingFactor={0.08}
-        minDistance={10}
-        maxDistance={90}
+        minDistance={9}
+        maxDistance={95}
         autoRotate={!reduced}
-        autoRotateSpeed={0.35}
+        autoRotateSpeed={0.3}
       />
       <Rig target={flyTarget} controls={controls} />
       <EffectComposer>
@@ -313,7 +448,42 @@ function Scene({
   );
 }
 
-/* ── RPG character sheet (DOM overlay — crisp and cheap) ── */
+/* ── level-up detection: compare against the levels you last saw ── */
+type LevelUp = { title: string; sub: string; region: RegionId | "all" };
+const LS_KEY = "abrany.mind.levels.v1";
+
+function detectLevelUps(stats: Stats): LevelUp[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    const current = {
+      mind: stats.mindLevel,
+      regions: Object.fromEntries(stats.regions.map((r) => [r.id, r.level])),
+      clusters: Object.fromEntries(stats.clusters.map((c) => [c.clusterId, c.level])),
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(current));
+    if (!raw) return []; // first visit is the baseline, not a party
+    const prev = JSON.parse(raw) as typeof current;
+    const ups: LevelUp[] = [];
+    if (stats.mindLevel > (prev.mind ?? 0)) {
+      ups.push({ title: `Mind Level ${stats.mindLevel}`, sub: "Your whole mind leveled up", region: "all" });
+    }
+    for (const r of stats.regions) {
+      if (r.level > (prev.regions?.[r.id] ?? 0)) {
+        ups.push({ title: `${REGION_NAME[r.id as RegionId] ?? r.name} — ${r.stat} Lv ${r.level}`, sub: r.detail, region: r.id as RegionId });
+      }
+    }
+    for (const c of stats.clusters) {
+      if (c.level > (prev.clusters?.[c.clusterId] ?? 0)) {
+        ups.push({ title: `${c.cluster} — Lv ${c.level}`, sub: "Subject leveled up", region: "all" });
+      }
+    }
+    return ups;
+  } catch {
+    return [];
+  }
+}
+
+/* ── RPG character sheet (DOM overlay) ── */
 const font = (w: number, s: number) => `${w} ${s}px -apple-system,system-ui,sans-serif`;
 
 function XpBar({ progress, color = "#ff4326" }: { progress: number; color?: string }) {
@@ -321,12 +491,8 @@ function XpBar({ progress, color = "#ff4326" }: { progress: number; color?: stri
     <div style={{ height: 5, borderRadius: 99, background: "rgba(255,255,255,.09)", overflow: "hidden" }}>
       <div
         style={{
-          width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`,
-          height: "100%",
-          borderRadius: 99,
-          background: color,
-          boxShadow: `0 0 8px ${color}`,
-          transition: "width .6s ease",
+          width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`, height: "100%",
+          borderRadius: 99, background: color, boxShadow: `0 0 8px ${color}`, transition: "width .6s ease",
         }}
       />
     </div>
@@ -344,56 +510,33 @@ function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void 
         boxShadow: "0 24px 60px -30px #000", color: "#eef1f5", overflow: "hidden",
       }}
     >
-      {/* mind level header */}
       <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ font: font(800, 30), color: "#ff4326", fontVariantNumeric: "tabular-nums" }}>
-              {stats.mindLevel}
-            </span>
-            <span style={{ font: font(700, 11), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>
-              Mind level
-            </span>
+            <span style={{ font: font(800, 30), color: "#ff4326", fontVariantNumeric: "tabular-nums" }}>{stats.mindLevel}</span>
+            <span style={{ font: font(700, 11), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>Mind level</span>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              font: font(600, 11), color: "#8891a0", cursor: "pointer",
-              background: "transparent", border: "none", padding: 4,
-            }}
-          >
+          <button onClick={onClose} style={{ font: font(600, 11), color: "#8891a0", cursor: "pointer", background: "transparent", border: "none", padding: 4 }}>
             hide
           </button>
         </div>
-        <div style={{ marginTop: 8 }}>
-          <XpBar progress={stats.mindProgress} />
-        </div>
+        <div style={{ marginTop: 8 }}><XpBar progress={stats.mindProgress} /></div>
         <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", font: font(500, 11), color: "#8891a0" }}>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{stats.totalXp.toLocaleString()} XP</span>
           <span>
-            {stats.streakDays > 0 ? (
-              <span style={{ color: "#ffb8a6", fontWeight: 700 }}>{stats.streakDays}-day streak</span>
-            ) : (
-              "no streak yet — train today"
-            )}
+            {stats.streakDays > 0 ? <span style={{ color: "#ffb8a6", fontWeight: 700 }}>{stats.streakDays}-day streak</span> : "no streak yet — train today"}
           </span>
         </div>
       </div>
-
       <div style={{ overflowY: "auto", padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
-        {/* brain regions */}
         <div>
-          <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>
-            Brain regions
-          </p>
+          <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>Brain regions</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {stats.regions.map((r) => (
               <div key={r.id} title={r.detail}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
                   <span style={{ font: font(600, 12.5) }}>{r.name}</span>
-                  <span style={{ font: font(700, 11), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>
-                    {r.stat} Lv {r.level}
-                  </span>
+                  <span style={{ font: font(700, 11), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>{r.stat} Lv {r.level}</span>
                 </div>
                 <XpBar progress={r.progress} color="#ff7a5e" />
                 <p style={{ margin: "3px 0 0", font: font(400, 10.5), color: "#6f7889" }}>{r.detail}</p>
@@ -401,20 +544,14 @@ function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void 
             ))}
           </div>
         </div>
-
-        {/* subjects */}
         {stats.clusters.length > 0 && (
           <div>
-            <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>
-              Subjects
-            </p>
+            <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>Subjects</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
               {stats.clusters.slice(0, 6).map((c) => (
                 <div key={c.clusterId}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-                    <span style={{ font: font(600, 12), maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {c.cluster}
-                    </span>
+                    <span style={{ font: font(600, 12), maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.cluster}</span>
                     <span style={{ font: font(700, 11), color: "#a8c8d6", fontVariantNumeric: "tabular-nums" }}>Lv {c.level}</span>
                   </div>
                   <XpBar progress={c.progress} color="#8fb0c8" />
@@ -423,10 +560,9 @@ function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void 
             </div>
           </div>
         )}
-
         <p style={{ margin: 0, font: font(400, 10.5), color: "#6f7889", lineHeight: 1.5 }}>
-          Every number is earned from real training — focus sessions, reading time, reviews, and what you create.
-          Bright nodes are strong; fading ones are due for review.
+          Every number is earned from real training. Each region of the brain lights with its own activity —
+          bright is strong, fading is due for review.
         </p>
       </div>
     </div>
@@ -441,13 +577,35 @@ export default function MindScene() {
   const [selected, setSelected] = useState<Placed | null>(null);
   const [flyTarget, setFlyTarget] = useState<THREE.Vector3 | null>(null);
   const [sheetOpen, setSheetOpen] = useState(true);
+  const [toast, setToast] = useState<LevelUp | null>(null);
+  const regionBurst = useRef<RegionId | "all" | null>(null);
+  const glowFlare = useRef<Partial<Record<RegionId, number>>>({});
   const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   useEffect(() => {
-    // character sheet starts closed on small screens
     if (typeof window !== "undefined" && window.innerWidth < 720) setSheetOpen(false);
     api<Graph>("/api/mind")
-      .then(setGraph)
+      .then((g) => {
+        setGraph(g);
+        // level-up ceremony: one toast at a time, each flaring its region
+        const ups = detectLevelUps(g.stats);
+        if (ups.length) {
+          let i = 0;
+          const show = () => {
+            if (i >= ups.length) { setToast(null); return; }
+            const up = ups[i++];
+            setToast(up);
+            regionBurst.current = up.region;
+            if (up.region === "all") {
+              (Object.keys(REGION_ANCHORS) as RegionId[]).forEach((r) => (glowFlare.current[r] = 1));
+            } else {
+              glowFlare.current[up.region] = 1.4;
+            }
+            setTimeout(show, 3000);
+          };
+          setTimeout(show, 1200); // let the brain fade in first
+        }
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Could not load your mind"));
   }, []);
 
@@ -470,13 +628,9 @@ export default function MindScene() {
             <BrainMark />
           </span>
           <div>
-            <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>
-              Your Mind
-            </div>
+            <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>Your Mind</div>
             <div style={{ font: font(500, 11), color: "#8891a0" }}>
-              {graph
-                ? `Level ${graph.stats.mindLevel} · ${graph.nodes.length} nodes · ${graph.stats.clusters.length} subjects`
-                : "loading…"}
+              {graph ? `Level ${graph.stats.mindLevel} · ${graph.nodes.length} nodes · ${graph.stats.clusters.length} subjects` : "loading…"}
             </div>
           </div>
           {graph && !sheetOpen && (
@@ -484,8 +638,7 @@ export default function MindScene() {
               onClick={() => setSheetOpen(true)}
               style={{
                 pointerEvents: "auto", marginLeft: 8, font: font(700, 11.5), color: "#ffb8a6", cursor: "pointer",
-                background: "rgba(255,66,38,.12)", border: "1px solid rgba(255,66,38,.3)",
-                padding: "6px 12px", borderRadius: 999,
+                background: "rgba(255,66,38,.12)", border: "1px solid rgba(255,66,38,.3)", padding: "6px 12px", borderRadius: 999,
               }}
             >
               Character sheet
@@ -498,8 +651,7 @@ export default function MindScene() {
             title="What is this? How Your Mind works"
             style={{
               pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none",
-              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
-              padding: "7px 14px", borderRadius: 999,
+              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
             }}
           >
             ⓘ How this works
@@ -508,8 +660,7 @@ export default function MindScene() {
             href="/app"
             style={{
               pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none",
-              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
-              padding: "7px 14px", borderRadius: 999,
+              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
             }}
           >
             ✕ Close
@@ -525,7 +676,35 @@ export default function MindScene() {
         </div>
       </div>
 
-      {/* character sheet */}
+      {/* level-up toast */}
+      {toast && (
+        <div
+          style={{
+            position: "absolute", left: "50%", top: 76, transform: "translateX(-50%)", zIndex: 5,
+            display: "flex", alignItems: "center", gap: 12,
+            background: "rgba(15,20,30,.9)", backdropFilter: "blur(14px)",
+            border: "1px solid rgba(255,66,38,.5)", borderRadius: 16, padding: "12px 18px",
+            boxShadow: "0 0 40px rgba(255,66,38,.35), 0 24px 60px -30px #000",
+            animation: "mindLevelUp .5s cubic-bezier(.2,1.4,.4,1)",
+          }}
+        >
+          <span
+            style={{
+              width: 38, height: 38, borderRadius: 12, display: "grid", placeItems: "center",
+              background: "linear-gradient(135deg,#ff4326,#ff8a3d)", boxShadow: "0 0 18px rgba(255,66,38,.6)",
+            }}
+          >
+            <BrainMark />
+          </span>
+          <div>
+            <div style={{ font: font(800, 10.5), letterSpacing: ".22em", textTransform: "uppercase", color: "#ffb8a6" }}>Level up</div>
+            <div style={{ font: font(800, 15.5), color: "#fff", marginTop: 1 }}>{toast.title}</div>
+            <div style={{ font: font(500, 11), color: "#8891a0", marginTop: 1 }}>{toast.sub}</div>
+          </div>
+          <style>{`@keyframes mindLevelUp { from { transform: translateX(-50%) translateY(-14px) scale(.92); opacity: 0; } to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } }`}</style>
+        </div>
+      )}
+
       {graph && sheetOpen && <CharacterSheet stats={graph.stats} onClose={() => setSheetOpen(false)} />}
 
       {/* detail card */}
@@ -539,21 +718,15 @@ export default function MindScene() {
           }}
         >
           <div style={{ font: font(700, 11), letterSpacing: ".14em", textTransform: "uppercase", color: "#ff9d86" }}>
-            {KIND_LABEL[selected.type]} · {selected.cluster}
+            {KIND_LABEL[selected.type]} · {REGION_NAME[selected.region]}
           </div>
           <div style={{ font: font(700, 17), margin: "6px 0 2px", lineHeight: 1.2 }}>{selected.label}</div>
-          <div style={{ font: font(400, 13), color: "#8891a0", margin: "4px 0 10px" }}>{selected.snippet}</div>
-          {/* RPG stats for this node */}
+          <div style={{ font: font(400, 12), color: "#8fb0c8", marginBottom: 4 }}>{selected.cluster}</div>
+          <div style={{ font: font(400, 13), color: "#8891a0", margin: "2px 0 10px" }}>{selected.snippet}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <span style={{ font: font(700, 11.5), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>
-              {selected.xp} XP
-            </span>
-            <div style={{ flex: 1 }}>
-              <XpBar progress={selected.mastery} color="#3fbf80" />
-            </div>
-            <span style={{ font: font(600, 11), color: "#8891a0" }}>
-              {Math.round(selected.mastery * 100)}% mastered
-            </span>
+            <span style={{ font: font(700, 11.5), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>{selected.xp} XP</span>
+            <div style={{ flex: 1 }}><XpBar progress={selected.mastery} color="#3fbf80" /></div>
+            <span style={{ font: font(600, 11), color: "#8891a0" }}>{Math.round(selected.mastery * 100)}% mastered</span>
           </div>
           {selected.heat < 0.25 && (
             <p style={{ margin: "0 0 10px", font: font(600, 11.5), color: "#ffb8a6" }}>
@@ -565,8 +738,7 @@ export default function MindScene() {
               href={`/app/coach`}
               style={{
                 flex: 1, textAlign: "center", textDecoration: "none",
-                font: font(700, 12.5), color: "#fff", background: "#ff4326",
-                padding: "9px 10px", borderRadius: 999,
+                font: font(700, 12.5), color: "#fff", background: "#ff4326", padding: "9px 10px", borderRadius: 999,
               }}
             >
               Discuss with tutor
@@ -575,8 +747,7 @@ export default function MindScene() {
               onClick={() => setSelected(null)}
               style={{
                 font: font(700, 12.5), color: "#eef1f5", cursor: "pointer",
-                background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
-                padding: "9px 14px", borderRadius: 999,
+                background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "9px 14px", borderRadius: 999,
               }}
             >
               Back
@@ -585,18 +756,17 @@ export default function MindScene() {
         </div>
       )}
 
-      {/* empty / error states */}
       {error && <Centered>{error}</Centered>}
       {graph && graph.nodes.length === 0 && (
         <Centered>
-          Your mind is quiet for now. Generate some lessons or a study guide and they&apos;ll appear here as a constellation
-          — and every focus session you log will light it up.
+          Your mind is quiet for now. Generate some lessons or a study guide and they&apos;ll appear here inside your brain —
+          and every focus session you log will light it up.
         </Centered>
       )}
 
       {graph && graph.nodes.length > 0 && (
         <Canvas
-          camera={{ position: [0, 6, 60], fov: 55 }}
+          camera={{ position: [0, 8, 62], fov: 55 }}
           dpr={[1, 2]}
           gl={{ antialias: true }}
           style={{ position: "absolute", inset: 0 }}
@@ -609,6 +779,8 @@ export default function MindScene() {
             onSelect={onSelect}
             reduced={reduced}
             flyTarget={flyTarget}
+            regionBurst={regionBurst}
+            glowFlare={glowFlare}
           />
         </Canvas>
       )}

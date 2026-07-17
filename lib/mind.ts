@@ -8,6 +8,23 @@ import { getDb } from "./db";
  * across subjects). No embeddings, no vector DB — just the linked markdown.
  */
 
+/** Where a node lives in the anatomical brain — by what kind of work it is. */
+export type BrainRegionId = "prefrontal" | "temporal" | "hippocampus" | "cerebellum" | "association";
+
+export function regionFor(type: "lesson" | "guide" | "chapter", kind?: string): BrainRegionId {
+  if (type === "guide" || type === "chapter") return "association"; // things you synthesized
+  switch (kind) {
+    case "practice":
+    case "apply":
+      return "cerebellum"; // skill through repetition
+    case "check":
+    case "review":
+      return "hippocampus"; // retention
+    default:
+      return "temporal"; // read/teach — comprehension
+  }
+}
+
 export type MindNode = {
   id: string;
   label: string;
@@ -16,6 +33,7 @@ export type MindNode = {
   clusterId: string;
   kind?: string; // lesson stage
   snippet: string;
+  region: BrainRegionId; // anatomical home
   /** RPG layer — all derived from real training data */
   xp: number; // earned from reading time, completion, reviews, grades
   mastery: number; // 0..1 — how well this is known
@@ -133,6 +151,7 @@ export function mindGraph(userId: number): MindGraph {
       cluster: l.gtitle,
       clusterId: `goal${l.gid}`,
       snippet: l.objective || firstLine(l.content),
+      region: regionFor("lesson", l.kind),
       xp,
       mastery,
       heat: heatFrom(lastTouch),
@@ -157,6 +176,7 @@ export function mindGraph(userId: number): MindGraph {
       cluster: goal?.title ?? "Study guides",
       clusterId: gd.goal_id ? `goal${gd.goal_id}` : "guides",
       snippet: firstLine(gd.content) || gd.topic,
+      region: regionFor("guide"),
       xp: 20,
       mastery: 0.45,
       heat: heatFrom(gd.updated_at),
@@ -187,6 +207,7 @@ export function mindGraph(userId: number): MindGraph {
       cluster: ch.btitle,
       clusterId: `book${ch.bid}`,
       snippet: ch.summary || firstLine(ch.content),
+      region: regionFor("chapter"),
       xp: 18,
       mastery: 0.4,
       heat: heatFrom(ch.updated_at),
