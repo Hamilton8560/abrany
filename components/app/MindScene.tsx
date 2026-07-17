@@ -17,19 +17,37 @@ type MindNode = {
   clusterId: string;
   kind?: string;
   snippet: string;
+  xp: number;
+  mastery: number; // 0..1
+  heat: number; // 0..1 recency
 };
 type MindLink = { source: string; target: string; cross: boolean };
-type Graph = { nodes: MindNode[]; links: MindLink[] };
+type Region = { id: string; name: string; stat: string; detail: string; xp: number; level: number; progress: number };
+type ClusterStat = { clusterId: string; cluster: string; xp: number; level: number; progress: number };
+type Stats = {
+  mindLevel: number;
+  mindProgress: number;
+  totalXp: number;
+  streakDays: number;
+  regions: Region[];
+  clusters: ClusterStat[];
+};
+type Graph = { nodes: MindNode[]; links: MindLink[]; stats: Stats };
 
 const ACCENT = new THREE.Color("#ff4326");
+const STALE = new THREE.Color("#3a4353");
 const TINTS = ["#e7c9a6", "#a8c8d6", "#a9d2b4", "#c9b6e0", "#e0b6a2", "#b6c4e0"].map((c) => new THREE.Color(c));
 const BG = "#0b0f16";
 
-/* deterministic pseudo-random from a string */
 function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = (h ^ s.charCodeAt(i)) * 16777619;
   return ((h >>> 0) % 100000) / 100000;
+}
+function hashInt(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
 }
 
 type Placed = MindNode & { pos: THREE.Vector3; color: THREE.Color; r: number };
@@ -39,7 +57,6 @@ function layout(graph: Graph): { placed: Placed[]; byId: Map<string, Placed> } {
   const centers = new Map<string, THREE.Vector3>();
   const golden = Math.PI * (3 - Math.sqrt(5));
   clusters.forEach((cid, i) => {
-    // even-ish spread on a sphere shell
     const y = clusters.length === 1 ? 0 : 1 - (i / (clusters.length - 1)) * 2;
     const rad = Math.sqrt(Math.max(0, 1 - y * y));
     const theta = golden * i;
@@ -52,26 +69,35 @@ function layout(graph: Graph): { placed: Placed[]; byId: Map<string, Placed> } {
     idx.set(n.clusterId, k);
     const h1 = hash(n.id), h2 = hash(n.id + "y"), h3 = hash(n.id + "z");
     const spread = 5 + k * 1.4;
-    const pos = c
-      .clone()
-      .add(new THREE.Vector3((h1 - 0.5) * spread, (h2 - 0.5) * spread, (h3 - 0.5) * spread));
+    const pos = c.clone().add(new THREE.Vector3((h1 - 0.5) * spread, (h2 - 0.5) * spread, (h3 - 0.5) * spread));
     const color = TINTS[Math.abs(hashInt(n.clusterId)) % TINTS.length];
-    const r = n.type === "guide" ? 0.9 : n.type === "chapter" ? 0.8 : 0.62;
+    // trained knowledge is literally bigger: size grows with mastery
+    const base = n.type === "guide" ? 0.85 : n.type === "chapter" ? 0.75 : 0.55;
+    const r = base * (0.8 + n.mastery * 0.9);
     return { ...n, pos, color, r };
   });
   const byId = new Map(placed.map((p) => [p.id, p]));
   return { placed, byId };
 }
-function hashInt(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
-}
 
-/* ── pulsing synapse shader (one shared material, animates all tubes) ── */
-function makeSynapseMaterial(cross: boolean) {
+/* ── synapses: one material per tube so each can pulse and FIRE independently ── */
+type Tube = {
+  key: number;
+  geo: THREE.TubeGeometry;
+  mat: THREE.ShaderMaterial;
+  a: string;
+  b: string;
+  heat: number; // avg endpoint recency — hot synapses fire more
+};
+
+function makeTubeMaterial(cross: boolean, heat: number, phase: number) {
   return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(cross ? "#8fb0c8" : "#ff7a5e") } },
+    uniforms: {
+      uTime: { value: phase * 20 },
+      uBoost: { value: 0 },
+      uHeat: { value: heat },
+      uColor: { value: new THREE.Color(cross ? "#8fb0c8" : "#ff7a5e") },
+    },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -80,39 +106,81 @@ function makeSynapseMaterial(cross: boolean) {
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
     `,
     fragmentShader: `
-      uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+      uniform float uTime; uniform float uBoost; uniform float uHeat; uniform vec3 uColor;
+      varying vec2 vUv;
       void main(){
-        float base = 0.10;
-        float p = fract(vUv.x * 1.0 - uTime * 0.35);
-        float pulse = smoothstep(0.0, 0.06, p) * (1.0 - smoothstep(0.06, 0.16, p));
-        float edge = smoothstep(0.5, 0.0, abs(vUv.y - 0.5)); // brighter core of tube
-        float a = (base + pulse * 1.3) * (0.35 + edge * 0.65);
-        gl_FragColor = vec4(uColor * (0.6 + pulse * 2.2), a);
+        float base = 0.06 + uHeat * 0.10;
+        float p = fract(vUv.x - uTime * 0.30);
+        float pulse = smoothstep(0.0, 0.05, p) * (1.0 - smoothstep(0.05, 0.16, p));
+        float edge = smoothstep(0.5, 0.0, abs(vUv.y - 0.5));
+        float energy = pulse * (0.5 + uHeat * 0.8 + uBoost * 2.6);
+        float a = (base + energy) * (0.35 + edge * 0.65);
+        vec3 col = uColor * (0.55 + energy * 2.0) + vec3(1.0) * uBoost * pulse * 0.6;
+        gl_FragColor = vec4(col, a);
       }
     `,
   });
 }
 
-function Synapses({ links, byId }: { links: MindLink[]; byId: Map<string, Placed> }) {
-  const matNormal = useMemo(() => makeSynapseMaterial(false), []);
-  const matCross = useMemo(() => makeSynapseMaterial(true), []);
-  useFrame((_, dt) => {
-    matNormal.uniforms.uTime.value += dt;
-    matCross.uniforms.uTime.value += dt;
-  });
-  const tubes = useMemo(() => {
+function Synapses({
+  links,
+  byId,
+  selectedId,
+  reduced,
+}: {
+  links: MindLink[];
+  byId: Map<string, Placed>;
+  selectedId: string | null;
+  reduced: boolean;
+}) {
+  const fireTimer = useRef(0);
+  const tubes = useMemo<Tube[]>(() => {
     return links
       .map((l, i) => {
         const a = byId.get(l.source), b = byId.get(l.target);
         if (!a || !b) return null;
         const mid = a.pos.clone().add(b.pos).multiplyScalar(0.5);
-        mid.add(mid.clone().normalize().multiplyScalar(a.pos.distanceTo(b.pos) * 0.18)); // arc outward
+        mid.add(mid.clone().normalize().multiplyScalar(a.pos.distanceTo(b.pos) * 0.18));
         const curve = new THREE.QuadraticBezierCurve3(a.pos, mid, b.pos);
-        const geo = new THREE.TubeGeometry(curve, 24, 0.055, 6, false);
-        return { key: i, geo, mat: l.cross ? matCross : matNormal };
+        const heat = (a.heat + b.heat) / 2;
+        const geo = new THREE.TubeGeometry(curve, 24, 0.05 + heat * 0.03, 6, false);
+        return { key: i, geo, mat: makeTubeMaterial(l.cross, heat, hash(l.source + l.target)), a: l.source, b: l.target, heat };
       })
-      .filter(Boolean) as { key: number; geo: THREE.TubeGeometry; mat: THREE.ShaderMaterial }[];
-  }, [links, byId, matNormal, matCross]);
+      .filter(Boolean) as Tube[];
+  }, [links, byId]);
+
+  // click ripple: firing bursts outward from the selected node
+  useEffect(() => {
+    if (!selectedId) return;
+    for (const t of tubes) {
+      if (t.a === selectedId || t.b === selectedId) t.mat.uniforms.uBoost.value = 1.6;
+    }
+  }, [selectedId, tubes]);
+
+  useFrame((_, dt) => {
+    // advance pulses (hot synapses run faster) and decay bursts
+    for (const t of tubes) {
+      t.mat.uniforms.uTime.value += dt * (0.6 + t.heat * 1.3);
+      t.mat.uniforms.uBoost.value *= Math.exp(-dt * 1.8);
+    }
+    if (reduced || tubes.length === 0) return;
+    // ambient firing — a living brain: random synapse fires, weighted toward recent training
+    fireTimer.current -= dt;
+    if (fireTimer.current <= 0) {
+      fireTimer.current = 0.5 + Math.random() * 1.1;
+      const weights = tubes.map((t) => 0.25 + t.heat * 1.5);
+      const total = weights.reduce((a, b) => a + b, 0);
+      let roll = Math.random() * total;
+      for (let i = 0; i < tubes.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0) {
+          tubes[i].mat.uniforms.uBoost.value = Math.max(tubes[i].mat.uniforms.uBoost.value, 1.2);
+          break;
+        }
+      }
+    }
+  });
+
   return (
     <>
       {tubes.map((t) => (
@@ -122,24 +190,23 @@ function Synapses({ links, byId }: { links: MindLink[]; byId: Map<string, Placed
   );
 }
 
-function Node({
-  node,
-  selected,
-  onSelect,
-}: {
-  node: Placed;
-  selected: boolean;
-  onSelect: (n: Placed) => void;
-}) {
+function Node({ node, selected, onSelect }: { node: Placed; selected: boolean; onSelect: (n: Placed) => void }) {
   const ref = useRef<THREE.Mesh>(null);
   const [hover, setHover] = useState(false);
+  // stale topics fade toward grey — knowledge you're forgetting literally dims
+  const displayColor = useMemo(() => {
+    const c = node.color.clone().lerp(STALE, (1 - node.heat) * 0.65);
+    return c;
+  }, [node.color, node.heat]);
   useFrame((state) => {
     if (!ref.current) return;
-    const pulse = 1 + Math.sin(state.clock.elapsedTime * 1.6 + node.pos.x) * 0.06;
-    const s = (selected ? 1.7 : hover ? 1.3 : 1) * pulse;
+    // hot nodes beat like a pulse; cold ones sit still
+    const beat = Math.sin(state.clock.elapsedTime * (1.2 + node.heat * 2.2) + node.pos.x) * (0.04 + node.heat * 0.07);
+    const s = (selected ? 1.7 : hover ? 1.3 : 1) * (1 + beat);
     ref.current.scale.setScalar(s);
   });
-  const emissive = selected ? ACCENT : node.color;
+  const emissive = selected ? ACCENT : displayColor;
+  const intensity = selected ? 3.2 : hover ? 2.2 : 0.55 + node.heat * 1.6 + node.mastery * 0.5;
   return (
     <mesh
       ref={ref}
@@ -159,13 +226,7 @@ function Node({
       }}
     >
       <sphereGeometry args={[node.r, 24, 24]} />
-      <meshStandardMaterial
-        color={emissive}
-        emissive={emissive}
-        emissiveIntensity={selected ? 3.2 : hover ? 2.2 : 1.5}
-        roughness={0.35}
-        metalness={0.1}
-      />
+      <meshStandardMaterial color={emissive} emissive={emissive} emissiveIntensity={intensity} roughness={0.35} metalness={0.1} />
       {(hover || selected) && (
         <Html center distanceFactor={26} style={{ pointerEvents: "none" }}>
           <div
@@ -196,11 +257,7 @@ function Rig({ target, controls }: { target: THREE.Vector3 | null; controls: Rea
     const dest = target.clone().add(dir.multiplyScalar(9)).add(new THREE.Vector3(0, 2.5, 0));
     gsap.to(camera.position, { x: dest.x, y: dest.y, z: dest.z, duration: 1.2, ease: "power3.inOut" });
     gsap.to(controls.current.target, {
-      x: target.x,
-      y: target.y,
-      z: target.z,
-      duration: 1.2,
-      ease: "power3.inOut",
+      x: target.x, y: target.y, z: target.z, duration: 1.2, ease: "power3.inOut",
       onUpdate: () => controls.current?.update(),
     });
   }, [target, camera, controls]);
@@ -209,18 +266,21 @@ function Rig({ target, controls }: { target: THREE.Vector3 | null; controls: Rea
 
 function Scene({
   graph,
+  placed,
+  byId,
   selectedId,
   onSelect,
   reduced,
   flyTarget,
 }: {
   graph: Graph;
+  placed: Placed[];
+  byId: Map<string, Placed>;
   selectedId: string | null;
   onSelect: (n: Placed) => void;
   reduced: boolean;
   flyTarget: THREE.Vector3 | null;
 }) {
-  const { placed, byId } = useMemo(() => layout(graph), [graph]);
   const controls = useRef<any>(null);
   return (
     <>
@@ -229,7 +289,7 @@ function Scene({
       <ambientLight intensity={0.4} />
       <pointLight position={[0, 0, 0]} intensity={2.2} distance={120} color="#9fb4d6" />
       <Stars radius={120} depth={60} count={reduced ? 800 : 2600} factor={3} saturation={0} fade speed={reduced ? 0 : 0.5} />
-      <Synapses links={graph.links} byId={byId} />
+      <Synapses links={graph.links} byId={byId} selectedId={selectedId} reduced={reduced} />
       {placed.map((n) => (
         <Node key={n.id} node={n} selected={n.id === selectedId} onSelect={onSelect} />
       ))}
@@ -253,6 +313,126 @@ function Scene({
   );
 }
 
+/* ── RPG character sheet (DOM overlay — crisp and cheap) ── */
+const font = (w: number, s: number) => `${w} ${s}px -apple-system,system-ui,sans-serif`;
+
+function XpBar({ progress, color = "#ff4326" }: { progress: number; color?: string }) {
+  return (
+    <div style={{ height: 5, borderRadius: 99, background: "rgba(255,255,255,.09)", overflow: "hidden" }}>
+      <div
+        style={{
+          width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`,
+          height: "100%",
+          borderRadius: 99,
+          background: color,
+          boxShadow: `0 0 8px ${color}`,
+          transition: "width .6s ease",
+        }}
+      />
+    </div>
+  );
+}
+
+function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void }) {
+  return (
+    <div
+      style={{
+        position: "absolute", left: 20, top: 64, bottom: 64, width: "min(300px, 82vw)", zIndex: 3,
+        display: "flex", flexDirection: "column",
+        background: "rgba(15,20,30,.84)", backdropFilter: "blur(14px)",
+        border: "1px solid rgba(255,255,255,.12)", borderRadius: 18,
+        boxShadow: "0 24px 60px -30px #000", color: "#eef1f5", overflow: "hidden",
+      }}
+    >
+      {/* mind level header */}
+      <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ font: font(800, 30), color: "#ff4326", fontVariantNumeric: "tabular-nums" }}>
+              {stats.mindLevel}
+            </span>
+            <span style={{ font: font(700, 11), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>
+              Mind level
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              font: font(600, 11), color: "#8891a0", cursor: "pointer",
+              background: "transparent", border: "none", padding: 4,
+            }}
+          >
+            hide
+          </button>
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <XpBar progress={stats.mindProgress} />
+        </div>
+        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", font: font(500, 11), color: "#8891a0" }}>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{stats.totalXp.toLocaleString()} XP</span>
+          <span>
+            {stats.streakDays > 0 ? (
+              <span style={{ color: "#ffb8a6", fontWeight: 700 }}>{stats.streakDays}-day streak</span>
+            ) : (
+              "no streak yet — train today"
+            )}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ overflowY: "auto", padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* brain regions */}
+        <div>
+          <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>
+            Brain regions
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {stats.regions.map((r) => (
+              <div key={r.id} title={r.detail}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                  <span style={{ font: font(600, 12.5) }}>{r.name}</span>
+                  <span style={{ font: font(700, 11), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>
+                    {r.stat} Lv {r.level}
+                  </span>
+                </div>
+                <XpBar progress={r.progress} color="#ff7a5e" />
+                <p style={{ margin: "3px 0 0", font: font(400, 10.5), color: "#6f7889" }}>{r.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* subjects */}
+        {stats.clusters.length > 0 && (
+          <div>
+            <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>
+              Subjects
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {stats.clusters.slice(0, 6).map((c) => (
+                <div key={c.clusterId}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                    <span style={{ font: font(600, 12), maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.cluster}
+                    </span>
+                    <span style={{ font: font(700, 11), color: "#a8c8d6", fontVariantNumeric: "tabular-nums" }}>Lv {c.level}</span>
+                  </div>
+                  <XpBar progress={c.progress} color="#8fb0c8" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p style={{ margin: 0, font: font(400, 10.5), color: "#6f7889", lineHeight: 1.5 }}>
+          Every number is earned from real training — focus sessions, reading time, reviews, and what you create.
+          Bright nodes are strong; fading ones are due for review.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 const KIND_LABEL: Record<string, string> = { guide: "Study guide", chapter: "Book chapter", lesson: "Lesson" };
 
 export default function MindScene() {
@@ -260,13 +440,21 @@ export default function MindScene() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Placed | null>(null);
   const [flyTarget, setFlyTarget] = useState<THREE.Vector3 | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(true);
   const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   useEffect(() => {
+    // character sheet starts closed on small screens
+    if (typeof window !== "undefined" && window.innerWidth < 720) setSheetOpen(false);
     api<Graph>("/api/mind")
       .then(setGraph)
       .catch((e) => setError(e instanceof Error ? e.message : "Could not load your mind"));
   }, []);
+
+  const { placed, byId } = useMemo(
+    () => (graph ? layout(graph) : { placed: [], byId: new Map<string, Placed>() }),
+    [graph],
+  );
 
   const onSelect = (n: Placed) => {
     setSelected(n);
@@ -278,30 +466,40 @@ export default function MindScene() {
       {/* overlay chrome */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 2 }}>
         <div style={{ position: "absolute", left: 20, top: 18, display: "flex", alignItems: "center", gap: 10 }}>
-          <span
-            style={{
-              width: 30, height: 30, borderRadius: 9, background: "#141b28", display: "grid", placeItems: "center",
-            }}
-          >
+          <span style={{ width: 30, height: 30, borderRadius: 9, background: "#141b28", display: "grid", placeItems: "center" }}>
             <BrainMark />
           </span>
           <div>
-            <div style={{ font: "800 14px -apple-system,system-ui", letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>
+            <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>
               Your Mind
             </div>
-            <div style={{ font: "500 11px -apple-system,system-ui", color: "#8891a0" }}>
-              {graph ? `${graph.nodes.length} nodes · ${new Set(graph.nodes.map((n) => n.clusterId)).size} subjects` : "loading…"}
+            <div style={{ font: font(500, 11), color: "#8891a0" }}>
+              {graph
+                ? `Level ${graph.stats.mindLevel} · ${graph.nodes.length} nodes · ${graph.stats.clusters.length} subjects`
+                : "loading…"}
             </div>
           </div>
+          {graph && !sheetOpen && (
+            <button
+              onClick={() => setSheetOpen(true)}
+              style={{
+                pointerEvents: "auto", marginLeft: 8, font: font(700, 11.5), color: "#ffb8a6", cursor: "pointer",
+                background: "rgba(255,66,38,.12)", border: "1px solid rgba(255,66,38,.3)",
+                padding: "6px 12px", borderRadius: 999,
+              }}
+            >
+              Character sheet
+            </button>
+          )}
         </div>
         <div style={{ position: "absolute", right: 20, top: 18, display: "flex", gap: 8 }}>
           <Link
             href="/app/mind/about"
             title="What is this? How Your Mind works"
             style={{
-              pointerEvents: "auto", font: "600 12.5px -apple-system,system-ui", color: "#cfd6e0",
-              textDecoration: "none", background: "rgba(255,255,255,.06)",
-              border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
+              pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none",
+              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
+              padding: "7px 14px", borderRadius: 999,
             }}
           >
             ⓘ How this works
@@ -309,9 +507,9 @@ export default function MindScene() {
           <Link
             href="/app"
             style={{
-              pointerEvents: "auto", font: "600 12.5px -apple-system,system-ui", color: "#cfd6e0",
-              textDecoration: "none", background: "rgba(255,255,255,.06)",
-              border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
+              pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none",
+              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
+              padding: "7px 14px", borderRadius: 999,
             }}
           >
             ✕ Close
@@ -320,12 +518,15 @@ export default function MindScene() {
         <div
           style={{
             position: "absolute", left: "50%", bottom: 18, transform: "translateX(-50%)",
-            font: "500 11.5px -apple-system,system-ui", color: "#6f7889", textAlign: "center",
+            font: font(500, 11.5), color: "#6f7889", textAlign: "center", width: "max-content", maxWidth: "90vw",
           }}
         >
           drag to orbit · scroll to zoom · click a node to fly in
         </div>
       </div>
+
+      {/* character sheet */}
+      {graph && sheetOpen && <CharacterSheet stats={graph.stats} onClose={() => setSheetOpen(false)} />}
 
       {/* detail card */}
       {selected && (
@@ -337,26 +538,43 @@ export default function MindScene() {
             color: "#eef1f5", boxShadow: "0 24px 60px -30px #000",
           }}
         >
-          <div style={{ font: "700 11px -apple-system,system-ui", letterSpacing: ".14em", textTransform: "uppercase", color: "#ff9d86" }}>
+          <div style={{ font: font(700, 11), letterSpacing: ".14em", textTransform: "uppercase", color: "#ff9d86" }}>
             {KIND_LABEL[selected.type]} · {selected.cluster}
           </div>
-          <div style={{ font: "700 17px -apple-system,system-ui", margin: "6px 0 2px", lineHeight: 1.2 }}>{selected.label}</div>
-          <div style={{ font: "400 13px -apple-system,system-ui", color: "#8891a0", margin: "4px 0 14px" }}>{selected.snippet}</div>
+          <div style={{ font: font(700, 17), margin: "6px 0 2px", lineHeight: 1.2 }}>{selected.label}</div>
+          <div style={{ font: font(400, 13), color: "#8891a0", margin: "4px 0 10px" }}>{selected.snippet}</div>
+          {/* RPG stats for this node */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <span style={{ font: font(700, 11.5), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>
+              {selected.xp} XP
+            </span>
+            <div style={{ flex: 1 }}>
+              <XpBar progress={selected.mastery} color="#3fbf80" />
+            </div>
+            <span style={{ font: font(600, 11), color: "#8891a0" }}>
+              {Math.round(selected.mastery * 100)}% mastered
+            </span>
+          </div>
+          {selected.heat < 0.25 && (
+            <p style={{ margin: "0 0 10px", font: font(600, 11.5), color: "#ffb8a6" }}>
+              Fading — you haven&apos;t trained this in a while.
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <Link
               href={`/app/coach`}
               style={{
                 flex: 1, textAlign: "center", textDecoration: "none",
-                font: "700 12.5px -apple-system,system-ui", color: "#fff", background: "#ff4326",
+                font: font(700, 12.5), color: "#fff", background: "#ff4326",
                 padding: "9px 10px", borderRadius: 999,
               }}
             >
               Discuss with tutor
             </Link>
             <button
-              onClick={() => { setSelected(null); }}
+              onClick={() => setSelected(null)}
               style={{
-                font: "700 12.5px -apple-system,system-ui", color: "#eef1f5", cursor: "pointer",
+                font: font(700, 12.5), color: "#eef1f5", cursor: "pointer",
                 background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
                 padding: "9px 14px", borderRadius: 999,
               }}
@@ -371,7 +589,8 @@ export default function MindScene() {
       {error && <Centered>{error}</Centered>}
       {graph && graph.nodes.length === 0 && (
         <Centered>
-          Your mind is quiet for now. Generate some lessons or a study guide and they&apos;ll appear here as a constellation.
+          Your mind is quiet for now. Generate some lessons or a study guide and they&apos;ll appear here as a constellation
+          — and every focus session you log will light it up.
         </Centered>
       )}
 
@@ -382,7 +601,15 @@ export default function MindScene() {
           gl={{ antialias: true }}
           style={{ position: "absolute", inset: 0 }}
         >
-          <Scene graph={graph} selectedId={selected?.id ?? null} onSelect={onSelect} reduced={reduced} flyTarget={flyTarget} />
+          <Scene
+            graph={graph}
+            placed={placed}
+            byId={byId}
+            selectedId={selected?.id ?? null}
+            onSelect={onSelect}
+            reduced={reduced}
+            flyTarget={flyTarget}
+          />
         </Canvas>
       )}
     </div>
@@ -391,12 +618,8 @@ export default function MindScene() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 24, zIndex: 3,
-      }}
-    >
-      <p style={{ maxWidth: 420, textAlign: "center", color: "#8891a0", font: "400 15px -apple-system,system-ui" }}>{children}</p>
+    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 24, zIndex: 3 }}>
+      <p style={{ maxWidth: 420, textAlign: "center", color: "#8891a0", font: font(400, 15) }}>{children}</p>
     </div>
   );
 }
