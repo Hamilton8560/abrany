@@ -11,8 +11,19 @@ import {
 } from "@/lib/repo";
 import { streamText, withLlm, llmContext, type ChatMessage } from "@/lib/minimax";
 import { COACH_SYSTEM } from "@/lib/coach";
+import { learnerProfile, addMemory, type MemoryCategory } from "@/lib/memory";
 import { languageMismatch } from "@/lib/langdetect";
 import { getSessionUser, unauthorized } from "@/lib/auth";
+
+/** Pull `<remember category="…">fact</remember>` tags out of a reply, save them, return the clean text. */
+function captureMemories(userId: number, text: string): string {
+  const re = /<remember(?:\s+category="([^"]*)")?\s*>([\s\S]*?)<\/remember>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    addMemory(userId, m[2], (m[1] || "context").toLowerCase() as MemoryCategory, "tutor");
+  }
+  return text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +62,15 @@ export async function POST(request: Request) {
   }));
 
   let system = COACH_SYSTEM;
+
+  // Personalize: fold in what the tutor knows about this learner, and let it
+  // record new durable facts as it goes (kept out of the visible reply).
+  const { digest } = learnerProfile(user.id);
+  system +=
+    `\n\n=== WHAT YOU KNOW ABOUT THIS LEARNER ===\n${digest}\n=== END ===\n` +
+    `Use this to personalize every reply and push them forward: reference their real progress, gently steer them to what's shaky or overdue, and match their preferences. Don't recite it back verbatim.\n` +
+    `When you learn something durable and useful about them (a preference, a goal, a recurring struggle, an important life/context detail), record it by emitting on its own line: <remember category="preference|goal|struggle|context">the fact, in one sentence</remember>. These tags are saved to their profile and never shown to them. Only remember things worth carrying into future sessions — don't remember trivia or restate what you already know.`;
+
   if (ownsGoal) {
     const goal = getGoal(Number(body.goalId));
     if (goal) {
@@ -96,7 +116,9 @@ export async function POST(request: Request) {
         const message = err instanceof Error ? err.message : "Coach is unavailable";
         controller.enqueue(encoder.encode(`\n\n⚠️ ${message}`));
       } finally {
-        if (full.trim()) addMessage(threadId, "assistant", full);
+        // capture any <remember> tags into the learner's memory, strip them from
+        // the stored (and thus reloaded) message so they never surface to the user
+        if (full.trim()) addMessage(threadId, "assistant", captureMemories(user.id, full));
         controller.close();
       }
     },

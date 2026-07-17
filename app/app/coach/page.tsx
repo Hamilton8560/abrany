@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import CoachChat from "@/components/app/CoachChat";
+import MemoryPanel from "@/components/app/MemoryPanel";
 
 function CoachInner() {
   const params = useSearchParams();
@@ -27,6 +28,7 @@ export default function CoachPage() {
           </span>
         </div>
       </header>
+      <MemoryPanel />
       <Suspense fallback={<p className="text-[14px] text-muted">Loading coach…</p>}>
         <CoachInner />
       </Suspense>

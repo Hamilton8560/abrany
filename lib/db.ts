@@ -238,6 +238,18 @@ function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_members_user ON org_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_invites_email ON org_invites(email);
 
+    -- learner memory: durable facts the tutor keeps about the user, so coaching
+    -- is personalized across sessions (their goals, preferences, what trips them up)
+    CREATE TABLE IF NOT EXISTS user_memories (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category   TEXT NOT NULL DEFAULT 'context',  -- preference | goal | struggle | context
+      text       TEXT NOT NULL,
+      source     TEXT NOT NULL DEFAULT 'tutor',    -- tutor | user
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id);
+
     -- first-class study guides: generated on demand, stored, browsable, and
     -- discussable with the tutor (not just a transient exam popup)
     CREATE TABLE IF NOT EXISTS study_guides (

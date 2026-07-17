@@ -290,15 +290,18 @@ function Bubble({
       </div>
     );
   }
+  // The tutor may emit <remember>…</remember> tags to save to your profile; never show them.
+  const shown = content
+    .replace(/<remember[\s\S]*?<\/remember>/gi, "")
+    .replace(/<remember[\s\S]*$/i, "")
+    .trim();
   return (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-accent/12 text-accent">
         <BrainGlyph className="size-4" />
       </span>
       <div className="max-w-[85%] rounded-[18px] rounded-tl-[6px] bg-white/70 px-4 py-3">
-        {content ? (
-          <Markdown>{content}</Markdown>
-        ) : null}
+        {shown ? <Markdown>{shown}</Markdown> : null}
         {streaming && <span className="anim-bob ml-0.5 inline-block h-3.5 w-[2px] bg-accent align-middle" />}
       </div>
     </div>
