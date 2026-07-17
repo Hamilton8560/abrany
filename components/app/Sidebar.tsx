@@ -21,12 +21,30 @@ import {
   StoreIcon,
   ForumIcon,
   GuideIcon,
+  BrainGlyph,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 import type { PublicUser } from "@/lib/user";
 
 type NavItem = { href: string; label: string; short?: string; Icon: ComponentType<SVGProps<SVGSVGElement>> };
 type NavGroup = { title: string | null; items: NavItem[] };
+
+/**
+ * The way into "Your Mind" — the OKF knowledge constellation. Deliberately NOT a
+ * nav row: it's the brain itself, a gesture. A soft accent pulse hints it's alive.
+ */
+function MindPortal() {
+  return (
+    <Link
+      href="/app/mind"
+      aria-label="Open your mind — your knowledge map"
+      title="Your Mind — your knowledge, mapped"
+      className="mind-portal grid size-8 shrink-0 place-items-center rounded-[11px] bg-ink text-white transition-transform hover:scale-105"
+    >
+      <BrainGlyph className="size-4" />
+    </Link>
+  );
+}
 
 /**
  * Learning-first information architecture: the core loop (learn) sits on top,
@@ -109,8 +127,9 @@ export default function Sidebar({ user }: { user: PublicUser }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col gap-8 p-5 lg:flex print:!hidden">
       <div className="glass flex h-full min-h-0 flex-col gap-7 overflow-hidden rounded-[var(--radius-card-lg)] p-5">
-        <div className="shrink-0 px-1 pt-1">
+        <div className="flex shrink-0 items-center justify-between px-1 pt-1">
           <Logo />
+          <MindPortal />
         </div>
 
         <nav className="-mr-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-2">
@@ -206,7 +225,10 @@ export function MobileBar({ user }: { user: PublicUser }) {
     <>
       <div className="glassx sticky top-0 z-40 flex items-center justify-between px-5 py-3 lg:hidden print:hidden">
         <Logo compact />
-        <QueueBadge />
+        <div className="flex items-center gap-2">
+          <MindPortal />
+          <QueueBadge />
+        </div>
       </div>
 
       {/* Bottom tab bar: 4 primaries + More */}

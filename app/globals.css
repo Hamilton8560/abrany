@@ -328,3 +328,11 @@ body {
     animation: none;
   }
 }
+
+/* "Your Mind" portal — a soft accent ring pulse so the brain reads as alive */
+@keyframes mindPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 66, 38, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 66, 38, 0); }
+}
+.mind-portal { animation: mindPulse 2.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .mind-portal { animation: none; } }
