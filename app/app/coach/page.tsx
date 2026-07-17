@@ -7,7 +7,13 @@ import CoachChat from "@/components/app/CoachChat";
 function CoachInner() {
   const params = useSearchParams();
   const goal = params.get("goal");
-  return <CoachChat goalId={goal ? Number(goal) : undefined} />;
+  const guide = params.get("guide");
+  return (
+    <CoachChat
+      goalId={goal ? Number(goal) : undefined}
+      studyGuideId={guide ? Number(guide) : undefined}
+    />
+  );
 }
 
 export default function CoachPage() {

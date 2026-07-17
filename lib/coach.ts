@@ -554,6 +554,45 @@ The results array MUST have exactly one entry per question, in order.`,
   };
 }
 
+/* ── Study guides: a standalone, keepable revision document ── */
+
+export async function generateStudyGuide(ctx: {
+  title: string;
+  topic?: string;
+  goalTitle?: string;
+  sections?: { title: string; objective: string; content: string }[];
+}): Promise<{ title: string; content: string }> {
+  const material = (ctx.sections ?? [])
+    .map((s, i) => `### ${i + 1}. ${s.title}\n${s.objective}\n${s.content.slice(0, 2500)}`)
+    .join("\n\n")
+    .slice(0, 16000);
+  const grounded = material
+    ? ` Ground the guide in the COURSE MATERIAL below — cover what it actually teaches, in its own terms, and don't invent beyond it.`
+    : "";
+  const content = await complete({
+    system: `${COACH_SYSTEM}
+
+You are writing a STUDY GUIDE — a standalone, beautiful, self-contained revision document the learner keeps and returns to. Output clean GitHub-flavored markdown (no H1; the app shows the title). Make it genuinely useful:
+- Open with a one-paragraph orientation: what this covers and how to use it.
+- Organize by topic with "## " sections; under each, the key concepts, definitions, formulas/rules, and the common mistakes to avoid.
+- Use compact tables for facts that compare or enumerate, and — where a concept is structural or visual — a \`\`\`mermaid or \`\`\`arch diagram (same rules as elsewhere; keep them focused).
+- End with a "## Quick-recall checklist" of the must-know points and a "## If you're short on time" triage note.
+Adapt depth and tone to the subject.${grounded}`,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.5,
+    messages: [
+      {
+        role: "user",
+        content: `Study guide title: ${ctx.title}${ctx.goalTitle ? `\nCourse/goal: ${ctx.goalTitle}` : ""}${
+          ctx.topic ? `\nFocus: ${ctx.topic}` : ""
+        }${material ? `\n\nCOURSE MATERIAL:\n${material}` : ""}\n\nWrite the study guide now.`,
+      },
+    ],
+  });
+  const clean = content.replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  return { title: ctx.title.slice(0, 160), content: clean };
+}
+
 /* ── Presentations: generate a markdown slide deck ─────────── */
 
 export async function generatePresentation(ctx: {

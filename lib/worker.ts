@@ -17,9 +17,14 @@ import {
   setChapterStatus,
   setChapterContent,
   getUser,
+  getStudyGuide,
+  setStudyGuideContent,
+  setStudyGuideStatus,
+  goalReadySections,
+  milestoneReadySections,
   type Job,
 } from "./repo";
-import { generateLessonContent, generatePresentation, generateChapter } from "./coach";
+import { generateLessonContent, generatePresentation, generateChapter, generateStudyGuide } from "./coach";
 import { braveSearch } from "./search";
 import { withLlm, resolveUserLlm } from "./minimax";
 
@@ -96,6 +101,28 @@ async function processJob(job: Job): Promise<void> {
     return;
   }
 
+  if (job.type === "generate_study_guide") {
+    const { guideId } = JSON.parse(job.payload) as { guideId: number };
+    const guide = getStudyGuide(guideId);
+    if (!guide) return;
+    setStudyGuideStatus(guideId, "generating");
+    const goal = guide.goal_id ? getGoal(guide.goal_id) : undefined;
+    const sections =
+      guide.source === "milestone" && guide.plan_item_id
+        ? milestoneReadySections(guide.plan_item_id)
+        : guide.goal_id
+          ? goalReadySections(guide.goal_id)
+          : [];
+    const { title, content } = await generateStudyGuide({
+      title: guide.title,
+      topic: guide.topic,
+      goalTitle: goal?.title,
+      sections,
+    });
+    setStudyGuideContent(guideId, title, content);
+    return;
+  }
+
   throw new Error(`Unknown job type: ${job.type}`);
 }
 
@@ -123,10 +150,12 @@ function tick() {
             lessonId?: number;
             presentationId?: number;
             chapterId?: number;
+            guideId?: number;
           };
           if (p.lessonId) setLessonStatus(p.lessonId, finalError ? "error" : "queued", finalError ? msg : "");
           if (p.presentationId && finalError) setPresentationStatus(p.presentationId, "error", msg);
           if (p.chapterId) setChapterStatus(p.chapterId, finalError ? "error" : "queued", finalError ? msg : "");
+          if (p.guideId && finalError) setStudyGuideStatus(p.guideId, "error", msg);
         } catch {
           /* ignore */
         }
@@ -166,6 +195,14 @@ export function enqueuePresentation(presentationId: number, userId: number): Job
 export function enqueueChapter(chapterId: number, userId: number): Job {
   setChapterStatus(chapterId, "queued");
   const job = enqueueJobRow("generate_chapter", { chapterId }, userId);
+  ensureWorker();
+  return job;
+}
+
+/** Queue a study guide for background generation. */
+export function enqueueStudyGuide(guideId: number, userId: number): Job {
+  setStudyGuideStatus(guideId, "generating");
+  const job = enqueueJobRow("generate_study_guide", { guideId }, userId);
   ensureWorker();
   return job;
 }

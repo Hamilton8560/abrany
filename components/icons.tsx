@@ -345,3 +345,13 @@ export function ForumIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function GuideIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path d="M6 3.5h9.5a2 2 0 0 1 2 2V19a1.5 1.5 0 0 1-1.5 1.5H6.5A2.5 2.5 0 0 1 4 18V6a2.5 2.5 0 0 1 2.5-2.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M4 18a2.5 2.5 0 0 1 2.5-2.5h11" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 8h6.5M8 11h4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}

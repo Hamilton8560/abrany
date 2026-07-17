@@ -238,6 +238,24 @@ function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_members_user ON org_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_invites_email ON org_invites(email);
 
+    -- first-class study guides: generated on demand, stored, browsable, and
+    -- discussable with the tutor (not just a transient exam popup)
+    CREATE TABLE IF NOT EXISTS study_guides (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      goal_id      INTEGER REFERENCES goals(id) ON DELETE SET NULL,
+      plan_item_id INTEGER REFERENCES plan_items(id) ON DELETE SET NULL,
+      title        TEXT NOT NULL,
+      topic        TEXT NOT NULL DEFAULT '',
+      source       TEXT NOT NULL DEFAULT 'topic',      -- goal | milestone | topic | exam
+      content      TEXT NOT NULL DEFAULT '',
+      status       TEXT NOT NULL DEFAULT 'generating', -- generating|ready|error
+      error        TEXT NOT NULL DEFAULT '',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_guides_user ON study_guides(user_id);
+
     -- marketplace: a published course points at the author's goal; cloning copies it
     CREATE TABLE IF NOT EXISTS course_listings (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,

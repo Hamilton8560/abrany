@@ -36,7 +36,21 @@ export default function ExamModal({
   const [answers, setAnswers] = useState<string[]>([]);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
   const started = useRef(false);
+
+  const saveGuide = async () => {
+    if (saved || !guide) return;
+    setSaved(true);
+    await api("/api/study-guides", {
+      method: "POST",
+      body: JSON.stringify({
+        content: guide,
+        title: `${title} — ${kind} study guide`,
+        source: "exam",
+      }),
+    }).catch(() => setSaved(false));
+  };
 
   const prepare = async () => {
     setPhase("loading");
@@ -113,8 +127,19 @@ export default function ExamModal({
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-muted">Study guide</p>
               {guide ? <Markdown>{guide}</Markdown> : <p className="text-[14px] text-muted">No study guide available.</p>}
             </div>
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <p className="text-[12.5px] text-muted">{questions.length} questions · pass at 70%</p>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <p className="text-[12.5px] text-muted">{questions.length} questions · pass at 70%</p>
+                {guide && (
+                  <button
+                    onClick={saveGuide}
+                    disabled={saved}
+                    className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold ${saved ? "bg-up/15 text-up" : "glassx text-ink"}`}
+                  >
+                    {saved ? "✓ Saved to my guides" : "Save to my guides"}
+                  </button>
+                )}
+              </div>
               <button onClick={() => setPhase("answering")} className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white">
                 Start the exam →
               </button>

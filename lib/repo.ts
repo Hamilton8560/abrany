@@ -576,6 +576,28 @@ export function getLesson(id: number): Lesson | undefined {
   return getDb().prepare("SELECT * FROM lessons WHERE id = ?").get(id) as Lesson | undefined;
 }
 
+export type LessonSection = { title: string; objective: string; content: string };
+
+/** All ready lesson content for a whole goal, in order (source material for guides/tutor). */
+export function goalReadySections(goalId: number): LessonSection[] {
+  return getDb()
+    .prepare(
+      `SELECT l.title, l.objective, l.content FROM lessons l
+       JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id
+       WHERE p.goal_id = ? AND l.status = 'ready' ORDER BY pi.order_index, l.order_index`,
+    )
+    .all(goalId) as LessonSection[];
+}
+
+/** All ready lesson content for one milestone, in order. */
+export function milestoneReadySections(planItemId: number): LessonSection[] {
+  return getDb()
+    .prepare(
+      "SELECT title, objective, content FROM lessons WHERE plan_item_id = ? AND status = 'ready' ORDER BY order_index",
+    )
+    .all(planItemId) as LessonSection[];
+}
+
 export function planItemWithContext(planItemId: number):
   | { item: PlanItem; plan: Plan; goal: Goal }
   | undefined {
@@ -854,6 +876,82 @@ export function setLessonContent(id: number, content: string, sources: object[] 
       "UPDATE lessons SET content = ?, sources = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
     )
     .run(content, JSON.stringify(sources), id);
+}
+
+/* ── Study guides (first-class, generated on demand) ───────── */
+
+export type StudyGuide = {
+  id: number;
+  user_id: number;
+  goal_id: number | null;
+  plan_item_id: number | null;
+  title: string;
+  topic: string;
+  source: "goal" | "milestone" | "topic" | "exam";
+  content: string;
+  status: "generating" | "ready" | "error";
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function createStudyGuide(input: {
+  userId: number;
+  title: string;
+  topic?: string;
+  goalId?: number | null;
+  planItemId?: number | null;
+  source?: StudyGuide["source"];
+  content?: string; // when provided (e.g. saved from an exam), stored ready
+}): StudyGuide {
+  const ready = input.content != null && input.content.trim().length > 0;
+  const info = getDb()
+    .prepare(
+      `INSERT INTO study_guides (user_id, goal_id, plan_item_id, title, topic, source, content, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      input.userId,
+      input.goalId ?? null,
+      input.planItemId ?? null,
+      input.title.slice(0, 160),
+      (input.topic ?? "").slice(0, 400),
+      input.source ?? "topic",
+      ready ? input.content! : "",
+      ready ? "ready" : "generating",
+    );
+  return getStudyGuide(Number(info.lastInsertRowid))!;
+}
+
+export function getStudyGuide(id: number): StudyGuide | undefined {
+  return getDb().prepare("SELECT * FROM study_guides WHERE id = ?").get(id) as StudyGuide | undefined;
+}
+
+export function listStudyGuides(userId: number): StudyGuide[] {
+  return getDb()
+    .prepare("SELECT * FROM study_guides WHERE user_id = ? ORDER BY created_at DESC, id DESC")
+    .all(userId) as StudyGuide[];
+}
+
+export const userOwnsStudyGuide = (userId: number, id: number) =>
+  owns("SELECT 1 FROM study_guides WHERE id = ? AND user_id = ?", id, userId);
+
+export function setStudyGuideContent(id: number, title: string, content: string): void {
+  getDb()
+    .prepare(
+      "UPDATE study_guides SET title = ?, content = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
+    )
+    .run(title.slice(0, 160), content, id);
+}
+
+export function setStudyGuideStatus(id: number, status: StudyGuide["status"], error = ""): void {
+  getDb()
+    .prepare("UPDATE study_guides SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
+}
+
+export function deleteStudyGuide(id: number): void {
+  getDb().prepare("DELETE FROM study_guides WHERE id = ?").run(id);
 }
 
 /* ── Presentations (AI slide decks) ────────────────────────── */

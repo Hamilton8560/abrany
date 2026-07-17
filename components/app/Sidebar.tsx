@@ -20,6 +20,7 @@ import {
   BuildingIcon,
   StoreIcon,
   ForumIcon,
+  GuideIcon,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 import type { PublicUser } from "@/lib/user";
@@ -42,6 +43,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/app/goals", label: "Goals & Plans", short: "Goals", Icon: TargetIcon },
       { href: "/app/coach", label: "Coach", short: "Coach", Icon: ChatIcon },
+      { href: "/app/guides", label: "Study Guides", short: "Guides", Icon: GuideIcon },
       { href: "/app/review", label: "Review", short: "Review", Icon: ReviewIcon },
       { href: "/app/timer", label: "Focus Timer", short: "Timer", Icon: TimerIcon },
     ],

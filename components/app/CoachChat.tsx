@@ -18,12 +18,19 @@ const STARTERS = [
   "I keep losing focus. Build me a realistic weekly study routine.",
 ];
 
-export default function CoachChat({ goalId }: { goalId?: number }) {
+export default function CoachChat({
+  goalId,
+  studyGuideId,
+}: {
+  goalId?: number;
+  studyGuideId?: number;
+}) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [myLang, setMyLang] = useState("en");
+  const [guideTitle, setGuideTitle] = useState<string | null>(null);
   const [pending, setPending] = useState<{ text: string; mismatch: Mismatch } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -37,6 +44,17 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
       .then((d) => setMyLang(d.user?.language || "en"))
       .catch(() => {});
   }, []);
+
+  // When opened against a study guide, show a context banner.
+  useEffect(() => {
+    if (studyGuideId == null) {
+      setGuideTitle(null);
+      return;
+    }
+    api<{ guide: { title: string } }>(`/api/study-guides/${studyGuideId}`)
+      .then((d) => setGuideTitle(d.guide?.title ?? "your study guide"))
+      .catch(() => setGuideTitle("your study guide"));
+  }, [studyGuideId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -62,7 +80,12 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content, goalId: goalId ?? null, confirmLang: opts?.confirmLang ?? false }),
+        body: JSON.stringify({
+          message: content,
+          goalId: goalId ?? null,
+          studyGuideId: studyGuideId ?? null,
+          confirmLang: opts?.confirmLang ?? false,
+        }),
         signal: ctrl.signal,
       });
       if (!res.ok) {
@@ -113,9 +136,23 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
   };
 
   const empty = loaded && messages.length === 0;
+  const guideStarters = [
+    "Give me a 3-question quiz on this to check my understanding.",
+    "Explain the hardest part of this guide more simply.",
+    "What are the most common mistakes this covers?",
+    "Summarize the must-know points in 5 bullets.",
+  ];
 
   return (
     <div className="glass flex h-[calc(100dvh-190px)] min-h-[440px] flex-col overflow-hidden rounded-[var(--radius-card-lg)] lg:h-[calc(100dvh-150px)]">
+      {guideTitle && (
+        <div className="flex items-center gap-2 border-b border-line/70 bg-accent/8 px-4 py-2.5 text-[12.5px] text-ink sm:px-6">
+          <span className="size-1.5 shrink-0 rounded-full bg-accent" />
+          <span className="min-w-0 truncate">
+            Discussing your study guide: <span className="font-semibold">{guideTitle}</span>
+          </span>
+        </div>
+      )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         {empty && (
           <div className="mx-auto flex max-w-[520px] flex-col items-center gap-6 pt-6 text-center">
@@ -124,15 +161,16 @@ export default function CoachChat({ goalId }: { goalId?: number }) {
             </span>
             <div>
               <h2 className="font-display text-[24px] font-extrabold uppercase text-ink">
-                Your training coach
+                {guideTitle ? "Discuss your study guide" : "Your training coach"}
               </h2>
               <p className="mt-2 text-[14px] text-muted">
-                Tell me what you want to learn. I&apos;ll keep it realistic and break it into steps
-                you can actually do.
+                {guideTitle
+                  ? "I've read your study guide. Ask me anything about it, and I'll explain, quiz you, or go deeper."
+                  : "Tell me what you want to learn. I'll keep it realistic and break it into steps you can actually do."}
               </p>
             </div>
             <div className="grid w-full gap-2.5 sm:grid-cols-2">
-              {STARTERS.map((s) => (
+              {(guideTitle ? guideStarters : STARTERS).map((s) => (
                 <button
                   key={s}
                   onClick={() => send(s)}

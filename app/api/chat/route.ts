@@ -6,6 +6,8 @@ import {
   getGoal,
   getPlanForGoal,
   userOwnsGoal,
+  getStudyGuide,
+  userOwnsStudyGuide,
 } from "@/lib/repo";
 import { streamText, withLlm, llmContext, type ChatMessage } from "@/lib/minimax";
 import { COACH_SYSTEM } from "@/lib/coach";
@@ -61,6 +63,15 @@ export async function POST(request: Request) {
           .map((i) => `${i.title} (${i.status})`)
           .join("; ")}.`;
       }
+    }
+  }
+
+  // Ground the tutor in a specific study guide when the user is discussing one.
+  if (body.studyGuideId != null && userOwnsStudyGuide(user.id, Number(body.studyGuideId))) {
+    const guide = getStudyGuide(Number(body.studyGuideId));
+    if (guide && guide.content) {
+      system +=
+        `\n\nThe user is studying this STUDY GUIDE and wants to discuss it. Treat it as the authoritative material — answer from it, quote or reference its sections when helpful, clear up confusions, quiz them if they ask, and go deeper where they're stuck. Do not contradict it; if something is missing, say so and add it carefully.\n\n--- STUDY GUIDE: ${guide.title} ---\n${guide.content.slice(0, 24000)}\n--- END STUDY GUIDE ---`;
     }
   }
 
