@@ -621,50 +621,58 @@ export default function MindScene() {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: BG, zIndex: 60 }}>
-      {/* overlay chrome */}
+      {/* overlay chrome — a single wrapping row so narrow screens stack instead of overlap */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 2 }}>
-        <div style={{ position: "absolute", left: 20, top: 18, display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ width: 30, height: 30, borderRadius: 9, background: "#141b28", display: "grid", placeItems: "center" }}>
-            <BrainMark />
-          </span>
-          <div>
-            <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>Your Mind</div>
-            <div style={{ font: font(500, 11), color: "#8891a0" }}>
-              {graph ? `Level ${graph.stats.mindLevel} · ${graph.nodes.length} nodes · ${graph.stats.clusters.length} subjects` : "loading…"}
+        <div
+          style={{
+            position: "absolute", left: 14, right: 14, top: 14,
+            display: "flex", flexWrap: "wrap", alignItems: "center",
+            justifyContent: "space-between", gap: "10px 8px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <span style={{ width: 30, height: 30, borderRadius: 9, background: "#141b28", display: "grid", placeItems: "center", flexShrink: 0 }}>
+              <BrainMark />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>Your Mind</div>
+              <div style={{ font: font(500, 11), color: "#8891a0", whiteSpace: "nowrap" }}>
+                {graph ? `Level ${graph.stats.mindLevel} · ${graph.nodes.length} nodes · ${graph.stats.clusters.length} subjects` : "loading…"}
+              </div>
             </div>
+            {graph && !sheetOpen && (
+              <button
+                onClick={() => setSheetOpen(true)}
+                style={{
+                  pointerEvents: "auto", flexShrink: 0, font: font(700, 11.5), color: "#ffb8a6", cursor: "pointer",
+                  background: "rgba(255,66,38,.12)", border: "1px solid rgba(255,66,38,.3)", padding: "6px 12px", borderRadius: 999,
+                }}
+              >
+                Character sheet
+              </button>
+            )}
           </div>
-          {graph && !sheetOpen && (
-            <button
-              onClick={() => setSheetOpen(true)}
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <Link
+              href="/app/mind/about"
+              title="What is this? How Your Mind works"
               style={{
-                pointerEvents: "auto", marginLeft: 8, font: font(700, 11.5), color: "#ffb8a6", cursor: "pointer",
-                background: "rgba(255,66,38,.12)", border: "1px solid rgba(255,66,38,.3)", padding: "6px 12px", borderRadius: 999,
+                pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none", whiteSpace: "nowrap",
+                background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
               }}
             >
-              Character sheet
-            </button>
-          )}
-        </div>
-        <div style={{ position: "absolute", right: 20, top: 18, display: "flex", gap: 8 }}>
-          <Link
-            href="/app/mind/about"
-            title="What is this? How Your Mind works"
-            style={{
-              pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none",
-              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
-            }}
-          >
-            ⓘ How this works
-          </Link>
-          <Link
-            href="/app"
-            style={{
-              pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none",
-              background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
-            }}
-          >
-            ✕ Close
-          </Link>
+              ⓘ How this works
+            </Link>
+            <Link
+              href="/app"
+              style={{
+                pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none", whiteSpace: "nowrap",
+                background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
+              }}
+            >
+              ✕ Close
+            </Link>
+          </div>
         </div>
         <div
           style={{
@@ -680,8 +688,8 @@ export default function MindScene() {
       {toast && (
         <div
           style={{
-            position: "absolute", left: "50%", top: 76, transform: "translateX(-50%)", zIndex: 5,
-            display: "flex", alignItems: "center", gap: 12,
+            position: "absolute", left: "50%", top: 96, transform: "translateX(-50%)", zIndex: 5,
+            display: "flex", alignItems: "center", gap: 12, width: "max-content", maxWidth: "calc(100% - 28px)",
             background: "rgba(15,20,30,.9)", backdropFilter: "blur(14px)",
             border: "1px solid rgba(255,66,38,.5)", borderRadius: 16, padding: "12px 18px",
             boxShadow: "0 0 40px rgba(255,66,38,.35), 0 24px 60px -30px #000",
