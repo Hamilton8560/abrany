@@ -7,6 +7,17 @@ import { complete, type ChatMessage } from "./minimax";
  * timelines, proposes checkpoints, and never over-promises.
  */
 
+/**
+ * Generous per-call output ceiling. This is a CEILING, not a target — a model
+ * still stops when its answer is done (end_turn), so latency is unchanged for
+ * short answers. The headroom matters for two cases: long-form prose (a full
+ * book chapter) and reasoning models like Kimi/k3 whose internal thinking
+ * tokens count against the same budget and would otherwise truncate the visible
+ * answer mid-sentence. complete() streams under the hood, so a cap this large is
+ * allowed (a non-streaming call this large is rejected by the SDK).
+ */
+const MAX_OUTPUT_TOKENS = 64000;
+
 export const COACH_SYSTEM = `You are Abrany's personal training coach — a sharp, encouraging, and above all REALISTIC learning coach.
 
 Your job: help the user train their mind by turning ambitions into achievable practice. Principles:
@@ -84,7 +95,7 @@ export async function generatePlan(goal: {
 }): Promise<GeneratedPlan> {
   const raw = await complete({
     system: planSystem(),
-    maxTokens: 2048,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.6,
     messages: [
       {
@@ -177,7 +188,7 @@ Rules:
   const deadlineLine = intake.targetDate ? `\nTarget date: ${intake.targetDate} (today is ${new Date().toISOString().slice(0, 10)})` : "";
   const raw = await complete({
     system,
-    maxTokens: 3000,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.55,
     messages: [
       {
@@ -244,7 +255,7 @@ Rules:
 
   const raw = await complete({
     system,
-    maxTokens: 1200,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.4,
     messages: [
       {
@@ -323,7 +334,7 @@ Rules:
 
   const raw = await complete({
     system,
-    maxTokens: 1200,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.5,
     messages: [
       {
@@ -399,7 +410,7 @@ You are writing the ACTUAL learning material for a single lesson — the real co
 First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose.
 
 When a concept is inherently visual or structural, include a diagram. Use a \`\`\`mermaid code block for processes, timelines, hierarchies, state machines, decision trees, or sequences (flowchart, sequenceDiagram, timeline, mindmap, stateDiagram-v2, erDiagram). For a SYSTEM or ARCHITECTURE diagram (components/services and their connections), use an \`\`\`arch code block with a compact TOON spec instead: a nodes[N]{id,label,group} block then an edges[M]{from,to,label} block, where group is one of frontend|backend|service|data|external|queue (ids short with no spaces, labels short, no commas inside values). Keep diagrams focused (a handful of nodes) and use them only where they genuinely aid understanding — not for every lesson. ${kindGuide[ctx.kind]}${sourcesGuide}`,
-    maxTokens: 4096,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.6,
     messages: [
       {
@@ -424,7 +435,7 @@ export async function generateReviewQuiz(ctx: {
 Generate a SHORT recall quiz that tests whether the learner still remembers and can use THIS one lesson. Adapt to the subject: recall/explain questions for knowledge, apply-it questions for skills, honest reflection prompts for interpretive subjects. Ground every question in the lesson content provided. Respond with ONLY JSON, no prose or fences:
 { "questions": [ { "question": "..." } ] }
 Rules: 3 to 5 questions, answerable in a sentence or two. Do NOT include answers.`,
-    maxTokens: 1400,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.5,
     messages: [
       {
@@ -468,7 +479,7 @@ You are setting a ${scopeLabel} exam for the course "${ctx.goalTitle}". Produce 
 2. Exactly ${n} exam QUESTIONS that fairly test understanding across ALL the material (mix recall, explanation, and application; adapt to the subject). Each answerable in a few sentences. Do NOT include answers.
 Respond with ONLY JSON, no prose or fences:
 { "studyGuide": "# Study Guide\\n...markdown...", "questions": [ "question one", "question two" ] }`,
-    maxTokens: 2800,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.5,
     messages: [
       { role: "user", content: `COURSE MATERIAL:\n${material}\n\nWrite the ${scopeLabel} study guide and ${n} questions.` },
@@ -509,7 +520,7 @@ export async function gradeReviewQuiz(ctx: {
 You are grading a learner's recall quiz against the lesson content (the source of truth). For each question+answer, judge "correct", "partial", or "incorrect" and give one short, kind, specific feedback line (name what was missed). Then give a 1-2 sentence overall summary and a suggested spaced-repetition rating based on how they did overall: "again" (mostly wrong), "hard" (shaky), "good" (solid), "easy" (nailed it). A blank answer is "incorrect". Respond with ONLY JSON, no prose or fences:
 { "results": [ { "verdict": "correct|partial|incorrect", "feedback": "..." } ], "summary": "...", "suggested": "again|hard|good|easy" }
 The results array MUST have exactly one entry per question, in order.`,
-    maxTokens: 1600,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.3,
     messages: [
       {
@@ -572,7 +583,7 @@ DIAGRAMS (aim for 2-4 across the deck — they make it):
 - Keep diagrams small: ≤ 8 nodes, one diagram per slide, a one-line caption or 1-2 bullets under it.
 
 Adapt depth and tone to the topic. Do not wrap the whole output in a code fence.`,
-    maxTokens: 4096,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.6,
     messages: [
       {
@@ -601,7 +612,7 @@ export async function generateBookOutline(ctx: {
 You are outlining a BOOK. Respond with ONLY JSON, no prose or fences:
 { "title": "book title", "chapters": [ { "title": "chapter title", "summary": "1-2 sentences on what this chapter covers" } ] }
 Rules: 6 to 14 chapters in a logical progression (foundations → advanced → synthesis). Titles concrete and specific to the topic. This is a real book, so the arc should build.`,
-    maxTokens: 2000,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.6,
     messages: [{ role: "user", content: `Outline a book about: ${ctx.brief}` }],
   });
@@ -640,7 +651,7 @@ You are writing ONE chapter of a book — the real prose a reader reads, not an 
 - Continuity: assume the reader has read the earlier chapters — build on them, never re-define their terms or restate the book's premise.
 - Diagrams: only where a concept is genuinely structural or visual, a \`\`\`mermaid or \`\`\`arch block (≤ 8 nodes, labels ≤ 4 words, double-quote mermaid labels containing spaces/()/commas).
 - Do NOT include the chapter number/title as an H1 (the reader shows it). No front-matter, no "---" separators.`,
-    maxTokens: 4096,
+    maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.7,
     messages: [
       {

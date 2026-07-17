@@ -17,8 +17,12 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/chapters/[id]">
   return NextResponse.json({ chapter });
 }
 
-/** Queue a single chapter for background generation. */
-export async function POST(_req: Request, ctx: RouteContext<"/api/chapters/[id]">) {
+/**
+ * Queue a single chapter for background generation. By default a chapter that's
+ * already written is left alone; pass { force: true } to REWRITE it (e.g. an
+ * older chapter that was truncated before the token cap was raised).
+ */
+export async function POST(request: Request, ctx: RouteContext<"/api/chapters/[id]">) {
   const user = await getSessionUser();
   if (!user) return unauthorized();
   const { id } = await ctx.params;
@@ -27,7 +31,8 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/chapters/[id]"
   if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
   const chapter = getChapter(Number(id));
   if (!chapter) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (chapter.status === "ready") return NextResponse.json({ chapter });
+  const body = await request.json().catch(() => ({}));
+  if (chapter.status === "ready" && !body.force) return NextResponse.json({ chapter });
   const job = enqueueChapter(chapter.id, user.id);
   return NextResponse.json({ jobId: job.id, status: "queued" }, { status: 202 });
 }

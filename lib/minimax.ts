@@ -143,31 +143,64 @@ function attemptChain(): Resolved[] {
   return creds ? [clientFor(creds)] : serverChain();
 }
 
+/**
+ * One provider attempt for a "give me the whole answer" call. We STREAM and
+ * accumulate rather than doing a blocking create() for two reasons:
+ *   1. The Anthropic SDK refuses a non-streaming request whose max_tokens is
+ *      large enough that it *could* run past 10 minutes — so a generous cap is
+ *      only reachable via streaming.
+ *   2. A generous cap (see MAX_OUTPUT_TOKENS in coach) means reasoning models
+ *      like Kimi/k3, whose thinking tokens count against max_tokens, no longer
+ *      get their visible answer truncated mid-sentence.
+ * The stop reason is checked so a length-truncated response is treated as a
+ * failure (throw → provider failover / job retry) instead of being saved as if
+ * it were complete.
+ */
 async function runComplete(
   r: Resolved,
   system: string,
   params: { messages: ChatMessage[]; maxTokens?: number; temperature?: number },
 ): Promise<string> {
+  const max_tokens = params.maxTokens ?? 2048;
+  const temperature = params.temperature ?? 0.7;
+  let text = "";
+
   if (r.style === "anthropic") {
-    const res = await r.client.messages.create({
+    let stopReason: string | null = null;
+    const stream = await r.client.messages.create({
       model: r.model,
-      max_tokens: params.maxTokens ?? 2048,
-      temperature: params.temperature ?? 0.7,
+      max_tokens,
+      temperature,
       system,
       messages: params.messages,
+      stream: true,
     });
-    return res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        text += event.delta.text;
+      } else if (event.type === "message_delta" && event.delta.stop_reason) {
+        stopReason = event.delta.stop_reason;
+      }
+    }
+    if (stopReason === "max_tokens") throw new Error(`${r.model} response hit the token limit (truncated)`);
+    return text;
   }
-  const res = await r.client.chat.completions.create({
+
+  let finishReason: string | null = null;
+  const stream = await r.client.chat.completions.create({
     model: r.model,
-    max_tokens: params.maxTokens ?? 2048,
-    temperature: params.temperature ?? 0.7,
+    max_tokens,
+    temperature,
     messages: [{ role: "system", content: system }, ...params.messages],
+    stream: true,
   });
-  return res.choices[0]?.message?.content ?? "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) text += delta;
+    if (chunk.choices[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
+  }
+  if (finishReason === "length") throw new Error(`${r.model} response hit the token limit (truncated)`);
+  return text;
 }
 
 /** For routes: the creds to run generation as, or an error string if no key set. */

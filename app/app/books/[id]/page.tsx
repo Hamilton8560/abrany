@@ -52,9 +52,12 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
     if (pollRef.current) clearInterval(pollRef.current);
   }, []);
 
-  const generate = async (c: Chapter) => {
+  const generate = async (c: Chapter, force = false) => {
     setChapters((cs) => cs.map((x) => (x.id === c.id ? { ...x, status: "queued" } : x)));
-    await api(`/api/chapters/${c.id}`, { method: "POST" }).catch(() => {});
+    await api(`/api/chapters/${c.id}`, {
+      method: "POST",
+      body: JSON.stringify({ force }),
+    }).catch(() => {});
     load().catch(() => {});
   };
 
@@ -126,6 +129,23 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
             </div>
           )}
         </article>
+
+        {current.status === "ready" && (
+          <div className="flex flex-col items-center gap-1.5 border-t border-line/60 pt-5">
+            <button
+              onClick={() => {
+                if (window.confirm("Rewrite this chapter from scratch? The current text will be replaced.")) {
+                  generate(current, true);
+                  setReading(null);
+                }
+              }}
+              className="rounded-full px-4 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
+            >
+              ↻ Rewrite this chapter
+            </button>
+            <p className="text-[11px] text-muted">Ends mid-sentence? Rewrite it — chapters now generate in full.</p>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <button
