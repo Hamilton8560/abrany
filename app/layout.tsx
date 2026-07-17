@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Archivo, Inter } from "next/font/google";
+import { TimerProvider } from "@/components/timer/TimerProvider";
+import MiniTimer from "@/components/timer/MiniTimer";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -32,7 +34,12 @@ export default function RootLayout({
       lang="en"
       className={`${archivo.variable} ${inter.variable} antialiased`}
     >
-      <body>{children}</body>
+      <body>
+        <TimerProvider>
+          {children}
+          <MiniTimer />
+        </TimerProvider>
+      </body>
     </html>
   );
 }
