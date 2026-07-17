@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, fmtWhen } from "@/lib/client";
 import type { Book } from "@/lib/repo";
-import { ArrowRight, PlusIcon, BookIcon } from "@/components/icons";
+import { PlusIcon } from "@/components/icons";
+import BookCover from "@/components/app/BookCover";
 
 export default function BooksPage() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -73,22 +74,21 @@ export default function BooksPage() {
         </div>
       </form>
 
-      <section className="flex flex-col gap-3">
-        {books.length === 0 && <p className="text-[14px] text-muted">No books yet — start one above.</p>}
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        {books.length === 0 && (
+          <p className="col-span-full text-[14px] text-muted">No books yet — start one above.</p>
+        )}
         {books.map((b) => (
           <Link
             key={b.id}
             href={`/app/books/${b.id}`}
-            className="glass group flex items-center gap-4 rounded-[var(--radius-card)] p-4 transition-transform hover:-translate-y-0.5"
+            className="group flex flex-col gap-2.5 transition-transform hover:-translate-y-1"
           >
-            <span className="grid size-11 shrink-0 place-items-center rounded-[13px] bg-accent/12 text-accent">
-              <BookIcon className="size-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-semibold text-ink">{b.title}</p>
-              <p className="truncate text-[12.5px] text-muted">{fmtWhen(b.created_at)}</p>
+            <BookCover title={b.title} author="Abrany" />
+            <div className="min-w-0 px-0.5">
+              <p className="truncate text-[13.5px] font-semibold text-ink">{b.title}</p>
+              <p className="truncate text-[11.5px] text-muted">{fmtWhen(b.created_at)}</p>
             </div>
-            <ArrowRight className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
           </Link>
         ))}
       </section>

@@ -552,11 +552,26 @@ export async function generatePresentation(ctx: {
   const content = await complete({
     system: `${COACH_SYSTEM}
 
-You are creating a PRESENTATION DECK. Output GitHub-flavored markdown only. Separate every slide with a line containing only three dashes (---). Structure:
-- Slide 1 (title slide): a single "# Deck Title" and one italic subtitle line.
-- 6 to 10 content slides, each starting with "## Slide heading" followed by CONCISE content — short bullet points (not paragraphs), a small table where it helps, and where a concept is structural or visual, a diagram: a \`\`\`mermaid block for flows/timelines/hierarchies/sequences, or an \`\`\`arch block (nodes[N]{id,label,group} + edges[M]{from,to,label}) for system/architecture diagrams.
+You are creating a PRESENTATION DECK that should genuinely impress — clear, visual, and effective at teaching. Output GitHub-flavored markdown only. Separate every slide with a line containing only three dashes (---).
+
+STRUCTURE (follow exactly):
+- Slide 1 (title slide): a single "# Deck Title" (≤ 8 words) and one *italic subtitle* line (≤ 16 words). Nothing else on it.
+- 6 to 10 content slides, each starting with "## Slide heading" (≤ 7 words).
 - A final "## Key takeaways" slide with 3-5 bullets.
-Rules: each slide is a SLIDE, not an essay — a heading plus a few bullets or one diagram, nothing dense. Adapt depth and tone to the topic. Do not wrap the whole thing in a code fence.`,
+
+PER-SLIDE DISCIPLINE (a slide is a SLIDE, not an essay):
+- At most 5 bullets per slide, each ≤ 14 words. Bold the 1-3 key words per bullet.
+- Never a paragraph longer than 2 lines; never a heading-only slide.
+- One idea per slide. If a slide needs two diagrams or >5 bullets, split it.
+- Use a small comparison table (≤ 3 columns, ≤ 5 rows) where contrast teaches better than bullets.
+
+DIAGRAMS (aim for 2-4 across the deck — they make it):
+- \`\`\`mermaid for flows/timelines/hierarchies/sequences (flowchart LR or TD, timeline, sequenceDiagram, pie, xychart-beta for curves/quantities).
+- \`\`\`arch (nodes[N]{id,label,group} + edges[M]{from,to,label}) for system/architecture diagrams.
+- Node/edge labels ≤ 4 words; ALWAYS double-quote mermaid labels that contain spaces, ( ) or commas, e.g. A["Working memory (short)"].
+- Keep diagrams small: ≤ 8 nodes, one diagram per slide, a one-line caption or 1-2 bullets under it.
+
+Adapt depth and tone to the topic. Do not wrap the whole output in a code fence.`,
     maxTokens: 4096,
     temperature: 0.6,
     messages: [
@@ -618,7 +633,13 @@ export async function generateChapter(ctx: {
   return complete({
     system: `${COACH_SYSTEM}
 
-You are writing ONE chapter of a book — the real prose a reader reads, not an outline. Write in flowing, engaging narrative prose (not just bullet lists), with a few "## " section subheadings to structure it, concrete examples and analogies, and — only where a concept is genuinely structural or visual — a \`\`\`mermaid or \`\`\`arch diagram (same rules as elsewhere). Do NOT restate the whole book; write THIS chapter, assuming the reader has read the earlier ones. Do not include the chapter number/title as an H1 (the reader shows it). Aim for a substantial, complete chapter.`,
+You are writing ONE chapter of a book — the real prose a reader reads, not an outline. This chapter must feel like it belongs to the SAME book as every other chapter, so hold these constants:
+- Voice: second person ("you"), present tense, warm but direct — the same voice in every chapter.
+- Structure: open with a 2-4 sentence hook (a scene, question, or surprising fact — NEVER "In this chapter we will…"), then 3-5 "## " section subheadings, then a short closing that hands off to the next chapter in one sentence (skip the handoff in the final chapter).
+- Length: roughly 1,200-1,800 words of flowing narrative prose. Bullets only where a genuine list beats prose.
+- Continuity: assume the reader has read the earlier chapters — build on them, never re-define their terms or restate the book's premise.
+- Diagrams: only where a concept is genuinely structural or visual, a \`\`\`mermaid or \`\`\`arch block (≤ 8 nodes, labels ≤ 4 words, double-quote mermaid labels containing spaces/()/commas).
+- Do NOT include the chapter number/title as an H1 (the reader shows it). No front-matter, no "---" separators.`,
     maxTokens: 4096,
     temperature: 0.7,
     messages: [

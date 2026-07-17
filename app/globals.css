@@ -301,6 +301,21 @@ body {
   animation: hotspot-ring 2.4s ease-out infinite;
 }
 
+/* slide-deck page transition */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.anim-slide-in {
+  animation: slide-in 0.28s var(--ease-out-soft) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -308,7 +323,8 @@ body {
   .anim-float,
   .anim-glow,
   .anim-bob,
-  .anim-hotspot {
+  .anim-hotspot,
+  .anim-slide-in {
     animation: none;
   }
 }

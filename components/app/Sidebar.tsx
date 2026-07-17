@@ -25,21 +25,52 @@ import type { ComponentType, SVGProps } from "react";
 import type { PublicUser } from "@/lib/user";
 
 type NavItem = { href: string; label: string; short?: string; Icon: ComponentType<SVGProps<SVGSVGElement>> };
+type NavGroup = { title: string | null; items: NavItem[] };
 
-const NAV: NavItem[] = [
-  { href: "/app", label: "Dashboard", short: "Home", Icon: HomeIcon },
-  { href: "/app/timer", label: "Focus Timer", short: "Timer", Icon: TimerIcon },
-  { href: "/app/goals", label: "Goals & Plans", short: "Goals", Icon: TargetIcon },
-  { href: "/app/review", label: "Review", short: "Review", Icon: ReviewIcon },
-  { href: "/app/coach", label: "Coach", short: "Coach", Icon: ChatIcon },
-  { href: "/app/presentations", label: "Presentations", short: "Slides", Icon: SlidesIcon },
-  { href: "/app/books", label: "Books", short: "Books", Icon: BookIcon },
-  { href: "/app/achievements", label: "Achievements", short: "Awards", Icon: AwardIcon },
-  { href: "/app/market", label: "Marketplace", short: "Market", Icon: StoreIcon },
-  { href: "/app/community", label: "Community", short: "Forums", Icon: ForumIcon },
-  { href: "/app/org", label: "My Company", short: "Company", Icon: BuildingIcon },
-  { href: "/app/log", label: "Training Log", short: "Log", Icon: JournalIcon },
+/**
+ * Learning-first information architecture: the core loop (learn) sits on top,
+ * then what you make, then your record, then the wider world. Group labels keep
+ * a 12-destination app scannable instead of a wall of links.
+ */
+const GROUPS: NavGroup[] = [
+  {
+    title: null, // home stands alone
+    items: [{ href: "/app", label: "Dashboard", short: "Home", Icon: HomeIcon }],
+  },
+  {
+    title: "Learn",
+    items: [
+      { href: "/app/goals", label: "Goals & Plans", short: "Goals", Icon: TargetIcon },
+      { href: "/app/coach", label: "Coach", short: "Coach", Icon: ChatIcon },
+      { href: "/app/review", label: "Review", short: "Review", Icon: ReviewIcon },
+      { href: "/app/timer", label: "Focus Timer", short: "Timer", Icon: TimerIcon },
+    ],
+  },
+  {
+    title: "Create",
+    items: [
+      { href: "/app/presentations", label: "Presentations", short: "Slides", Icon: SlidesIcon },
+      { href: "/app/books", label: "Books", short: "Books", Icon: BookIcon },
+    ],
+  },
+  {
+    title: "Progress",
+    items: [
+      { href: "/app/achievements", label: "Achievements", short: "Awards", Icon: AwardIcon },
+      { href: "/app/log", label: "Training Log", short: "Log", Icon: JournalIcon },
+    ],
+  },
+  {
+    title: "Explore",
+    items: [
+      { href: "/app/market", label: "Marketplace", short: "Market", Icon: StoreIcon },
+      { href: "/app/community", label: "Community", short: "Forums", Icon: ForumIcon },
+      { href: "/app/org", label: "My Company", short: "Company", Icon: BuildingIcon },
+    ],
+  },
 ];
+
+const NAV: NavItem[] = GROUPS.flatMap((g) => g.items);
 
 // Phone bottom bar shows 4 primaries + a "More" sheet holding the rest + Settings.
 const MOBILE_PRIMARY = ["/app", "/app/timer", "/app/goals", "/app/coach"];
@@ -80,33 +111,42 @@ export default function Sidebar({ user }: { user: PublicUser }) {
           <Logo />
         </div>
 
-        <nav className="-mr-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-2">
-          {NAV.map(({ href, label, Icon }) => {
-            const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={`group flex items-center gap-3 rounded-[13px] px-3 py-2.5 text-[13.5px] transition-all ${
-                  active
-                    ? "glassx-dark font-semibold text-white"
-                    : "font-medium text-muted hover:bg-white/50 hover:text-ink"
-                }`}
-              >
-                <Icon className={`size-[18px] ${active ? "text-white" : "text-muted group-hover:text-ink"}`} />
-                <span className="flex-1">{label}</span>
-                {href === "/app/review" && due > 0 && (
-                  <span
-                    className={`grid min-w-[20px] place-items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-bold ${
-                      active ? "bg-white/25 text-white" : "bg-accent text-white"
+        <nav className="-mr-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-2">
+          {GROUPS.map((group, gi) => (
+            <div key={gi} className="flex flex-col gap-0.5">
+              {group.title && (
+                <p className="mt-4 px-3 pb-1 text-[10px] font-bold uppercase tracking-[1.6px] text-muted/60">
+                  {group.title}
+                </p>
+              )}
+              {group.items.map(({ href, label, Icon }) => {
+                const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={`group flex items-center gap-3 rounded-[13px] px-3 py-2 text-[13.5px] transition-all ${
+                      active
+                        ? "glassx-dark font-semibold text-white"
+                        : "font-medium text-muted hover:bg-white/50 hover:text-ink"
                     }`}
                   >
-                    {due}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+                    <Icon className={`size-[18px] ${active ? "text-white" : "text-muted group-hover:text-ink"}`} />
+                    <span className="flex-1">{label}</span>
+                    {href === "/app/review" && due > 0 && (
+                      <span
+                        className={`grid min-w-[20px] place-items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-bold ${
+                          active ? "bg-white/25 text-white" : "bg-accent text-white"
+                        }`}
+                      >
+                        {due}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="flex shrink-0 flex-col gap-3">

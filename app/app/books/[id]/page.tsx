@@ -7,6 +7,7 @@ import { api } from "@/lib/client";
 import type { Book, Chapter } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
 import QueueHint from "@/components/app/QueueHint";
+import BookCover from "@/components/app/BookCover";
 import { ArrowRight, CheckIcon } from "@/components/icons";
 
 type Resp = { book: Book; chapters: Chapter[] };
@@ -89,16 +90,21 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
           <ArrowRight className="size-3.5 rotate-180" /> Contents
         </button>
 
-        <header>
-          <p className="text-[12px] font-semibold uppercase tracking-wider text-accent">
+        <header className="text-center">
+          <p className="text-[12px] font-semibold uppercase tracking-[3px] text-accent">
             Chapter {current.order_index + 1}
           </p>
-          <h1 className="mt-1.5 font-display text-[clamp(26px,4vw,38px)] font-extrabold uppercase leading-[1.02] text-ink">
+          <h1 className="mt-2 font-display text-[clamp(26px,4vw,38px)] font-extrabold uppercase leading-[1.05] text-ink">
             {current.title}
           </h1>
+          <div className="mx-auto mt-4 flex items-center justify-center gap-2">
+            <span className="h-px w-10 bg-line" />
+            <span className="size-1.5 rotate-45 bg-accent/60" />
+            <span className="h-px w-10 bg-line" />
+          </div>
         </header>
 
-        <article className="glass rounded-[var(--radius-card-lg)] p-6 sm:p-9 [&_h2]:mt-6 [&_h2]:text-[21px] [&_p]:text-[15.5px] [&_p]:leading-[1.7] [&_li]:text-[15.5px] [&_li]:leading-[1.6]">
+        <article className="glass rounded-[var(--radius-card-lg)] p-6 sm:p-10 [&_h2]:mt-7 [&_h2]:font-display [&_h2]:text-[21px] [&_p]:text-[16px] [&_p]:leading-[1.75] [&_li]:text-[16px] [&_li]:leading-[1.65] [&>p:first-of-type]:first-letter:float-left [&>p:first-of-type]:first-letter:mr-2 [&>p:first-of-type]:first-letter:font-display [&>p:first-of-type]:first-letter:text-[52px] [&>p:first-of-type]:first-letter:font-extrabold [&>p:first-of-type]:first-letter:leading-[0.85] [&>p:first-of-type]:first-letter:text-accent [&>*>p:first-of-type]:first-letter:float-left [&>*>p:first-of-type]:first-letter:mr-2 [&>*>p:first-of-type]:first-letter:font-display [&>*>p:first-of-type]:first-letter:text-[52px] [&>*>p:first-of-type]:first-letter:font-extrabold [&>*>p:first-of-type]:first-letter:leading-[0.85] [&>*>p:first-of-type]:first-letter:text-accent">
           {current.status === "ready" ? (
             <Markdown>{current.content}</Markdown>
           ) : current.status === "queued" || current.status === "generating" ? (
@@ -152,26 +158,45 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
         <span className="truncate text-ink">{book.title}</span>
       </div>
 
-      <header className="glass rounded-[var(--radius-card-lg)] p-6">
-        <h1 className="font-display text-[clamp(26px,4vw,38px)] font-extrabold uppercase leading-[1.02] text-ink">
-          {book.title}
-        </h1>
-        {book.brief && <p className="mt-2 text-[14px] text-muted">{book.brief}</p>}
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <span className="text-[12.5px] text-muted">
-            {chapters.length} chapters · {readyCount} written
-          </span>
-          {chapters.some((c) => c.status === "stub" || c.status === "error") && (
-            <button
-              onClick={prepareAll}
-              className="glassx-dark rounded-full px-4 py-2 text-[12.5px] font-semibold text-white"
-            >
-              Write all chapters
+      <header className="glass flex flex-col gap-6 rounded-[var(--radius-card-lg)] p-6 sm:flex-row">
+        <div className="w-[150px] shrink-0 self-center sm:w-[168px] sm:self-start">
+          <BookCover title={book.title} author="Abrany" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-[clamp(26px,4vw,38px)] font-extrabold uppercase leading-[1.02] text-ink">
+            {book.title}
+          </h1>
+          {book.brief && <p className="mt-2 text-[14px] text-muted">{book.brief}</p>}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span className="text-[12.5px] text-muted">
+              {chapters.length} chapters · {readyCount} written
+            </span>
+            {chapters.some((c) => c.status === "stub" || c.status === "error") && (
+              <button
+                onClick={prepareAll}
+                className="glassx-dark rounded-full px-4 py-2 text-[12.5px] font-semibold text-white"
+              >
+                Write all chapters
+              </button>
+            )}
+            {readyCount > 0 && (
+              <a
+                href={`/api/books/${book.id}/epub`}
+                download
+                className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink"
+              >
+                ⬇ EPUB
+              </a>
+            )}
+            <button onClick={remove} className="text-[12.5px] font-semibold text-muted hover:text-accent">
+              Delete
             </button>
+          </div>
+          {readyCount > 0 && (
+            <p className="mt-2 text-[11.5px] text-muted">
+              EPUB works on Kindle (Send-to-Kindle), Apple Books, Kobo, and most readers.
+            </p>
           )}
-          <button onClick={remove} className="text-[12.5px] font-semibold text-muted hover:text-accent">
-            Delete
-          </button>
         </div>
       </header>
 
