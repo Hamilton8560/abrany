@@ -324,9 +324,9 @@ function TeamTab({ members, invites, refresh }: { members: Member[]; invites: In
       });
       setMsg(
         r.status === "added"
-          ? "Added — they'll see assigned training on their Company page."
-          : r.status === "invited"
-            ? "Invited — they join automatically when they sign up with this email."
+          ? "Added — they'll see assigned training on their Company page. We emailed them a heads-up."
+          : r.status === "created"
+            ? "Signed up — we emailed them a temporary password. They'll set their own the moment they log in."
             : "Already a member.",
       );
       setEmail("");
@@ -747,6 +747,7 @@ function ApiTab({ org, refresh }: { org: OrgView; refresh: () => void }) {
     setTimeout(() => setCopied(null), 1500);
   };
 
+  const mcpUrl = `${base}/api/mcp/${key}`; // domain-aware connector link (key embedded)
   const mcpCmd = `claude mcp add --transport http abrany ${base}/api/mcp --header "Authorization: Bearer ${key}"`;
   const curlCmd = `curl -X POST ${base}/api/v1/assignments \\
   -H "Authorization: Bearer ${key}" \\
@@ -761,15 +762,82 @@ function ApiTab({ org, refresh }: { org: OrgView; refresh: () => void }) {
     }]
   }'`;
 
+  const host = base.replace(/^https?:\/\//, "");
+
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-[12.5px] text-muted">
-        Author curricula with <span className="font-semibold text-ink">any AI model you want</span> —
-        Claude, GPT, Gemini, your own — and push them in over the REST API, or plug Abrany straight
-        into Claude Code / any MCP client. Progress (reading time per section, exams, pass/fail) reads
-        back the same way.
+    <div className="flex flex-col gap-5">
+      <p className="text-[12.5px] leading-relaxed text-muted">
+        Connect Abrany to <span className="font-semibold text-ink">Claude</span> (or any MCP client) and
+        just <span className="font-semibold text-ink">talk to it</span> — “sign up Priya and assign her
+        forklift safety, due Aug 1” — and it enrolls employees, writes the whole curriculum with whatever
+        AI model you run, sets deadlines and reads back live progress. No code required.
       </p>
 
+      {/* ── The connector link (domain-aware) ─────────────────── */}
+      <div>
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Your connector link
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-[12px] border border-line bg-white/70 px-3.5 py-2.5 font-mono text-[11.5px] text-ink">
+            {mcpUrl}
+          </code>
+          <button onClick={() => copy("url", mcpUrl)} className="glassx rounded-full px-3.5 py-2 text-[12px] font-semibold text-ink">
+            {copied === "url" ? "Copied ✓" : "Copy link"}
+          </button>
+        </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+          Points at <span className="font-semibold text-ink">{host}</span> — it updates automatically if
+          you move Abrany to your own domain. The key is baked in, so
+          <span className="font-semibold text-ink"> treat this link like a password</span>. Paste it once
+          and Claude stays connected.
+        </p>
+      </div>
+
+      {/* ── Walkthrough ───────────────────────────────────────── */}
+      <div className="rounded-[16px] border border-line bg-white/50 p-4">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Add it to Claude — pick your app
+        </p>
+
+        <div className="flex flex-col gap-4">
+          {/* claude.ai / Claude Desktop */}
+          <div>
+            <p className="mb-1.5 text-[12.5px] font-semibold text-ink">Claude.ai or Claude Desktop</p>
+            <ol className="ml-4 list-decimal space-y-1 text-[12px] leading-relaxed text-muted marker:text-muted/60">
+              <li>Open <span className="font-medium text-ink">Settings → Connectors</span>.</li>
+              <li>Click <span className="font-medium text-ink">Add custom connector</span>.</li>
+              <li>Name it <span className="font-medium text-ink">Abrany</span> and paste the connector link above as the URL.</li>
+              <li>Save. Now just ask Claude to enroll people or assign courses.</li>
+            </ol>
+          </div>
+
+          <div className="h-px bg-line" />
+
+          {/* Claude Code */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[12.5px] font-semibold text-ink">Claude Code (terminal)</p>
+              <button onClick={() => copy("mcp", mcpCmd)} className="text-[11.5px] font-semibold text-accent">
+                {copied === "mcp" ? "Copied ✓" : "Copy command"}
+              </button>
+            </div>
+            <p className="mb-1.5 text-[12px] leading-relaxed text-muted">One command — it uses a header instead of the link:</p>
+            <pre className="overflow-x-auto rounded-[12px] border border-line bg-ink p-3.5 font-mono text-[11px] leading-relaxed text-white/90">
+              {mcpCmd}
+            </pre>
+          </div>
+        </div>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-muted">
+          Once connected, Claude can: <span className="text-ink">see your team</span>,
+          <span className="text-ink"> sign up an employee</span>,
+          <span className="text-ink"> assign a course</span> (full curriculum + deadline) and
+          <span className="text-ink"> read live progress</span> — reading time per section, exam scores and pass/fail.
+        </p>
+      </div>
+
+      {/* ── The key + rotate ──────────────────────────────────── */}
       <div>
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">Partner API key</p>
         <div className="flex flex-wrap items-center gap-2">
@@ -785,44 +853,38 @@ function ApiTab({ org, refresh }: { org: OrgView; refresh: () => void }) {
               refresh();
             }}
             className="rounded-full px-2 py-2 text-[12px] font-semibold text-muted hover:text-accent"
-            title="Rotate the key (the old one stops working immediately)"
+            title="Rotate the key (the old link and key stop working immediately)"
           >
             Rotate
           </button>
         </div>
-      </div>
-
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Connect Claude Code (MCP)</p>
-          <button onClick={() => copy("mcp", mcpCmd)} className="text-[11.5px] font-semibold text-accent">
-            {copied === "mcp" ? "Copied ✓" : "Copy"}
-          </button>
-        </div>
-        <pre className="overflow-x-auto rounded-[12px] border border-line bg-ink p-3.5 font-mono text-[11px] leading-relaxed text-white/90">
-          {mcpCmd}
-        </pre>
         <p className="mt-1.5 text-[11px] text-muted">
-          Tools: list_employees · add_employee · create_assignment (full curriculum + deadline) ·
-          list_assignments · get_assignment.
+          This is the same key embedded in your connector link. Rotating it disconnects Claude until you paste the new link.
         </p>
       </div>
 
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">REST example</p>
-          <button onClick={() => copy("curl", curlCmd)} className="text-[11.5px] font-semibold text-accent">
-            {copied === "curl" ? "Copied ✓" : "Copy"}
-          </button>
+      {/* ── Developer REST (secondary) ────────────────────────── */}
+      <details className="rounded-[16px] border border-line bg-white/40 p-4">
+        <summary className="cursor-pointer text-[12.5px] font-semibold text-ink">
+          Prefer raw HTTP? REST API for developers
+        </summary>
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Example — create an assignment</p>
+            <button onClick={() => copy("curl", curlCmd)} className="text-[11.5px] font-semibold text-accent">
+              {copied === "curl" ? "Copied ✓" : "Copy"}
+            </button>
+          </div>
+          <pre className="overflow-x-auto rounded-[12px] border border-line bg-ink p-3.5 font-mono text-[11px] leading-relaxed text-white/90">
+            {curlCmd}
+          </pre>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+            Also: GET /api/v1/members · POST /api/v1/members · GET /api/v1/assignments ·
+            GET /api/v1/assignments/:id (per-section reading time, grades, exams). Authenticate with
+            <span className="font-mono text-ink"> Authorization: Bearer {"{key}"}</span>.
+          </p>
         </div>
-        <pre className="overflow-x-auto rounded-[12px] border border-line bg-ink p-3.5 font-mono text-[11px] leading-relaxed text-white/90">
-          {curlCmd}
-        </pre>
-        <p className="mt-1.5 text-[11px] text-muted">
-          Also: GET /api/v1/members · POST /api/v1/members · GET /api/v1/assignments ·
-          GET /api/v1/assignments/:id (per-section reading time, grades, exams).
-        </p>
-      </div>
+      </details>
     </div>
   );
 }

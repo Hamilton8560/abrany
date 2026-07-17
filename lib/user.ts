@@ -17,6 +17,9 @@ export type PublicUser = {
   /** Raw display name ('' if unset) and the resolved name used on certificates. */
   name: string;
   displayName: string;
+  /** Email notification preferences (Settings → Email notifications). */
+  notifyCertificates: boolean;
+  notifyWeeklyReport: boolean;
 };
 
 export function publicUser(u: User): PublicUser {
@@ -34,5 +37,7 @@ export function publicUser(u: User): PublicUser {
     language: u.language || "en",
     name: u.name || "",
     displayName: displayName(u),
+    notifyCertificates: u.notify_certificates !== 0,
+    notifyWeeklyReport: u.notify_weekly_report !== 0,
   };
 }

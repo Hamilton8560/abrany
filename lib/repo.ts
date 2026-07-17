@@ -13,6 +13,10 @@ export type User = {
   ai_model: string;
   language: string; // ISO-ish short code (see lib/languages); '' → default 'en'
   name: string; // display name for certificates ('' → derive from email)
+  must_reset_password: number; // 1 = issued a temp password; must set their own before using the app
+  notify_certificates: number; // 1 = email when a certificate is earned
+  notify_weekly_report: number; // 1 = weekly progress digest email
+  last_weekly_email_at: string | null;
   created_at: string;
 };
 
@@ -56,6 +60,62 @@ export function setUserLanguage(id: number, language: string): void {
 
 export function setUserName(id: number, name: string): void {
   getDb().prepare("UPDATE users SET name = ? WHERE id = ?").run(name.slice(0, 80), id);
+}
+
+export function setMustResetPassword(id: number, must: boolean): void {
+  getDb().prepare("UPDATE users SET must_reset_password = ? WHERE id = ?").run(must ? 1 : 0, id);
+}
+
+export function setNotificationPrefs(
+  id: number,
+  prefs: { certificates?: boolean; weeklyReport?: boolean },
+): void {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (prefs.certificates !== undefined) { sets.push("notify_certificates = ?"); vals.push(prefs.certificates ? 1 : 0); }
+  if (prefs.weeklyReport !== undefined) { sets.push("notify_weekly_report = ?"); vals.push(prefs.weeklyReport ? 1 : 0); }
+  if (sets.length) getDb().prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...(vals as never[]), id);
+}
+
+/** Users due for their weekly progress email (opted in, never sent or 7+ days ago). */
+export function usersDueWeeklyReport(): Pick<User, "id" | "email" | "name" | "language">[] {
+  return getDb()
+    .prepare(
+      `SELECT id, email, name, language FROM users
+       WHERE notify_weekly_report = 1
+         AND (last_weekly_email_at IS NULL OR last_weekly_email_at <= datetime('now', '-7 days'))`,
+    )
+    .all() as Pick<User, "id" | "email" | "name" | "language">[];
+}
+
+export function markWeeklyReportSent(id: number): void {
+  getDb().prepare("UPDATE users SET last_weekly_email_at = datetime('now') WHERE id = ?").run(id);
+}
+
+/** A user's training in the last 7 days, for the weekly digest. */
+export function weeklyDigest(userId: number): {
+  focusSec: number;
+  sessionCount: number;
+  sectionsCompleted: number;
+  certificatesEarned: number;
+} {
+  const db = getDb();
+  const focus = db
+    .prepare(
+      "SELECT COALESCE(SUM(duration_sec),0) sec, COUNT(*) n FROM sessions WHERE user_id = ? AND mode='focus' AND created_at >= datetime('now','-7 days')",
+    )
+    .get(userId) as { sec: number; n: number };
+  const sections = db
+    .prepare(
+      `SELECT COUNT(*) n FROM lessons l
+       JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id JOIN goals g ON g.id = p.goal_id
+       WHERE g.user_id = ? AND l.completed_at >= datetime('now','-7 days')`,
+    )
+    .get(userId) as { n: number };
+  const certs = db
+    .prepare("SELECT COUNT(*) n FROM certificates WHERE user_id = ? AND issued_at >= datetime('now','-7 days')")
+    .get(userId) as { n: number };
+  return { focusSec: focus.sec, sessionCount: focus.n, sectionsCompleted: sections.n, certificatesEarned: certs.n };
 }
 
 /* ── focus timer (server-synced, one per user) ─────────────── */

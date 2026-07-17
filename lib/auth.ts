@@ -1,8 +1,11 @@
-import { scryptSync, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
+import { timingSafeEqual, createHmac } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createUser, getUser, getUserByEmail, backfillOwnerData, type User } from "./repo";
 import { createOrg, orgForUser } from "./org";
+import { hashPassword, verifyPassword } from "./password";
+
+export { hashPassword, verifyPassword };
 
 /**
  * Minimal, dependency-free auth: scrypt password hashing + an HMAC-signed
@@ -15,21 +18,6 @@ const COOKIE = "abrany_session";
 const ACT_COOKIE = "abrany_act_as"; // owner-only: id of the user being impersonated
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 const secret = () => process.env.SESSION_SECRET ?? "insecure-dev-secret";
-
-/* ── passwords ─────────────────────────────────────────────── */
-export function hashPassword(pw: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(pw, salt, 64).toString("hex");
-  return `${salt}:${hash}`;
-}
-
-export function verifyPassword(pw: string, stored: string): boolean {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  const h = scryptSync(pw, salt, 64);
-  const known = Buffer.from(hash, "hex");
-  return h.length === known.length && timingSafeEqual(h, known);
-}
 
 /* ── session token (HMAC-signed) ───────────────────────────── */
 function sign(userId: number): string {

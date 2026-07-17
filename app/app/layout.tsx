@@ -4,6 +4,7 @@ import Sidebar, { MobileBar } from "@/components/app/Sidebar";
 import ImpersonationBanner from "@/components/app/ImpersonationBanner";
 import { getAuthState } from "@/lib/auth";
 import { publicUser } from "@/lib/user";
+import { ensureWeeklyReportScheduler } from "@/lib/weeklyReport";
 
 export const metadata: Metadata = {
   title: "Abrany — Train",
@@ -11,8 +12,11 @@ export const metadata: Metadata = {
 };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  ensureWeeklyReportScheduler();
   const { effective, impersonating } = await getAuthState();
   if (!effective) redirect("/login");
+  // signed up by a company with a temporary password — must set their own before using the app
+  if (effective.must_reset_password) redirect("/reset-password");
   const me = publicUser(effective);
 
   return (

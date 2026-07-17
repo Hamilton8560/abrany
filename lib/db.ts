@@ -365,6 +365,12 @@ function migrate(db: DatabaseSync) {
   addCol("users", "name", "name TEXT NOT NULL DEFAULT ''");
   // a graded section keeps its result (e.g. "A", "92%") for the transcript
   addCol("lessons", "grade", "grade TEXT NOT NULL DEFAULT ''");
+  // email notifications (Resend): temp-password-issued accounts must reset before
+  // using the app; users opt in/out of certificate + weekly-report emails
+  addCol("users", "must_reset_password", "must_reset_password INTEGER NOT NULL DEFAULT 0");
+  addCol("users", "notify_certificates", "notify_certificates INTEGER NOT NULL DEFAULT 1");
+  addCol("users", "notify_weekly_report", "notify_weekly_report INTEGER NOT NULL DEFAULT 1");
+  addCol("users", "last_weekly_email_at", "last_weekly_email_at TEXT");
   // accumulated seconds the learner spent reading this section (heartbeat-fed)
   addCol("lessons", "read_sec", "read_sec INTEGER NOT NULL DEFAULT 0");
   // V2 plans: legacy rows stay version 1 and render exactly as before

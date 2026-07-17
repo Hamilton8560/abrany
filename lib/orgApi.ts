@@ -23,10 +23,21 @@ import type { LessonKind } from "./repo";
 
 const KINDS: LessonKind[] = ["read", "teach", "practice", "apply", "check", "review"];
 
-/** Resolve the org from a partner request's `Authorization: Bearer abr_org_…`. */
+/**
+ * Resolve the org from a partner request. Preferred: `Authorization: Bearer abr_org_…`.
+ * Also accepts the key embedded in the URL — `/api/mcp/abr_org_…` or `?key=abr_org_…`
+ * — so MCP connectors that only let you paste a URL (Claude Desktop / claude.ai
+ * custom connectors) can still authenticate.
+ */
 export function orgFromRequest(request: Request): Org | undefined {
   const header = request.headers.get("authorization") ?? "";
-  const key = header.replace(/^Bearer\s+/i, "").trim();
+  let key = header.replace(/^Bearer\s+/i, "").trim();
+  if (!key) {
+    const url = new URL(request.url);
+    const fromQuery = url.searchParams.get("key")?.trim();
+    const fromPath = url.pathname.match(/\/api\/mcp\/([^/?#]+)/)?.[1];
+    key = (fromQuery || (fromPath ? decodeURIComponent(fromPath) : "")).trim();
+  }
   return getOrgByApiKey(key);
 }
 

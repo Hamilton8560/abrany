@@ -9,11 +9,16 @@ import {
   finalPassed,
   getGoal,
   getUserByEmail,
+  createUser,
+  setMustResetPassword,
   goalStats,
   displayName,
   type LessonKind,
   type User,
 } from "./repo";
+import { hashPassword } from "./password";
+import { sendTempPasswordEmail, sendOrgAddedEmail } from "./email";
+import { appBaseUrl } from "./urls";
 
 /**
  * Organizations (businesses): a company signs its employees up, assigns them
@@ -155,28 +160,48 @@ export function listInvites(orgId: number): OrgInvite[] {
 }
 
 /**
- * Add someone to the org by email. Existing accounts join immediately;
- * unknown emails get an invite that auto-accepts when they sign up.
+ * Add someone to the org by email. An existing account joins immediately
+ * (and is emailed a heads-up). An unknown email gets a real account created
+ * on the spot with a random temporary password — emailed to them — and must
+ * be reset the moment they log in (see users.must_reset_password).
  */
-export function addMemberByEmail(
+export async function addMemberByEmail(
   orgId: number,
   email: string,
   role: OrgRole = "member",
-): { status: "added" | "invited" | "already" } {
+): Promise<{ status: "added" | "created" | "already"; tempPassword?: string }> {
   const db = getDb();
-  const user = getUserByEmail(email);
-  if (user) {
-    if (memberRole(orgId, user.id)) return { status: "already" };
-    db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?)").run(orgId, user.id, role);
-    db.prepare("DELETE FROM org_invites WHERE org_id = ? AND email = ?").run(orgId, email.toLowerCase());
+  const org = getOrg(orgId)!;
+  const normalized = email.toLowerCase();
+  const existing = getUserByEmail(normalized);
+
+  if (existing) {
+    if (memberRole(orgId, existing.id)) return { status: "already" };
+    db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?)").run(orgId, existing.id, role);
+    db.prepare("DELETE FROM org_invites WHERE org_id = ? AND email = ?").run(orgId, normalized);
+    await sendOrgAddedEmail({
+      to: existing.email,
+      name: displayName(existing),
+      orgName: org.name,
+      appUrl: `${appBaseUrl()}/app/org`,
+    });
     return { status: "added" };
   }
-  db.prepare("INSERT OR IGNORE INTO org_invites (org_id, email, role) VALUES (?, ?, ?)").run(
-    orgId,
-    email.toLowerCase(),
-    role,
-  );
-  return { status: "invited" };
+
+  // brand-new account: real password from day one, just a temporary one
+  const tempPassword = randomBytes(6).toString("base64url").slice(0, 8);
+  const created = createUser(normalized, hashPassword(tempPassword), false);
+  setMustResetPassword(created.id, true);
+  db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?)").run(orgId, created.id, role);
+  db.prepare("DELETE FROM org_invites WHERE org_id = ? AND email = ?").run(orgId, normalized);
+  await sendTempPasswordEmail({
+    to: created.email,
+    name: displayName(created),
+    orgName: org.name,
+    tempPassword,
+    loginUrl: `${appBaseUrl()}/login`,
+  });
+  return { status: "created", tempPassword };
 }
 
 export function removeMember(orgId: number, userId: number): void {

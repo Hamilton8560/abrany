@@ -48,6 +48,9 @@ export default function SettingsPage() {
   const [langBusy, setLangBusy] = useState(false);
   const [name, setName] = useState("");
   const [nameSaved, setNameSaved] = useState(false);
+  const [notifyCerts, setNotifyCerts] = useState(true);
+  const [notifyWeekly, setNotifyWeekly] = useState(true);
+  const [notifyBusy, setNotifyBusy] = useState<"certificates" | "weeklyReport" | null>(null);
 
   const load = () =>
     api<{ user: PublicUser }>("/api/auth/me").then((d) => {
@@ -55,6 +58,8 @@ export default function SettingsPage() {
       setFreeAi(!!d.user?.freeAiAccess);
       setLanguage(d.user?.language || "en");
       setName(d.user?.name || "");
+      setNotifyCerts(d.user?.notifyCertificates ?? true);
+      setNotifyWeekly(d.user?.notifyWeeklyReport ?? true);
       if (d.user.provider) setProvider(d.user.provider);
       if (d.user.model) setModel(d.user.model);
     });
@@ -80,6 +85,19 @@ export default function SettingsPage() {
       setLanguage(prev);
     } finally {
       setLangBusy(false);
+    }
+  };
+
+  const toggleNotification = async (key: "certificates" | "weeklyReport", next: boolean) => {
+    const revert = key === "certificates" ? setNotifyCerts : setNotifyWeekly;
+    setNotifyBusy(key);
+    revert(next); // optimistic
+    try {
+      await api("/api/settings/notifications", { method: "POST", body: JSON.stringify({ [key]: next }) });
+    } catch {
+      revert(!next);
+    } finally {
+      setNotifyBusy(null);
     }
   };
 
@@ -160,6 +178,45 @@ export default function SettingsPage() {
             className="w-full max-w-[320px] rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
           />
           {nameSaved && <span className="text-[12px] font-medium text-up">Saved ✓</span>}
+        </div>
+      </section>
+
+      <section className="glass rounded-[var(--radius-card-lg)] p-6">
+        <p className="text-[15px] font-semibold text-ink">Email notifications</p>
+        <p className="mt-1.5 text-[13.5px] text-muted">
+          Sent from Abrany via summit-labs.io. Team sign-up emails (your temporary password) always send —
+          everything below is optional.
+        </p>
+        <div className="mt-4 flex flex-col gap-3">
+          {(
+            [
+              { key: "certificates" as const, checked: notifyCerts, label: "Certificate earned", desc: "When you pass a final exam and a certificate is issued." },
+              { key: "weeklyReport" as const, checked: notifyWeekly, label: "Weekly progress report", desc: "A Monday-ish digest of focus time, sections completed, and certificates." },
+            ]
+          ).map((n) => (
+            <div key={n.key} className="flex items-center justify-between gap-4 rounded-[14px] bg-white/50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-medium text-ink">{n.label}</p>
+                <p className="text-[12px] text-muted">{n.desc}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={n.checked}
+                disabled={notifyBusy === n.key}
+                onClick={() => toggleNotification(n.key, !n.checked)}
+                className={`relative h-[28px] w-[48px] shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+                  n.checked ? "bg-up" : "bg-line"
+                }`}
+              >
+                <span
+                  className={`absolute top-[3px] size-[22px] rounded-full bg-white shadow transition-all ${
+                    n.checked ? "left-[23px]" : "left-[3px]"
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
         </div>
       </section>
 

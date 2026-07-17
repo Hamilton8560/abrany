@@ -34,3 +34,7 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Course editing: rename/reorder/add/delete milestones & sections (Edit course mode)
 - [x] Course marketplace: publish with tags/age group, browse, one-click clone (progress reset)
 - [x] Community forums: 4 age groups + 8 interests, threads & replies
+- [x] "Your Mind" — OKF knowledge constellation (R3F), RPG progression, anatomical brain shell + level-ups
+- [x] Personalized tutor memory (learner profile digest + durable `<remember>` facts)
+- [x] Email notifications (Resend, summit-labs.io): team sign-up temp password + forced reset,
+      certificate-earned, weekly progress report, per-user toggles in Settings

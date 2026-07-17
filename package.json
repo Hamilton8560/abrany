@@ -27,6 +27,7 @@
     "react-dom": "19.2.4",
     "react-markdown": "^9.1.0",
     "remark-gfm": "^4.0.1",
+    "resend": "^6.17.2",
     "three": "^0.180.0"
   },
   "devDependencies": {

@@ -20,7 +20,7 @@ export async function GET() {
   return NextResponse.json({ members: listMembers(ctx.org.id), invites: listInvites(ctx.org.id) });
 }
 
-/** Sign an employee up: existing accounts join now, new emails get an invite. */
+/** Sign an employee up: existing accounts join now; new emails get a real account + a temp-password email. */
 export async function POST(request: Request) {
   const ctx = await requireAdmin();
   if ("error" in ctx) return ctx.error;
@@ -29,9 +29,9 @@ export async function POST(request: Request) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
     return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
   const role = body.role === "admin" ? "admin" : "member";
-  const result = addMemberByEmail(ctx.org.id, email, role);
+  const result = await addMemberByEmail(ctx.org.id, email, role);
   return NextResponse.json({
-    ...result,
+    status: result.status, // never leak tempPassword to the admin — it's emailed to the employee only
     members: listMembers(ctx.org.id),
     invites: listInvites(ctx.org.id),
   });

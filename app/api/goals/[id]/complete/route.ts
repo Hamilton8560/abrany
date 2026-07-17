@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { updateGoal, issueCertificate, getCertificateForGoal, examsForGoal, finalPassed, userOwnsGoal } from "@/lib/repo";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
+import { sendCertificateEmail } from "@/lib/email";
+import { appBaseUrl } from "@/lib/urls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +34,19 @@ export async function POST(request: Request, ctx: RouteContext<"/api/goals/[id]/
   }
 
   updateGoal(goalId, { status: "done" });
+  const wasIssued = !!getCertificateForGoal(user.id, goalId);
   const certificate = issueCertificate(user.id, goalId);
+  // idempotent endpoint — only email on the FIRST issuance, not every re-completion call
+  if (!wasIssued && user.notify_certificates) {
+    await sendCertificateEmail({
+      to: user.email,
+      name: certificate.recipient_name,
+      title: certificate.title,
+      overall: certificate.overall,
+      certId: certificate.id,
+      verifyUrl: `${appBaseUrl()}/verify/${certificate.id}`,
+    });
+  }
   return NextResponse.json({ certificate });
 }
 

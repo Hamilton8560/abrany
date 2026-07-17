@@ -46,7 +46,7 @@ const TOOLS = [
   {
     name: "add_employee",
     description:
-      "Sign an employee up to your organization by email. Existing Abrany accounts join immediately; new emails are auto-joined when they sign up.",
+      "Sign an employee up to your organization by email. Existing Abrany accounts join immediately (with a heads-up email); a brand-new email gets a real account created on the spot and is emailed a temporary password they must reset on first login.",
     inputSchema: {
       type: "object",
       properties: {
@@ -154,8 +154,9 @@ export async function POST(request: Request) {
             const email = (args.email ?? "").toString().trim().toLowerCase();
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
               return rpcResult(msg.id, toolText({ error: "Enter a valid email" }, true));
-            const r = addMemberByEmail(org.id, email, args.role === "admin" ? "admin" : "member");
-            return rpcResult(msg.id, toolText(r));
+            const r = await addMemberByEmail(org.id, email, args.role === "admin" ? "admin" : "member");
+            // never expose the temp password over MCP — it's emailed to the employee only
+            return rpcResult(msg.id, toolText({ status: r.status }));
           }
           case "create_assignment": {
             const r = buildAssignment(org, args);
