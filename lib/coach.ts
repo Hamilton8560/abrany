@@ -1,3 +1,4 @@
+import { jsonrepair } from "jsonrepair";
 import { complete, type ChatMessage } from "./minimax";
 
 /**
@@ -58,6 +59,25 @@ function extractJson(text: string): string {
   return text.trim();
 }
 
+/**
+ * Parse the model's JSON, self-healing common structure faults (trailing commas,
+ * stray prose, unclosed braces/strings from a truncated response) instead of
+ * failing and forcing a full regenerate. Only throws if it's truly unsalvageable.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseJson(raw: string): any {
+  const candidate = extractJson(raw);
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    try {
+      return JSON.parse(jsonrepair(candidate));
+    } catch {
+      return JSON.parse(jsonrepair(raw));
+    }
+  }
+}
+
 export async function generatePlan(goal: {
   title: string;
   description: string;
@@ -78,7 +98,7 @@ export async function generatePlan(goal: {
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned an unparseable plan");
   }
@@ -169,7 +189,7 @@ Rules:
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned an unparseable plan");
   }
@@ -236,7 +256,7 @@ Rules:
 
   let parsed: { feasible?: boolean; rationale?: string; tracks?: unknown };
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     return { feasible: true }; // fail open — don't block goal creation on a parse error
   }
@@ -315,7 +335,7 @@ Rules:
 
   let parsed: { lessons?: unknown };
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned unparseable lessons");
   }
@@ -404,7 +424,7 @@ export async function generateReviewQuiz(ctx: {
 Generate a SHORT recall quiz that tests whether the learner still remembers and can use THIS one lesson. Adapt to the subject: recall/explain questions for knowledge, apply-it questions for skills, honest reflection prompts for interpretive subjects. Ground every question in the lesson content provided. Respond with ONLY JSON, no prose or fences:
 { "questions": [ { "question": "..." } ] }
 Rules: 3 to 5 questions, answerable in a sentence or two. Do NOT include answers.`,
-    maxTokens: 900,
+    maxTokens: 1400,
     temperature: 0.5,
     messages: [
       {
@@ -415,7 +435,7 @@ Rules: 3 to 5 questions, answerable in a sentence or two. Do NOT include answers
   });
   let parsed: { questions?: unknown };
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned an unparseable quiz");
   }
@@ -456,7 +476,7 @@ Respond with ONLY JSON, no prose or fences:
   });
   let parsed: { studyGuide?: unknown; questions?: unknown };
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned an unparseable exam");
   }
@@ -502,7 +522,7 @@ The results array MUST have exactly one entry per question, in order.`,
   });
   let parsed: Partial<QuizGrade>;
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned an unparseable grade");
   }
@@ -572,7 +592,7 @@ Rules: 6 to 14 chapters in a logical progression (foundations → advanced → s
   });
   let parsed: { title?: unknown; chapters?: unknown };
   try {
-    parsed = JSON.parse(extractJson(raw));
+    parsed = parseJson(raw);
   } catch {
     throw new Error("Coach returned an unparseable outline");
   }

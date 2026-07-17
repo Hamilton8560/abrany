@@ -102,15 +102,8 @@ function clientFor(creds: LlmCreds): Resolved {
   return resolved;
 }
 
-/** Server (owner) provider from env — supports minimax | kimi | balanced. */
-function serverResolved(): Resolved {
-  const mode = (process.env.LLM_PROVIDER ?? "minimax").toLowerCase();
-  let provider: Provider = "minimax";
-  if (mode === "kimi") provider = "kimi";
-  else if (mode === "balanced") {
-    g.__llmRR = (g.__llmRR ?? 0) + 1;
-    provider = g.__llmRR % 2 === 0 ? "minimax" : "kimi";
-  }
+/** Anthropic client for a specific server provider, from env. */
+function serverClient(provider: "minimax" | "kimi"): Resolved {
   const key = provider === "kimi" ? process.env.KIMI_API_KEY : process.env.MINIMAX_API_KEY;
   if (!key) throw new Error(`Server ${provider} key is not set`);
   const baseURL =
@@ -124,9 +117,57 @@ function serverResolved(): Resolved {
   return { style: "anthropic", client: new Anthropic({ apiKey: key, baseURL }), model };
 }
 
-function resolve(): Resolved {
+/**
+ * Ordered server providers to try. LLM_PROVIDER picks the primary, but the OTHER
+ * provider is always appended as a fallback (when its key exists) — so if Kimi/K3
+ * errors or returns nothing, generation automatically fails over to MiniMax (and
+ * vice-versa) instead of surfacing an error to the user.
+ */
+function serverChain(): Resolved[] {
+  const mode = (process.env.LLM_PROVIDER ?? "minimax").toLowerCase();
+  const have = (p: "minimax" | "kimi") => (p === "kimi" ? !!process.env.KIMI_API_KEY : !!process.env.MINIMAX_API_KEY);
+  let order: ("minimax" | "kimi")[];
+  if (mode === "kimi") order = ["kimi", "minimax"];
+  else if (mode === "balanced") {
+    g.__llmRR = (g.__llmRR ?? 0) + 1;
+    order = g.__llmRR % 2 === 0 ? ["minimax", "kimi"] : ["kimi", "minimax"];
+  } else order = ["minimax", "kimi"];
+  const chain = order.filter(have).map(serverClient);
+  if (!chain.length) throw new Error("No server AI key is configured");
+  return chain;
+}
+
+/** Providers to attempt in order: BYO users get their one; server gets a fallback chain. */
+function attemptChain(): Resolved[] {
   const creds = store.getStore()?.creds ?? null;
-  return creds ? clientFor(creds) : serverResolved();
+  return creds ? [clientFor(creds)] : serverChain();
+}
+
+async function runComplete(
+  r: Resolved,
+  system: string,
+  params: { messages: ChatMessage[]; maxTokens?: number; temperature?: number },
+): Promise<string> {
+  if (r.style === "anthropic") {
+    const res = await r.client.messages.create({
+      model: r.model,
+      max_tokens: params.maxTokens ?? 2048,
+      temperature: params.temperature ?? 0.7,
+      system,
+      messages: params.messages,
+    });
+    return res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+  }
+  const res = await r.client.chat.completions.create({
+    model: r.model,
+    max_tokens: params.maxTokens ?? 2048,
+    temperature: params.temperature ?? 0.7,
+    messages: [{ role: "system", content: system }, ...params.messages],
+  });
+  return res.choices[0]?.message?.content ?? "";
 }
 
 /** For routes: the creds to run generation as, or an error string if no key set. */
@@ -140,40 +181,37 @@ export function llmContext(
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
-/** Non-streaming completion (structured generation). Queued + retried. */
+/**
+ * Non-streaming completion (structured generation). Each provider attempt is
+ * queued + retried on 429/5xx; if a provider errors OR returns an empty response,
+ * we fail over to the next provider in the chain before giving up.
+ */
 export async function complete(params: {
   system: string;
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
 }): Promise<string> {
-  return withQueue(async () => {
-    const r = resolve();
-    const system = withLanguage(params.system);
-    if (r.style === "anthropic") {
-      const res = await r.client.messages.create({
-        model: r.model,
-        max_tokens: params.maxTokens ?? 2048,
-        temperature: params.temperature ?? 0.7,
-        system,
-        messages: params.messages,
-      });
-      return res.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("");
+  const chain = attemptChain();
+  const system = withLanguage(params.system);
+  let lastErr: unknown = null;
+  for (let i = 0; i < chain.length; i++) {
+    try {
+      const text = await withQueue(() => runComplete(chain[i], system, params));
+      if (text && text.trim()) return text;
+      lastErr = new Error(`Empty response from ${chain[i].model}`);
+    } catch (err) {
+      lastErr = err;
     }
-    const res = await r.client.chat.completions.create({
-      model: r.model,
-      max_tokens: params.maxTokens ?? 2048,
-      temperature: params.temperature ?? 0.7,
-      messages: [{ role: "system", content: system }, ...params.messages],
-    });
-    return res.choices[0]?.message?.content ?? "";
-  });
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("AI generation failed");
 }
 
-/** Streaming completion. Holds a slot for the whole stream; yields text deltas. */
+/**
+ * Streaming completion. Holds one slot for the whole stream; yields text deltas.
+ * Fails over to the next provider if a stream can't be opened (falls back only at
+ * connect time — once tokens are flowing we don't restart).
+ */
 export async function* streamText(params: {
   system: string;
   messages: ChatMessage[];
@@ -181,41 +219,43 @@ export async function* streamText(params: {
   temperature?: number;
   signal?: AbortSignal;
 }): AsyncGenerator<string, void, unknown> {
+  const chain = attemptChain();
+  const system = withLanguage(params.system);
   const release = await acquireSlot();
   try {
-    const r = resolve();
-    const system = withLanguage(params.system);
-    if (r.style === "anthropic") {
-      const stream = await r.client.messages.create(
-        {
-          model: r.model,
-          max_tokens: params.maxTokens ?? 2048,
-          temperature: params.temperature ?? 0.7,
-          system,
-          messages: params.messages,
-          stream: true,
-        },
-        { signal: params.signal },
-      );
-      for await (const event of stream) {
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta" && event.delta.text) {
-          yield event.delta.text;
+    for (let i = 0; i < chain.length; i++) {
+      const r = chain[i];
+      const last = i === chain.length - 1;
+      let yielded = false;
+      try {
+        if (r.style === "anthropic") {
+          const stream = await r.client.messages.create(
+            { model: r.model, max_tokens: params.maxTokens ?? 2048, temperature: params.temperature ?? 0.7, system, messages: params.messages, stream: true },
+            { signal: params.signal },
+          );
+          for await (const event of stream) {
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta" && event.delta.text) {
+              yielded = true;
+              yield event.delta.text;
+            }
+          }
+        } else {
+          const stream = await r.client.chat.completions.create(
+            { model: r.model, max_tokens: params.maxTokens ?? 2048, temperature: params.temperature ?? 0.7, messages: [{ role: "system", content: system }, ...params.messages], stream: true },
+            { signal: params.signal },
+          );
+          for await (const chunk of stream) {
+            const text = chunk.choices[0]?.delta?.content;
+            if (text) {
+              yielded = true;
+              yield text;
+            }
+          }
         }
-      }
-    } else {
-      const stream = await r.client.chat.completions.create(
-        {
-          model: r.model,
-          max_tokens: params.maxTokens ?? 2048,
-          temperature: params.temperature ?? 0.7,
-          messages: [{ role: "system", content: system }, ...params.messages],
-          stream: true,
-        },
-        { signal: params.signal },
-      );
-      for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content;
-        if (text) yield text;
+        return;
+      } catch (err) {
+        // fall back to the next provider only if we haven't emitted anything yet
+        if (last || yielded) throw err;
       }
     }
   } finally {
