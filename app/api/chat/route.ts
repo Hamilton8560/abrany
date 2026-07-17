@@ -96,10 +96,14 @@ export async function POST(request: Request) {
   }
 
   const encoder = new TextEncoder();
-  let full = "";
+  let full = ""; // raw visible answer (incl. any <remember> tags, stripped on save)
+  const REMEMBER = /<remember\b[^>]*>([\s\S]*?)<\/remember>/gi;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // NDJSON: one JSON event per line. { t: "think" | "text" | "tool" | "error", c: ... }
+      const send = (t: string, c: unknown) => controller.enqueue(encoder.encode(JSON.stringify({ t, c }) + "\n"));
+      let toolsSent = 0; // how many completed <remember> tags we've announced as tool calls
       try {
         await withLlm(llm.creds, async () => {
           for await (const chunk of streamText({
@@ -108,13 +112,23 @@ export async function POST(request: Request) {
             maxTokens: 2048,
             signal: request.signal,
           })) {
-            full += chunk;
-            controller.enqueue(encoder.encode(chunk));
+            if (chunk.kind === "thinking") {
+              send("think", chunk.text);
+              continue;
+            }
+            full += chunk.text;
+            // surface each completed memory write as a live tool call, and never
+            // let the <remember> tag itself reach the visible answer stream.
+            const matches = [...full.matchAll(REMEMBER)];
+            for (let k = toolsSent; k < matches.length; k++) {
+              send("tool", { name: "remember", detail: matches[k][1].trim().slice(0, 140) });
+            }
+            toolsSent = matches.length;
+            send("text", chunk.text);
           }
         }, user.language);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Coach is unavailable";
-        controller.enqueue(encoder.encode(`\n\n⚠️ ${message}`));
+        send("error", err instanceof Error ? err.message : "Coach is unavailable");
       } finally {
         // capture any <remember> tags into the learner's memory, strip them from
         // the stored (and thus reloaded) message so they never surface to the user
@@ -127,7 +141,9 @@ export async function POST(request: Request) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
+      // no-transform stops Next's gzip layer from buffering the token stream (it
+      // coalesces small writes for ~8s otherwise); X-Accel-Buffering covers nginx.
+      "Cache-Control": "no-store, no-transform",
       "X-Accel-Buffering": "no",
     },
   });

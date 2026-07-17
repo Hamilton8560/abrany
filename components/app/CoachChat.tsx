@@ -8,7 +8,8 @@ import { languageName } from "@/lib/languages";
 import { BrainGlyph, SendIcon } from "@/components/icons";
 import Markdown from "./Markdown";
 
-type ChatMsg = { role: "user" | "assistant"; content: string };
+type ToolCall = { name: string; detail: string };
+type ChatMsg = { role: "user" | "assistant"; content: string; thinking?: string; tools?: ToolCall[] };
 type Mismatch = { code: string; name: string };
 
 const STARTERS = [
@@ -71,7 +72,7 @@ export default function CoachChat({
     }
 
     setInput("");
-    setMessages((m) => [...m, { role: "user", content }, { role: "assistant", content: "" }]);
+    setMessages((m) => [...m, { role: "user", content }, { role: "assistant", content: "", thinking: "", tools: [] }]);
     setStreaming(true);
 
     const ctrl = new AbortController();
@@ -102,18 +103,33 @@ export default function CoachChat({
       if (!res.body) throw new Error("No response stream");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      let buf = "";
+      const patchLast = (fn: (last: ChatMsg) => ChatMsg) =>
+        setMessages((m) => {
+          const copy = [...m];
+          copy[copy.length - 1] = fn(copy[copy.length - 1]);
+          return copy;
+        });
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setMessages((m) => {
-          const copy = [...m];
-          copy[copy.length - 1] = {
-            role: "assistant",
-            content: copy[copy.length - 1].content + chunk,
-          };
-          return copy;
-        });
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          let ev: { t: string; c: unknown };
+          try {
+            ev = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (ev.t === "think") patchLast((l) => ({ ...l, thinking: (l.thinking || "") + String(ev.c) }));
+          else if (ev.t === "text") patchLast((l) => ({ ...l, content: l.content + String(ev.c) }));
+          else if (ev.t === "tool") patchLast((l) => ({ ...l, tools: [...(l.tools || []), ev.c as ToolCall] }));
+          else if (ev.t === "error") patchLast((l) => ({ ...l, content: l.content + `\n\n⚠️ ${String(ev.c)}` }));
+        }
       }
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -185,7 +201,7 @@ export default function CoachChat({
 
         <div className="mx-auto flex max-w-[720px] flex-col gap-5">
           {messages.map((m, i) => (
-            <Bubble key={i} role={m.role} content={m.content} streaming={streaming && i === messages.length - 1} />
+            <Bubble key={i} msg={m} streaming={streaming && i === messages.length - 1} />
           ))}
         </div>
       </div>
@@ -272,37 +288,90 @@ export default function CoachChat({
   );
 }
 
-function Bubble({
-  role,
-  content,
-  streaming,
-}: {
-  role: "user" | "assistant";
-  content: string;
-  streaming: boolean;
-}) {
-  if (role === "user") {
+function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {
+  const [open, setOpen] = useState(false);
+  const thinkRef = useRef<HTMLDivElement>(null);
+
+  // The tutor may emit <remember>…</remember> tags to save to your profile; never show them.
+  const shown = msg.content
+    .replace(/<remember[\s\S]*?<\/remember>/gi, "")
+    .replace(/<remember[\s\S]*$/i, "")
+    .trim();
+  const thinking = (msg.thinking || "").trim();
+  const hasAnswer = shown.length > 0;
+  // While the tutor is thinking with no answer yet, show the reasoning live; once
+  // the answer arrives, collapse it behind a toggle so the reply stays front-and-center.
+  const showThinking = thinking.length > 0 && (open || (streaming && !hasAnswer));
+
+  // keep the live reasoning scrolled to the newest tokens
+  useEffect(() => {
+    if (showThinking && streaming && thinkRef.current) thinkRef.current.scrollTop = thinkRef.current.scrollHeight;
+  }, [thinking, showThinking, streaming]);
+
+  if (msg.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="glassx-dark max-w-[85%] rounded-[18px] rounded-br-[6px] px-4 py-2.5 text-[14px] leading-relaxed text-white">
-          {content}
+          {msg.content}
         </div>
       </div>
     );
   }
-  // The tutor may emit <remember>…</remember> tags to save to your profile; never show them.
-  const shown = content
-    .replace(/<remember[\s\S]*?<\/remember>/gi, "")
-    .replace(/<remember[\s\S]*$/i, "")
-    .trim();
+
   return (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-accent/12 text-accent">
         <BrainGlyph className="size-4" />
       </span>
-      <div className="max-w-[85%] rounded-[18px] rounded-tl-[6px] bg-white/70 px-4 py-3">
-        {shown ? <Markdown>{shown}</Markdown> : null}
-        {streaming && <span className="anim-bob ml-0.5 inline-block h-3.5 w-[2px] bg-accent align-middle" />}
+      <div className="flex max-w-[85%] flex-col gap-2">
+        {/* live reasoning ("Thinking") */}
+        {thinking.length > 0 && (
+          <div className="overflow-hidden rounded-[14px] border border-line/70 bg-white/45">
+            <button
+              onClick={() => setOpen((o) => !o)}
+              className="flex w-full items-center gap-2 px-3.5 py-2 text-left"
+            >
+              <BrainGlyph className={`size-3.5 text-accent ${streaming && !hasAnswer ? "anim-bob" : ""}`} />
+              <span className="text-[12px] font-semibold text-ink">
+                {streaming && !hasAnswer ? "Thinking…" : "Reasoning"}
+              </span>
+              <span className="ml-auto text-[11px] font-medium text-muted">{open ? "hide" : showThinking ? "" : "show"}</span>
+            </button>
+            {showThinking && (
+              <div
+                ref={thinkRef}
+                className="max-h-[180px] overflow-y-auto border-t border-line/60 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted"
+              >
+                {thinking}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* tool calls (memory writes, etc.) */}
+        {(msg.tools?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {msg.tools!.map((t, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1.5 rounded-full bg-up/12 px-2.5 py-1 text-[11.5px] font-medium text-[#1f8043]"
+                title={t.detail}
+              >
+                <BrainGlyph className="size-3" />
+                {t.name === "remember" ? "Remembered" : t.name}
+                {t.detail ? <span className="max-w-[220px] truncate font-normal opacity-80">· {t.detail}</span> : null}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* the answer */}
+        {(hasAnswer || (streaming && !thinking)) && (
+          <div className="rounded-[18px] rounded-tl-[6px] bg-white/70 px-4 py-3">
+            {shown ? <Markdown>{shown}</Markdown> : null}
+            {streaming && <span className="anim-bob ml-0.5 inline-block h-3.5 w-[2px] bg-accent align-middle" />}
+          </div>
+        )}
       </div>
     </div>
   );

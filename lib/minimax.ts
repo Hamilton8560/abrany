@@ -240,10 +240,15 @@ export async function complete(params: {
   throw lastErr instanceof Error ? lastErr : new Error("AI generation failed");
 }
 
+/** A streamed chunk: the model's private reasoning, or the visible answer. */
+export type StreamChunk = { kind: "thinking" | "text"; text: string };
+
 /**
- * Streaming completion. Holds one slot for the whole stream; yields text deltas.
- * Fails over to the next provider if a stream can't be opened (falls back only at
- * connect time — once tokens are flowing we don't restart).
+ * Streaming completion. Yields BOTH the model's reasoning (kind:"thinking") and
+ * its answer (kind:"text") as they arrive — reasoning models like Kimi/k3 emit
+ * thinking within ~1ms but their answer only after many seconds, so surfacing the
+ * thinking is what keeps the tutor from looking frozen. Holds one slot for the
+ * whole stream; fails over to the next provider only if a stream can't be opened.
  */
 export async function* streamText(params: {
   system: string;
@@ -251,7 +256,7 @@ export async function* streamText(params: {
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
-}): AsyncGenerator<string, void, unknown> {
+}): AsyncGenerator<StreamChunk, void, unknown> {
   const chain = attemptChain();
   const system = withLanguage(params.system);
   const release = await acquireSlot();
@@ -267,9 +272,14 @@ export async function* streamText(params: {
             { signal: params.signal },
           );
           for await (const event of stream) {
-            if (event.type === "content_block_delta" && event.delta.type === "text_delta" && event.delta.text) {
+            if (event.type !== "content_block_delta") continue;
+            const d = event.delta as { type: string; text?: string; thinking?: string };
+            if (d.type === "thinking_delta" && d.thinking) {
               yielded = true;
-              yield event.delta.text;
+              yield { kind: "thinking", text: d.thinking };
+            } else if (d.type === "text_delta" && d.text) {
+              yielded = true;
+              yield { kind: "text", text: d.text };
             }
           }
         } else {
@@ -278,10 +288,16 @@ export async function* streamText(params: {
             { signal: params.signal },
           );
           for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content;
-            if (text) {
+            // OpenAI-compatible reasoning models expose thinking as reasoning / reasoning_content
+            const delta = chunk.choices[0]?.delta as { content?: string; reasoning?: string; reasoning_content?: string } | undefined;
+            const reasoning = delta?.reasoning ?? delta?.reasoning_content;
+            if (reasoning) {
               yielded = true;
-              yield text;
+              yield { kind: "thinking", text: reasoning };
+            }
+            if (delta?.content) {
+              yielded = true;
+              yield { kind: "text", text: delta.content };
             }
           }
         }
