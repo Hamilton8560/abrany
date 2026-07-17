@@ -294,17 +294,29 @@ export default function MindScene() {
             </div>
           </div>
         </div>
-        <Link
-          href="/app"
-          style={{
-            position: "absolute", right: 20, top: 18, pointerEvents: "auto",
-            font: "600 12.5px -apple-system,system-ui", color: "#cfd6e0", textDecoration: "none",
-            background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)",
-            padding: "7px 14px", borderRadius: 999,
-          }}
-        >
-          ✕ Close
-        </Link>
+        <div style={{ position: "absolute", right: 20, top: 18, display: "flex", gap: 8 }}>
+          <Link
+            href="/app/mind/about"
+            title="What is this? How Your Mind works"
+            style={{
+              pointerEvents: "auto", font: "600 12.5px -apple-system,system-ui", color: "#cfd6e0",
+              textDecoration: "none", background: "rgba(255,255,255,.06)",
+              border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
+            }}
+          >
+            ⓘ How this works
+          </Link>
+          <Link
+            href="/app"
+            style={{
+              pointerEvents: "auto", font: "600 12.5px -apple-system,system-ui", color: "#cfd6e0",
+              textDecoration: "none", background: "rgba(255,255,255,.06)",
+              border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
+            }}
+          >
+            ✕ Close
+          </Link>
+        </div>
         <div
           style={{
             position: "absolute", left: "50%", bottom: 18, transform: "translateX(-50%)",

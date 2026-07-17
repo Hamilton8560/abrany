@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/client";
 import { BrainGlyph } from "@/components/icons";
 
@@ -87,7 +88,10 @@ export default function MemoryPanel() {
         <div className="border-t border-line/70 p-4">
           <p className="mb-3 text-[12px] text-muted">
             Your coach uses these to personalize every conversation and steer you toward what helps most.
-            It adds them as you talk; you can add or forget any of them.
+            It adds them as you talk; you can add or forget any of them.{" "}
+            <Link href="/app/mind/about#memory" className="font-medium text-accent hover:underline">
+              How this works →
+            </Link>
           </p>
 
           {memories && memories.length > 0 ? (
