@@ -238,6 +238,38 @@ function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_members_user ON org_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_invites_email ON org_invites(email);
 
+    -- reusable, org-owned lesson-plan templates (authored once, deployed to many)
+    CREATE TABLE IF NOT EXISTS programs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id      INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      title       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      source_lang TEXT NOT NULL DEFAULT 'en',   -- language the program is authored in
+      created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS program_milestones (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      program_id  INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+      order_index INTEGER NOT NULL DEFAULT 0,
+      title       TEXT NOT NULL,
+      detail      TEXT NOT NULL DEFAULT '',
+      estimate    TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS program_lessons (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      milestone_id INTEGER NOT NULL REFERENCES program_milestones(id) ON DELETE CASCADE,
+      order_index  INTEGER NOT NULL DEFAULT 0,
+      title        TEXT NOT NULL,
+      objective    TEXT NOT NULL DEFAULT '',
+      kind         TEXT NOT NULL DEFAULT 'read',
+      content      TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_prog_org      ON programs(org_id);
+    CREATE INDEX IF NOT EXISTS idx_prog_ms_prog  ON program_milestones(program_id);
+    CREATE INDEX IF NOT EXISTS idx_prog_le_ms    ON program_lessons(milestone_id);
+
     -- learner memory: durable facts the tutor keeps about the user, so coaching
     -- is personalized across sessions (their goals, preferences, what trips them up)
     CREATE TABLE IF NOT EXISTS user_memories (
@@ -390,6 +422,15 @@ function migrate(db: DatabaseSync) {
   addCol("certificates", "org_id", "org_id INTEGER REFERENCES orgs(id) ON DELETE SET NULL");
   addCol("certificates", "org_name", "org_name TEXT NOT NULL DEFAULT ''");
   addCol("certificates", "org_logo", "org_logo TEXT NOT NULL DEFAULT ''");
+
+  // assignments deployed from a reusable program link back to it (SET NULL keeps
+  // the employee's goal alive if the program is later deleted)
+  addCol(
+    "assignments",
+    "program_id",
+    "program_id INTEGER REFERENCES programs(id) ON DELETE SET NULL",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assign_program ON assignments(program_id)");
 
   // the language a piece of content was authored in (NULL = unknown → detected
   // lazily on first translate). Powers "show translate button only when it isn't
