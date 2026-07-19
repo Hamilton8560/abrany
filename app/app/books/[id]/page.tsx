@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import type { Book, Chapter } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
+import { useContentTranslation, TranslateButton } from "@/components/app/TranslateControl";
 import QueueHint from "@/components/app/QueueHint";
 import BookCover from "@/components/app/BookCover";
 import { ArrowRight, CheckIcon } from "@/components/icons";
@@ -74,11 +75,14 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
     router.push("/app/books");
   };
 
+  // computed before the early returns so the translation hook is called unconditionally
+  const current = reading != null ? chapters.find((c) => c.order_index === reading) : null;
+  const tr = useContentTranslation("chapter", current?.id ?? 0, current?.title ?? "", current?.content ?? "");
+
   if (loading) return <p className="text-[14px] text-muted">Loading…</p>;
   if (!book) return <p className="text-[14px] text-muted">Book not found.</p>;
 
   const readyCount = chapters.filter((c) => c.status === "ready").length;
-  const current = reading != null ? chapters.find((c) => c.order_index === reading) : null;
 
   /* ───────── READER ───────── */
   if (current) {
@@ -86,19 +90,22 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
     const next = chapters.find((c) => c.order_index === current.order_index + 1);
     return (
       <div className="mx-auto flex max-w-[720px] flex-col gap-6">
-        <button
-          onClick={() => setReading(null)}
-          className="flex items-center gap-2 self-start text-[12.5px] font-medium text-muted hover:text-ink"
-        >
-          <ArrowRight className="size-3.5 rotate-180" /> Contents
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={() => setReading(null)}
+            className="flex items-center gap-2 self-start text-[12.5px] font-medium text-muted hover:text-ink"
+          >
+            <ArrowRight className="size-3.5 rotate-180" /> Contents
+          </button>
+          {current.status === "ready" && current.content ? <TranslateButton t={tr} /> : null}
+        </div>
 
         <header className="text-center">
           <p className="text-[12px] font-semibold uppercase tracking-[3px] text-accent">
             Chapter {current.order_index + 1}
           </p>
           <h1 className="mt-2 font-display text-[clamp(26px,4vw,38px)] font-extrabold uppercase leading-[1.05] text-ink">
-            {current.title}
+            {tr.displayTitle}
           </h1>
           <div className="mx-auto mt-4 flex items-center justify-center gap-2">
             <span className="h-px w-10 bg-line" />
@@ -109,7 +116,7 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
 
         <article className="glass rounded-[var(--radius-card-lg)] p-6 sm:p-10 [&_h2]:mt-7 [&_h2]:font-display [&_h2]:text-[21px] [&_p]:text-[16px] [&_p]:leading-[1.75] [&_li]:text-[16px] [&_li]:leading-[1.65] [&>p:first-of-type]:first-letter:float-left [&>p:first-of-type]:first-letter:mr-2 [&>p:first-of-type]:first-letter:font-display [&>p:first-of-type]:first-letter:text-[52px] [&>p:first-of-type]:first-letter:font-extrabold [&>p:first-of-type]:first-letter:leading-[0.85] [&>p:first-of-type]:first-letter:text-accent [&>*>p:first-of-type]:first-letter:float-left [&>*>p:first-of-type]:first-letter:mr-2 [&>*>p:first-of-type]:first-letter:font-display [&>*>p:first-of-type]:first-letter:text-[52px] [&>*>p:first-of-type]:first-letter:font-extrabold [&>*>p:first-of-type]:first-letter:leading-[0.85] [&>*>p:first-of-type]:first-letter:text-accent">
           {current.status === "ready" ? (
-            <Markdown>{current.content}</Markdown>
+            <Markdown>{tr.displayContent}</Markdown>
           ) : current.status === "queued" || current.status === "generating" ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
               <p className="text-[14px] text-muted">Writing this chapter…</p>

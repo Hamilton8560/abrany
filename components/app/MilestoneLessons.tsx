@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { Lesson } from "@/lib/repo";
 import Markdown from "./Markdown";
+import { useContentTranslation, TranslateButton } from "./TranslateControl";
 import ListenButton from "./ListenButton";
 import QueueHint from "./QueueHint";
 import { ChevronDown, CheckIcon } from "@/components/icons";
@@ -334,6 +335,7 @@ function LessonViewer({
   const [enrolled, setEnrolled] = useState(lesson.srs_due != null);
   const [busy, setBusy] = useState(false);
   const done = !!lesson.completed_at;
+  const tr = useContentTranslation("lesson", lesson.id, lesson.title, lesson.content);
   useReadingHeartbeat(lesson.id, lesson.status === "ready" && !!lesson.content);
 
   const toggleEnroll = async () => {
@@ -364,7 +366,7 @@ function LessonViewer({
               {kindLabel(lesson.kind)}
             </p>
             <h3 className="mt-1 font-display text-[clamp(20px,5vw,24px)] font-extrabold uppercase leading-[1.05] text-ink">
-              {lesson.title}
+              {tr.displayTitle}
             </h3>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
@@ -387,7 +389,8 @@ function LessonViewer({
             >
               {enrolled ? "✓ In reviews" : "Add to reviews"}
             </button>
-            {lesson.content ? <ListenButton text={lesson.content} /> : null}
+            {lesson.content ? <TranslateButton t={tr} /> : null}
+            {lesson.content ? <ListenButton text={tr.displayContent} /> : null}
             <button
               onClick={onClose}
               className="glassx rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink"
@@ -396,8 +399,11 @@ function LessonViewer({
             </button>
           </div>
         </div>
+        {tr.phase === "error" && (
+          <p className="mb-3 text-[12px] text-down">Couldn&apos;t translate just now — try again.</p>
+        )}
         {lesson.content ? (
-          <Markdown>{lesson.content}</Markdown>
+          <Markdown>{tr.displayContent}</Markdown>
         ) : (
           <p className="text-[14px] text-muted">This lesson has no content yet.</p>
         )}

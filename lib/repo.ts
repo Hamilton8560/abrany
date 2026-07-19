@@ -1234,11 +1234,71 @@ export function saveReview(
 
 /* ── Jobs (durable async queue) ────────────────────────────── */
 
-export function enqueueJobRow(type: string, payload: object, userId: number | null = null): Job {
-  const info = getDb()
-    .prepare("INSERT INTO jobs (type, payload, user_id) VALUES (?, ?, ?)")
-    .run(type, JSON.stringify(payload), userId);
-  return getDb().prepare("SELECT * FROM jobs WHERE id = ?").get(Number(info.lastInsertRowid)) as Job;
+/** The active (queued or running) job for a dedup key, if one exists. */
+export function findActiveJob(dedupKey: string): Job | undefined {
+  return getDb()
+    .prepare("SELECT * FROM jobs WHERE dedup_key = ? AND status IN ('queued','running') ORDER BY id LIMIT 1")
+    .get(dedupKey) as Job | undefined;
+}
+
+/** The most recent job for a dedup key regardless of status (for status/error UI). */
+export function latestJobByDedup(dedupKey: string): Job | undefined {
+  return getDb()
+    .prepare("SELECT * FROM jobs WHERE dedup_key = ? ORDER BY id DESC LIMIT 1")
+    .get(dedupKey) as Job | undefined;
+}
+
+export function enqueueJobRow(
+  type: string,
+  payload: object,
+  userId: number | null = null,
+  dedupKey: string | null = null,
+): Job {
+  const db = getDb();
+  // Reuse an in-flight job for the same target rather than duplicating work.
+  if (dedupKey) {
+    const existing = findActiveJob(dedupKey);
+    if (existing) return existing;
+  }
+  try {
+    const info = db
+      .prepare("INSERT INTO jobs (type, payload, user_id, dedup_key) VALUES (?, ?, ?, ?)")
+      .run(type, JSON.stringify(payload), userId, dedupKey);
+    return db.prepare("SELECT * FROM jobs WHERE id = ?").get(Number(info.lastInsertRowid)) as Job;
+  } catch (err) {
+    // Lost a race to the partial-unique index — return the winner's job.
+    if (dedupKey) {
+      const existing = findActiveJob(dedupKey);
+      if (existing) return existing;
+    }
+    throw err;
+  }
+}
+
+/** Durable backlog for queue-position UI: pending/running jobs, plus how many
+ *  queued jobs sit ahead of this user's oldest pending job. */
+export function jobBacklog(userId?: number): { pending: number; running: number; ahead: number } {
+  const db = getDb();
+  const pending = Number(
+    (db.prepare("SELECT COUNT(*) n FROM jobs WHERE status = 'queued'").get() as { n: number }).n,
+  );
+  const running = Number(
+    (db.prepare("SELECT COUNT(*) n FROM jobs WHERE status = 'running'").get() as { n: number }).n,
+  );
+  let ahead = 0;
+  if (userId) {
+    const mine = db
+      .prepare("SELECT MIN(id) id FROM jobs WHERE status = 'queued' AND user_id = ?")
+      .get(userId) as { id: number | null };
+    if (mine?.id != null) {
+      ahead = Number(
+        (db.prepare("SELECT COUNT(*) n FROM jobs WHERE status = 'queued' AND id < ?").get(mine.id) as {
+          n: number;
+        }).n,
+      );
+    }
+  }
+  return { pending, running, ahead };
 }
 
 /** Atomically claim up to `n` queued jobs (marks them running). */

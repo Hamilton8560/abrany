@@ -123,7 +123,7 @@ function serverClient(provider: "minimax" | "kimi"): Resolved {
  * errors or returns nothing, generation automatically fails over to MiniMax (and
  * vice-versa) instead of surfacing an error to the user.
  */
-function serverChain(): Resolved[] {
+function serverChain(prefer?: "minimax" | "kimi"): Resolved[] {
   const mode = (process.env.LLM_PROVIDER ?? "minimax").toLowerCase();
   const have = (p: "minimax" | "kimi") => (p === "kimi" ? !!process.env.KIMI_API_KEY : !!process.env.MINIMAX_API_KEY);
   let order: ("minimax" | "kimi")[];
@@ -132,15 +132,18 @@ function serverChain(): Resolved[] {
     g.__llmRR = (g.__llmRR ?? 0) + 1;
     order = g.__llmRR % 2 === 0 ? ["minimax", "kimi"] : ["kimi", "minimax"];
   } else order = ["minimax", "kimi"];
+  // A caller can pin the primary (e.g. translation prefers the fast non-reasoning
+  // model over K3), while keeping the other as fallback.
+  if (prefer) order = [prefer, ...order.filter((p) => p !== prefer)];
   const chain = order.filter(have).map(serverClient);
   if (!chain.length) throw new Error("No server AI key is configured");
   return chain;
 }
 
 /** Providers to attempt in order: BYO users get their one; server gets a fallback chain. */
-function attemptChain(): Resolved[] {
+function attemptChain(prefer?: "minimax" | "kimi"): Resolved[] {
   const creds = store.getStore()?.creds ?? null;
-  return creds ? [clientFor(creds)] : serverChain();
+  return creds ? [clientFor(creds)] : serverChain(prefer);
 }
 
 /**
@@ -224,8 +227,10 @@ export async function complete(params: {
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
+  /** Pin the primary server provider for this call (fallback still applies). */
+  prefer?: "minimax" | "kimi";
 }): Promise<string> {
-  const chain = attemptChain();
+  const chain = attemptChain(params.prefer);
   const system = withLanguage(params.system);
   let lastErr: unknown = null;
   for (let i = 0; i < chain.length; i++) {

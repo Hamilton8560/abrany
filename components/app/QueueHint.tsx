@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-type State = { active: number; queued: number; max: number };
+type State = { active: number; queued: number; max: number; pending?: number; running?: number; ahead?: number };
 
 /**
  * Live "how long will this take" line for a pending generation. Polls the shared
- * AI queue and tells the user how many requests are ahead — and, when the work is
- * durable (a background job), that they can safely leave the page.
+ * AI queue and tells the user how many generations are ahead of theirs — and,
+ * when the work is durable (a background job), that they can safely leave the page.
  */
 export default function QueueHint({ background = false }: { background?: boolean }) {
   const [s, setS] = useState<State | null>(null);
@@ -27,14 +27,19 @@ export default function QueueHint({ background = false }: { background?: boolean
     };
   }, []);
 
-  const busy = !!s && (s.active > 0 || s.queued > 0);
-  const ahead = s?.queued ?? 0;
+  // Prefer the durable backlog (background jobs) for "how busy is it"; fall back
+  // to the in-memory concurrency gate.
+  const running = s?.running ?? s?.active ?? 0;
+  const pending = s?.pending ?? s?.queued ?? 0;
+  const ahead = s?.ahead ?? 0;
+  const busy = running > 0 || pending > 0;
+  const aheadPhrase = ahead > 0 ? ` · ${ahead} ahead of you` : "";
 
   return (
     <p className="text-[11.5px] leading-relaxed text-muted">
       {s
         ? busy
-          ? `AI queue: ${s.active}/${s.max} running${ahead ? ` · ${ahead} waiting ahead of you` : ""} — usually under a minute each. `
+          ? `AI queue: ${running} generating${pending ? `, ${pending} waiting` : ""}${aheadPhrase} — usually under a minute each. `
           : "AI is free right now — should be quick. "
         : ""}
       {background

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { listLessons, createLessonStubs, planItemWithContext, userOwnsPlanItem } from "@/lib/repo";
 import { expandMilestone } from "@/lib/coach";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
+import { llmContext, withLlm } from "@/lib/minimax";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,13 +28,23 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/plan-items/[id
   const context = planItemWithContext(itemId);
   if (!context) return NextResponse.json({ error: "Milestone not found" }, { status: 404 });
 
+  // Use the user's AI creds + language so stub titles/objectives match the
+  // language their lesson bodies are generated in (and BYO keys are honored).
+  const llm = llmContext(user);
+  if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
+
   try {
-    const stubs = await expandMilestone({
-      goalTitle: context.goal.title,
-      goalDescription: context.goal.description,
-      milestoneTitle: context.item.title,
-      milestoneDetail: context.item.detail,
-    });
+    const stubs = await withLlm(
+      llm.creds,
+      () =>
+        expandMilestone({
+          goalTitle: context.goal.title,
+          goalDescription: context.goal.description,
+          milestoneTitle: context.item.title,
+          milestoneDetail: context.item.detail,
+        }),
+      user.language,
+    );
     const lessons = createLessonStubs(itemId, stubs);
     return NextResponse.json({ lessons }, { status: 201 });
   } catch (err) {
