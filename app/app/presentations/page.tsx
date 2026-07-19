@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, fmtWhen } from "@/lib/client";
 import type { Presentation } from "@/lib/repo";
 import { ArrowRight, PlusIcon, SlidesIcon } from "@/components/icons";
+import DraftAssistant from "@/components/app/DraftAssistant";
 
 export default function PresentationsPage() {
   const [decks, setDecks] = useState<Presentation[]>([]);
@@ -77,6 +78,13 @@ export default function PresentationsPage() {
         </p>
       </header>
 
+      <div className="flex flex-col gap-3">
+        <DraftAssistant
+          surfaceId="presentation"
+          seed={topic}
+          onApply={(v) => setTopic(v.topic ?? topic)}
+          triggerLabel="Not sure what to say? Draft with AI"
+        />
       <form onSubmit={create} className="glass flex flex-col gap-3 rounded-[var(--radius-card-lg)] p-5 sm:flex-row">
         <input
           value={topic}
@@ -92,6 +100,7 @@ export default function PresentationsPage() {
           <PlusIcon className="size-3.5" /> {creating ? "Starting…" : "Build deck"}
         </button>
       </form>
+      </div>
       {error && <p className="-mt-4 text-[12px] text-accent">{error}</p>}
 
       <section className="flex flex-col gap-3">

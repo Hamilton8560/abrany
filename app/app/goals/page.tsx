@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, fmtWhen } from "@/lib/client";
 import type { Goal } from "@/lib/repo";
 import { ArrowRight, CheckIcon, PlusIcon, TargetIcon } from "@/components/icons";
+import DraftAssistant from "@/components/app/DraftAssistant";
 
 type Track = { title: string; description: string };
 type Gate = { rationale: string; tracks: Track[] };
@@ -103,6 +104,17 @@ export default function GoalsPage() {
         </p>
       </header>
 
+      {!gate && (
+        <DraftAssistant
+          surfaceId="goal"
+          seed={title}
+          onApply={(v) => {
+            if (v.title) setTitle(v.title);
+            if (v.description) setDescription(v.description);
+          }}
+          triggerLabel="Help me shape this — Draft with AI"
+        />
+      )}
       <form onSubmit={create} className="glass flex flex-col gap-3 rounded-[var(--radius-card-lg)] p-5">
         <input
           value={title}

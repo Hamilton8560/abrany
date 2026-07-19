@@ -41,8 +41,16 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 
 ## Org Programs — author once, deploy multilingually, monitor in your language (spec 2026-07-19, awaiting review)
 
-- [ ] Program library: data model (`programs`/`program_milestones`/`program_lessons`) + CRUD + in-app AI authoring (brief → draft → edit → save)
-- [ ] Deploy-to-many: bulk `createAssignment` from a program, stamp `assignments.program_id`, skip duplicates
-- [ ] Author-once auto-localize: stamp `source_lang`, pre-enqueue per-employee translation on deploy
+- [x] Program library: data model (`programs`/`program_milestones`/`program_lessons`) + CRUD + in-app AI authoring (brief → draft → edit → save) — Programs tab in OrgPanel, `/api/orgs/programs`, `generateProgramOutline`
+- [x] Deploy-to-many: bulk `createAssignment` from a program, stamp `assignments.program_id`, skip duplicates — Deploy UI + `/api/orgs/programs/[id]/deploy`
+- [x] Author-once auto-localize: stamp `source_lang`, pre-enqueue per-employee translation on deploy (via existing `deployProgram`)
 - [ ] Monitor in your language: program engagement dashboard grouped by program (source-language content)
 - [ ] Partner parity: `/api/v1/programs` + MCP tools writing the same library
+
+## Draft with AI — a shared SMART co-pilot in front of every generation (ADR-0020, spec 2026-07-19)
+
+- [x] Shared engine: isomorphic surface registry (`lib/draftSurfaces.ts`) + turn-based structured engine (`lib/draftAssistant.ts`) + `POST /api/draft`
+- [x] Reusable `DraftAssistant` panel: ≤3 SMART questions + quick replies → editable draft → fills the parent form
+- [x] Wired into all free-text surfaces: assignments, programs, goals, plan intake, presentations, books, study guides
+- [x] SMART-directed prompts per surface; personal context (learnerProfile) + today's-date resolution; `mustDraft` escape hatch
+- [ ] Later: co-pilot the Programs-monitor + partner API surfaces once built

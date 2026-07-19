@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, fmtWhen } from "@/lib/client";
 import { GuideIcon, PlusIcon, ChatIcon } from "@/components/icons";
 import Markdown from "./Markdown";
+import DraftAssistant from "./DraftAssistant";
 import { useContentTranslation, TranslateButton } from "./TranslateControl";
 import ListenButton from "./ListenButton";
 import QueueHint from "./QueueHint";
@@ -292,13 +293,21 @@ function CreateGuide({
           ))}
         </select>
       ) : (
-        <input
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && create()}
-          placeholder="What should the guide cover? e.g. Spanish past tenses, Ohm's law"
-          className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
-        />
+        <div className="flex flex-col gap-2">
+          <input
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && create()}
+            placeholder="What should the guide cover? e.g. Spanish past tenses, Ohm's law"
+            className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
+          />
+          <DraftAssistant
+            surfaceId="studyGuide"
+            seed={topic}
+            onApply={(v) => v.topic && setTopic(v.topic)}
+            triggerLabel="Narrow it down with AI"
+          />
+        </div>
       )}
       {err && <p className="text-[12px] text-accent">{err}</p>}
       <div className="flex justify-end">

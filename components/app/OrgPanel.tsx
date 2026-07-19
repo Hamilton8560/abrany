@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, fmtDuration } from "@/lib/client";
 import { BuildingIcon, CheckIcon, PlusIcon } from "@/components/icons";
+import DraftAssistant from "@/components/app/DraftAssistant";
 
 /* ── types mirrored from the org API ───────────────────────── */
 
@@ -251,7 +252,7 @@ function CreateOrg({ onCreated }: { onCreated: () => void }) {
 
 /* ── admin panel ───────────────────────────────────────────── */
 
-type Tab = "assignments" | "team" | "branding" | "api";
+type Tab = "assignments" | "programs" | "team" | "branding" | "api";
 
 function AdminPanel({ data, refresh }: { data: OrgState; refresh: () => void }) {
   const [tab, setTab] = useState<Tab>("assignments");
@@ -260,6 +261,7 @@ function AdminPanel({ data, refresh }: { data: OrgState; refresh: () => void }) 
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "assignments", label: "Assignments" },
+    { id: "programs", label: "Programs" },
     { id: "team", label: `Team (${admin.members.length})` },
     { id: "branding", label: "Branding" },
     { id: "api", label: "API & MCP" },
@@ -298,11 +300,248 @@ function AdminPanel({ data, refresh }: { data: OrgState; refresh: () => void }) 
 
       <div className="mt-5">
         {tab === "assignments" && <AssignmentsTab members={admin.members} assignments={admin.assignments} refresh={refresh} />}
+        {tab === "programs" && <ProgramsTab members={admin.members} refresh={refresh} />}
         {tab === "team" && <TeamTab members={admin.members} invites={admin.invites} refresh={refresh} />}
         {tab === "branding" && <BrandingTab org={org} refresh={refresh} />}
         {tab === "api" && <ApiTab org={org} refresh={refresh} />}
       </div>
     </section>
+  );
+}
+
+/* ── programs tab ──────────────────────────────────────────── */
+
+type ProgramRow = {
+  id: number;
+  title: string;
+  description: string;
+  source_lang: string;
+  milestone_count: number;
+  lesson_count: number;
+  created_at: string;
+};
+
+function ProgramsTab({ members, refresh }: { members: Member[]; refresh: () => void }) {
+  const [programs, setPrograms] = useState<ProgramRow[] | null>(null);
+  const [showNew, setShowNew] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // per-program deploy state
+  const [deployFor, setDeployFor] = useState<number | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [dueAt, setDueAt] = useState("");
+  const [note, setNote] = useState("");
+  const [deploying, setDeploying] = useState(false);
+  const [deployMsg, setDeployMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await api<{ programs: ProgramRow[] }>("/api/orgs/programs");
+      setPrograms(d.programs);
+    } catch {
+      setPrograms([]);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const create = async () => {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const d = await api<{ programs: ProgramRow[] }>("/api/orgs/programs", {
+        method: "POST",
+        body: JSON.stringify({ title, description }),
+      });
+      setPrograms(d.programs);
+      setTitle("");
+      setDescription("");
+      setShowNew(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not build the program");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const del = async (id: number) => {
+    try {
+      const d = await api<{ programs: ProgramRow[] }>(`/api/orgs/programs/${id}`, { method: "DELETE" });
+      setPrograms(d.programs);
+    } catch {
+      /* best effort */
+    }
+  };
+
+  const openDeploy = (id: number) => {
+    setDeployFor(deployFor === id ? null : id);
+    setPicked(new Set());
+    setDueAt("");
+    setNote("");
+    setDeployMsg(null);
+  };
+
+  const deploy = async (id: number) => {
+    if (!picked.size || deploying) return;
+    setDeploying(true);
+    setDeployMsg(null);
+    try {
+      const r = await api<{ deployed: number; skipped: number }>(`/api/orgs/programs/${id}/deploy`, {
+        method: "POST",
+        body: JSON.stringify({ userIds: [...picked], dueAt: dueAt || null, note }),
+      });
+      setDeployMsg(`Deployed to ${r.deployed} employee${r.deployed === 1 ? "" : "s"}${r.skipped ? `, ${r.skipped} already had it` : ""}.`);
+      setPicked(new Set());
+      refresh();
+    } catch (e) {
+      setDeployMsg(e instanceof Error ? e.message : "Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const togglePick = (uid: number) => {
+    const next = new Set(picked);
+    if (next.has(uid)) next.delete(uid);
+    else next.add(uid);
+    setPicked(next);
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[12.5px] text-muted">
+          Author a course once, then deploy it to a whole team — each employee gets their own copy in their language.
+        </p>
+        <button
+          onClick={() => setShowNew((v) => !v)}
+          className="glassx flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-semibold text-ink"
+        >
+          <PlusIcon className="size-4" /> New program
+        </button>
+      </div>
+
+      {showNew && (
+        <div className="flex flex-col gap-2.5 rounded-[16px] border border-line bg-white/50 p-4">
+          <DraftAssistant
+            surfaceId="program"
+            seed={title}
+            onApply={(v) => {
+              if (v.title) setTitle(v.title);
+              if (v.description) setDescription(v.description);
+            }}
+            triggerLabel="Not sure what to build? Draft with AI"
+          />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Program title, e.g. New-hire safety onboarding"
+            className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
+          />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Who it's for, the level it assumes, and the outcome the team should reach…"
+            rows={2}
+            className="rounded-[16px] border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
+          />
+          {err && <p className="text-[12px] text-accent">{err}</p>}
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted">The AI drafts the full milestone + lesson structure; content is generated per employee on open.</p>
+            <button
+              onClick={create}
+              disabled={busy || !title.trim()}
+              className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+            >
+              {busy ? "Building…" : "Build program"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {programs === null && <p className="py-6 text-center text-[13px] text-muted">Loading…</p>}
+      {programs && programs.length === 0 && !showNew && (
+        <p className="py-6 text-center text-[13px] text-muted">No programs yet — build one to reuse across your team.</p>
+      )}
+
+      <ul className="flex flex-col gap-2.5">
+        {(programs ?? []).map((p) => (
+          <li key={p.id} className="rounded-[14px] bg-white/60 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13.5px] font-semibold text-ink">{p.title}</p>
+                <p className="mt-0.5 text-[11px] text-muted">
+                  {p.milestone_count} milestone{p.milestone_count === 1 ? "" : "s"} · {p.lesson_count} lesson
+                  {p.lesson_count === 1 ? "" : "s"} · authored in {p.source_lang.toUpperCase()}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => openDeploy(p.id)}
+                  className="glassx rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-ink"
+                >
+                  Deploy
+                </button>
+                <button
+                  onClick={() => del(p.id)}
+                  className="rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-muted hover:text-accent"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            {deployFor === p.id && (
+              <div className="mt-3 flex flex-col gap-2.5 rounded-[12px] border border-line bg-white/60 p-3">
+                <p className="text-[12px] font-semibold text-ink">Deploy to employees</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {members.map((m) => (
+                    <button
+                      key={m.user_id}
+                      onClick={() => togglePick(m.user_id)}
+                      className={`rounded-full px-3 py-1.5 text-[12px] font-medium ${
+                        picked.has(m.user_id) ? "glassx-dark text-white" : "glassx text-ink"
+                      }`}
+                    >
+                      {m.display_name}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="date"
+                    value={dueAt}
+                    onChange={(e) => setDueAt(e.target.value)}
+                    className="rounded-full border border-line bg-white/70 px-4 py-2 text-[13px] text-ink outline-none focus:border-accent"
+                  />
+                  <input
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Optional note employees see"
+                    className="rounded-full border border-line bg-white/70 px-4 py-2 text-[13px] text-ink outline-none focus:border-accent"
+                  />
+                </div>
+                {deployMsg && <p className="text-[12px] text-muted">{deployMsg}</p>}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => deploy(p.id)}
+                    disabled={deploying || !picked.size}
+                    className="glassx-dark rounded-full px-5 py-2 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                  >
+                    {deploying ? "Deploying…" : `Deploy to ${picked.size || "…"}`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -508,6 +747,22 @@ function AssignmentsTab({
               className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
             />
           </div>
+          <DraftAssistant
+            surfaceId="assignment"
+            seed={title}
+            context={
+              email
+                ? `This training is for ${members.find((m) => m.email === email)?.display_name ?? email} (${email}).`
+                : "The employee hasn't been chosen yet."
+            }
+            onApply={(v) => {
+              if (v.title) setTitle(v.title);
+              if (v.description) setDescription(v.description);
+              if (v.note) setNote(v.note);
+              if (v.dueAt) setDueAt(v.dueAt);
+            }}
+            triggerLabel="Not sure how to scope it? Draft with AI"
+          />
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}

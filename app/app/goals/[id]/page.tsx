@@ -9,6 +9,7 @@ import { ArrowRight, CheckIcon, TargetIcon } from "@/components/icons";
 import MilestoneLessons from "@/components/app/MilestoneLessons";
 import ExamModal from "@/components/app/ExamModal";
 import QueueHint from "@/components/app/QueueHint";
+import DraftAssistant from "@/components/app/DraftAssistant";
 
 type FullPlan = Plan & { items: PlanItemWithProgress[] };
 type TrackChild = Goal & { hasPlan: boolean; milestones: number; sectionsTotal: number; sectionsDone: number };
@@ -319,6 +320,19 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 outcome-based plan sized to your real time.
               </p>
             )}
+            <DraftAssistant
+              surfaceId="goalPlan"
+              context={`This intake is for the goal "${goal.title}".${goal.description ? ` Details: ${goal.description}.` : ""}`}
+              onApply={(v) => {
+                if (v.level === "new" || v.level === "some" || v.level === "solid") setLevel(v.level);
+                const h = Number(v.hoursPerWeek);
+                if (Number.isFinite(h) && h > 0) setHoursPerWeek(Math.min(60, Math.max(1, Math.round(h))));
+                if (v.targetDate) setTargetDate(v.targetDate);
+                if (v.focus) setFocus(v.focus);
+              }}
+              triggerLabel="Not sure? Let AI set these up"
+              className="self-start"
+            />
             <div className="grid gap-2.5 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Current level

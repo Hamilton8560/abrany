@@ -6,6 +6,7 @@ import { api, fmtWhen } from "@/lib/client";
 import type { Book } from "@/lib/repo";
 import { PlusIcon } from "@/components/icons";
 import BookCover from "@/components/app/BookCover";
+import DraftAssistant from "@/components/app/DraftAssistant";
 
 export default function BooksPage() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -53,6 +54,15 @@ export default function BooksPage() {
         </p>
       </header>
 
+      <div className="flex justify-end">
+        <DraftAssistant
+          surfaceId="book"
+          seed={brief}
+          onApply={(v) => setBrief(v.brief ?? brief)}
+          triggerLabel="Not sure where to start? Draft with AI"
+          className="w-full"
+        />
+      </div>
       <form onSubmit={create} className="glass flex flex-col gap-3 rounded-[var(--radius-card-lg)] p-5">
         <textarea
           value={brief}

@@ -230,6 +230,82 @@ Rules:
   return clean;
 }
 
+/* ── Program outline: a reusable org course template (structural, no content) ── */
+
+import type { CurriculumInput } from "./org";
+
+/**
+ * Author a reusable training PROGRAM for an org to deploy to a team. Produces the
+ * full structure — milestones each with a lesson arc (titles/objectives/kinds) —
+ * but NO lesson content: content is generated per-employee after deploy and
+ * localized by the translation engine, exactly like the normal lesson pipeline.
+ */
+export async function generateProgramOutline(input: {
+  title: string;
+  description: string;
+}): Promise<CurriculumInput> {
+  const system = `${COACH_SYSTEM}
+
+You are designing a REUSABLE TRAINING PROGRAM an organization will deploy to many employees. Design OUTCOME-FIRST: decide what each employee must be able to DO, then structure milestones toward it. Respond with ONLY a single JSON object, no prose or fences:
+{
+  "title": "short program title",
+  "description": "2-3 sentences: who it's for, the level it assumes, and the outcome the whole team reaches",
+  "milestones": [
+    { "title": "milestone title", "detail": "what it covers and how you know it's done", "estimate": "e.g. '1 week'",
+      "lessons": [ { "title": "concrete lesson title", "objective": "one line: what you can do after", "kind": "read|teach|practice|apply|check|review" } ] }
+  ]
+}
+Rules:
+- 3 to 7 milestones ordered foundation → advanced.
+- Each milestone has 4 to 6 lessons following the arc read → teach → practice → apply → check → review (always include practice, apply, check).
+- "kind" MUST be one of read|teach|practice|apply|check|review.
+- Titles concrete and specific to the subject, not generic. Do NOT write lesson content — structure only.
+- Realistic and honest scope for a workplace cohort.`;
+
+  const raw = await complete({
+    system,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.5,
+    messages: [
+      {
+        role: "user",
+        content: `Program title: ${input.title}\n${input.description ? `Details: ${input.description}` : ""}`,
+      },
+    ],
+  });
+
+  let parsed: any;
+  try {
+    parsed = parseJson(raw);
+  } catch {
+    throw new Error("Coach returned an unparseable program");
+  }
+  const validKind = (k: unknown): LessonKind => (KINDS.includes(k as (typeof KINDS)[number]) ? (k as LessonKind) : "read");
+  const milestones = (Array.isArray(parsed?.milestones) ? parsed.milestones : [])
+    .filter((m: any) => m && typeof m.title === "string" && m.title.trim())
+    .slice(0, 8)
+    .map((m: any) => ({
+      title: m.title.toString().slice(0, 160),
+      detail: (m.detail || "").toString().slice(0, 400),
+      estimate: (m.estimate || "").toString().slice(0, 40),
+      lessons: (Array.isArray(m.lessons) ? m.lessons : [])
+        .filter((l: any) => l && typeof l.title === "string" && l.title.trim())
+        .slice(0, 8)
+        .map((l: any) => ({
+          title: l.title.toString().slice(0, 160),
+          objective: (l.objective || "").toString().slice(0, 200),
+          kind: validKind(l.kind),
+          content: "",
+        })),
+    }));
+  if (!milestones.length) throw new Error("Coach returned an empty program");
+  return {
+    title: (parsed?.title || input.title).toString().slice(0, 200),
+    description: (parsed?.description || input.description || "").toString().slice(0, 900),
+    milestones,
+  };
+}
+
 /* ── Scope gate: is this goal feasible as one plan, or must it decompose? ── */
 
 export type ScopeVerdict =
