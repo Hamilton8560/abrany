@@ -38,3 +38,11 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Personalized tutor memory (learner profile digest + durable `<remember>` facts)
 - [x] Email notifications (Resend, summit-labs.io): team sign-up temp password + forced reset,
       certificate-earned, weekly progress report, per-user toggles in Settings
+
+## Org Programs — author once, deploy multilingually, monitor in your language (spec 2026-07-19, awaiting review)
+
+- [ ] Program library: data model (`programs`/`program_milestones`/`program_lessons`) + CRUD + in-app AI authoring (brief → draft → edit → save)
+- [ ] Deploy-to-many: bulk `createAssignment` from a program, stamp `assignments.program_id`, skip duplicates
+- [ ] Author-once auto-localize: stamp `source_lang`, pre-enqueue per-employee translation on deploy
+- [ ] Monitor in your language: program engagement dashboard grouped by program (source-language content)
+- [ ] Partner parity: `/api/v1/programs` + MCP tools writing the same library
