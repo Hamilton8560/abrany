@@ -1,4 +1,4 @@
-# Reading-Log flow + Amygdala fix — Design
+# Global Focus Timer + Reading Logging + Amygdala fix — Design
 
 **Date:** 2026-07-19
 **Owner:** claude / David
@@ -6,114 +6,169 @@
 
 ## Context
 
-The "Your Mind" RPG has 5 real, trainable brain regions defined in `lib/mind.ts:12`
-(`prefrontal | temporal | hippocampus | cerebellum | association`). Two gaps motivated this work:
+Two product gaps, unified under one theme: **the focus timer should be the central training
+instrument** — always visible, notifying you when a block ends, and the thing users are nudged to
+start whenever they begin an activity like reading.
 
-1. **Reading is not a first-class training input.** Temporal-lobe (Comprehension) XP only comes from
-   `read_sec` on `read`/`teach` lessons (`lib/mind.ts:278`). A user reading a book — in-app or a
-   physical/external book — has no way to log that time and earn Temporal XP. In-app books currently
-   only count toward *Association* (as "creations"), never as reading.
-2. **The landing page advertises a region that does not exist.** `components/BrainJourney.tsx:60`
-   shows an **Amygdala** beat (with `/public/regions/amygdala.webp`) that has no `BrainRegionId`, no
-   stat, no XP source, and no training path — a visual-only orphan. Meanwhile the real `temporal`
-   and `association` regions never appear in that animation.
+### What exists today (verified in code)
 
-## Decisions (locked with David)
+The timer engine (`components/app/PomodoroTimer.tsx`) is solid: server-authoritative wall-clock, one
+live timer per user in `timer_states` (`lib/db.ts:94`), derived from an absolute end-timestamp so it
+survives reloads and syncs across devices via 4s polling (`PomodoroTimer.tsx:144-159`).
 
-- **Reading input:** BOTH a **live in-app timer** AND **manual entry** (for external/physical reading).
-- **Reading source:** supports in-app books/chapters (FK) AND external books (free-text title).
-- **Amygdala:** **Option A (minimal)** — remove the orphaned amygdala beat from the landing journey
-  and swap in a real region (**Temporal lobe**, which the new reading feature makes the natural pick).
-  The ambitious aMCC "Grit" region is explicitly **out of scope** for this spec (future work).
-- **Hippocampus recall bonus:** explicitly **out of scope** for v1 (see Non-goals). Reading feeds
-  Temporal only for now.
+**But three expected things are missing:**
+
+1. **Not present.** `PomodoroTimer` is mounted only on the dashboard home (`app/app/page.tsx:55`) and
+   `/app/timer` (`app/app/timer/page.tsx:21`). It is **not in the app layout/sidebar**, so it vanishes
+   from view on every other page. It keeps counting server-side, but the user can't see it — the
+   "I thought I built this but I don't see it."
+2. **No end notification.** There is **no sound, no Web Notification, no vibrate** anywhere. On
+   completion it only flips `recording=true` to show the log modal (`PomodoroTimer.tsx:64-75`) — and
+   only if the component is mounted on screen. On any other page/tab, the block ends silently. The only
+   notifications in the app are email (certs/weekly report).
+3. **No activity nudge.** Nothing prompts a user to start a focus block when they open a book/lesson.
+
+### Brain-model gaps (unchanged from prior analysis)
+
+- Reading a book (in-app or external/physical) has no logging path; in-app books only credit
+  *Association*, never reading time → *Temporal* (`lib/mind.ts:278`).
+- The landing page advertises an **Amygdala** region (`components/BrainJourney.tsx:60`) with no
+  `BrainRegionId`, no stat, no training path — a visual-only orphan.
+
+## Decisions
+
+**Locked with David:**
+- Enhance the **existing focus timer** — do NOT build a separate reading timer.
+- The timer must be **present everywhere** and **notify when it ends**.
+- When a user starts reading (or similar activity), **nudge them to start a focus block**.
+- **Amygdala:** Option A — remove the orphaned beat, swap in a real region (**Temporal lobe**).
+
+**Defaults chosen while David was away (flagged for review — veto any):**
+- **Notification scope:** in-app alert + chime + **OS notification via the Web Notification API**
+  while the browser is open. NOT true web-push/PWA (deferred as overkill).
+- **Region for a reading-tagged block:** credits **Temporal (Comprehension)**. A generic (untagged)
+  focus block still credits **Prefrontal (Focus)**. One region per block — no double-count.
+- **Presentation:** a compact **persistent timer pill** in the app chrome (visible on every `/app`
+  page) + the existing full ring view on the dashboard and `/app/timer`, both reading one shared
+  state.
+- **Notification-permission ask:** on the user's **first timer start**, not on page load.
 
 ## Non-goals (v1)
 
-- No aMCC / "Grit" 6th region. (Separate future spec.)
-- No post-reading recall → Hippocampus SRS bonus. (Book chapters aren't lessons; wiring SRS to
-  arbitrary reading is its own design. Deferred.)
+- No true web-push / service worker / PWA install (deferred).
+- No aMCC "Grit" 6th region (separate future spec).
+- No post-reading recall → Hippocampus SRS bonus (deferred).
 - No changes to the AI coach, lesson generation, or `regionFor()` node mapping.
-- No pages-read analytics beyond storing an optional page count.
+
+## Architecture
+
+### 1. Shared timer state (refactor for isolation)
+
+Extract the timer state machine out of `PomodoroTimer` into a **`TimerProvider`** (React context) +
+`useTimer()` hook, mounted once in the app layout (`app/app/layout.tsx`). This is the key structural
+change: today `PomodoroTimer` owns all state, so nothing off-screen can react to the timer finishing.
+
+- `TimerProvider` owns: server sync (single poller, replacing per-component polling), the
+  running-block refs, `finish()`, and firing notifications.
+- `PomodoroTimer` (full ring) and a new `TimerPill` (compact) both become thin consumers of
+  `useTimer()` — one source of truth, one poller.
+- Boundary test: the provider exposes `{ mode, left, running, elapsed, start, pause, reset, ...,
+  attachActivity }`. Consumers never touch refs or `/api/timer` directly.
+
+### 2. Presence — `TimerPill`
+
+A compact always-visible control rendered in the app chrome (sidebar footer on desktop, in
+`MobileBar` on mobile). Shows live `mm:ss`, mode color, and a play/pause tap. Clicking it routes to
+`/app/timer` for the full view. Hidden only when no timer has ever been set (idle + zero), or shown as
+a subtle "Start a block" affordance — decide during build.
+
+### 3. End notification (fires from the provider, page-independent)
+
+On `finish()` — including the two existing completion paths (`recompute`→`finish` and the
+load-time recovery at `PomodoroTimer.tsx:93-106`, which move into the provider):
+
+1. **Chime** — `new Audio(<short asset>)`, best-effort (may be blocked until first user gesture;
+   acceptable).
+2. **OS notification** — `new Notification("Focus block done", …)` when `Notification.permission ===
+   "granted"`.
+3. **Tab-title flash** — set `document.title = "⏰ Time! — Abrany"`, restore on focus.
+4. **In-app alert** — the existing log modal / a toast, shown wherever the user is (the pill can host
+   it).
+
+Permission is requested on first `start()` (a user gesture), storing nothing server-side.
+
+### 4. Activity nudge
+
+On activity pages (book/chapter reader first; lessons/coach optional), if `!running`, render a
+lightweight banner: **"Reading? Start a focus block →"**. Clicking calls
+`start()` + `attachActivity({ bookId, chapterId })` so the resulting session is a reading session.
+
+### 5. Reading logging (through the timer + manual)
+
+- **Via timer:** `attachActivity` records `book_id`/`chapter_id` onto the timer (persisted in
+  `timer_states`). On completion the recorder defaults to a **reading** session (`mode='reading'`,
+  `book_id`, `chapter_id`) → Temporal.
+- **Manual (external/physical):** a "Log reading" form → `POST /api/sessions` with `mode='reading'`,
+  free-text title in `tags`, minutes in `duration_sec`, optional pages/notes in `notes`.
 
 ## Data model
 
-Reuse the existing `sessions` table (the user-facing Training Log already renders it, and
-`createSession()` at `lib/repo.ts:553` is the single write path). A reading session is a session with
-`mode = 'reading'`.
+Idempotent `addCol` migrations (pattern at `lib/db.ts:348`):
 
-**Migrations** (idempotent `addCol` pattern, matching `lib/db.ts:348`):
-
-- `sessions.book_id    INTEGER` — nullable FK to `books(id) ON DELETE SET NULL`. Set for in-app books.
-- `sessions.chapter_id INTEGER` — nullable FK to `chapters(id) ON DELETE SET NULL`. Optional.
-- `timer_states.book_id    INTEGER` — nullable, for persisting a live reading timer.
+- `sessions.book_id    INTEGER` — nullable FK `books(id) ON DELETE SET NULL`.
+- `sessions.chapter_id INTEGER` — nullable FK `chapters(id) ON DELETE SET NULL`.
+- `timer_states.book_id    INTEGER` — nullable, persists the active block's reading target.
 - `timer_states.chapter_id INTEGER` — nullable.
-  (`timer_states.mode` already exists; it gains a `'reading'` value. One active timer per user —
-  reading and focus share the single per-user slot. Acceptable; noted as a known limitation.)
+  (`timer_states.mode` already exists; a reading block is still stored as a normal running timer —
+  the book link, not the mode, marks it as reading. One active timer per user; reading and focus
+  share the single slot — a known, accepted limitation.)
 
-**Field usage for a reading session:**
-
-| Field | Meaning |
-|-------|---------|
-| `mode` | `'reading'` |
-| `duration_sec` | minutes read × 60 (from timer, or manual entry) |
-| `book_id` / `chapter_id` | set when reading in-app content; both null for external books |
-| `tags` | external book title (free text) when `book_id` is null |
-| `notes` | optional page count / thoughts |
-
-No new reading-specific column beyond the two FK links (which are genuinely useful).
+Reading session field usage: `mode='reading'`; `duration_sec` = seconds; `book_id`/`chapter_id` set
+for in-app content (both null for external); `tags` = external title when unlinked; `notes` =
+pages/thoughts.
 
 ## Brain mapping
 
-Extend `computeStats()` in `lib/mind.ts` (around `:278`) so **Temporal (Comprehension) XP** =
-existing reading-lesson `read_sec` **+** `SUM(duration_sec) FROM sessions WHERE mode='reading'`.
-No other region is affected. `regionFor()` is untouched (reading sessions are not "nodes").
-
-## Components / data flow
-
-1. **Manual entry** — a "Log reading" form: pick an in-app book/chapter from a dropdown **or** type an
-   external title; enter minutes; optional pages/notes → `POST /api/sessions` with
-   `mode='reading'`, `bookId?`, `chapterId?`, `durationSec`, `tags` (external title), `notes`.
-2. **Live timer** — select a book/chapter (or external title) → Start. Elapsed time persists across
-   reloads via `timer_states` (mode `'reading'`, `book_id`, `chapter_id`). On Finish → creates a
-   `mode='reading'` session with the accumulated `durationSec`.
-3. **API** — `POST /api/sessions` (`app/api/sessions/route.ts:14`) extends its accepted body with
-   `bookId`, `chapterId` (both optional); `createSession()` (`lib/repo.ts:553`) persists them.
-4. **Training Log UI** (`app/app/log/page.tsx`) — render reading sessions with a "Reading" label and
-   the book title (from FK `books.title` if `book_id` set, else from `tags`).
-5. **Your Mind** — Temporal region level rises automatically once `computeStats()` counts reading
-   sessions; no dedicated UI change required beyond it reflecting the new XP.
+Extend `computeStats()` (`lib/mind.ts` ~`:278`) so **Temporal XP** = existing reading-lesson
+`read_sec` **+** `SUM(duration_sec) FROM sessions WHERE mode='reading'`. Prefrontal continues to sum
+`mode='focus'` sessions (`lib/mind.ts:269-271`) — reading sessions are excluded from it, preserving
+one-region-per-block. `regionFor()` untouched.
 
 ## Amygdala fix (Option A)
 
-- Remove the amygdala beat from `components/BrainJourney.tsx:60` and replace it with a **Temporal
-  lobe** beat (Comprehension) that reflects the real model and the new reading feature.
-- Leave `/public/regions/amygdala.webp` in place (unused) or delete it — cosmetic; delete to avoid a
-  dead asset.
-- Result: every region shown to users maps to a real, trainable region.
+Replace the amygdala beat in `components/BrainJourney.tsx:60` with a **Temporal lobe**
+(Comprehension) beat reflecting the real model and the new reading feature. Delete the now-unused
+`/public/regions/amygdala.webp`.
 
 ## Error handling
 
-- `POST /api/sessions` validates `durationSec > 0`; rejects negative/absent.
-- `bookId`/`chapterId` that don't exist → FK is `ON DELETE SET NULL`; on insert, treat a
-  non-existent id as null rather than erroring (or validate existence and 400). Pick: **validate and
-  400** to avoid silent data loss of the user's intent.
-- External-title reading with empty `tags` and no `book_id` → allowed (untitled reading), but the UI
-  encourages a title.
-- Live timer: if a focus timer is already running, starting a reading timer replaces it (shared slot);
-  the UI warns before overwriting.
+- `POST /api/sessions`: validate `durationSec > 0` → else 400. Non-existent `bookId`/`chapterId` →
+  validate and 400 (avoid silently dropping the user's intent).
+- Notification: if permission denied or `Notification` unavailable, degrade to in-app + chime +
+  title-flash only. Never block the finish path on a notification error.
+- Audio autoplay blocked (no prior gesture) → swallow; the in-app alert + title-flash still fire.
+- Starting a timer while another block runs (e.g. focus while a reading block is live) replaces it
+  (shared slot); the pill/UI warns before overwriting.
 
 ## Testing
 
-- **Unit:** `computeStats()` includes `mode='reading'` session duration in Temporal XP and nothing
-  else. A reading session with `book_id` set and one external (title-only) session both count.
-- **API:** `POST /api/sessions` with `mode='reading'` + `bookId` persists `book_id`; with external
-  title persists `tags`; `durationSec<=0` → 400.
-- **Migration:** `addCol` is idempotent — re-running migrations on an existing DB adds columns once.
-- **UI (manual):** the log page shows a reading row with the correct book title for both in-app and
-  external sources.
+- **Provider unit:** `finish()` fires notification hooks once; load-time recovery of a block that
+  completed while away also fires them; `attachActivity` persists to `timer_states`.
+- **computeStats unit:** `mode='reading'` duration counts toward Temporal and NOT Prefrontal; a
+  linked and an external reading session both count.
+- **API:** `POST /api/sessions` persists `book_id` (linked) / `tags` (external); `durationSec<=0`
+  → 400.
+- **Migration:** `addCol` idempotent on re-run.
+- **UI:** the pill shows live countdown on a non-timer page; the reading nudge appears only when idle;
+  the log page renders reading rows with the correct title (linked vs external).
 
-## Rollout
+## Build order (phased; could split into two plans)
 
-Single change set: migrations → repo/API → `computeStats` → reading UI (manual + timer) → log
-rendering → BrainJourney swap. No data backfill needed (existing sessions are `focus`/`break`).
+1. Migrations + repo/API (`book_id`/`chapter_id`, reading mode).
+2. `TimerProvider` refactor (extract from `PomodoroTimer`, mount in layout, single poller).
+3. End notifications (chime + Web Notification + title-flash + in-app), permission on first start.
+4. `TimerPill` presence in app chrome.
+5. Activity nudge + `attachActivity` on the book/chapter reader.
+6. Manual "Log reading" form + Training Log rendering.
+7. `computeStats` Temporal update.
+8. Amygdala → Temporal swap in `BrainJourney`.
