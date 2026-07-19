@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Archivo, Inter } from "next/font/google";
+import { TimerProvider } from "@/components/timer/TimerProvider";
+import MiniTimer from "@/components/timer/MiniTimer";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -51,7 +53,10 @@ export default function RootLayout({
     >
       <body suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: TRANSLATE_GUARD }} />
-        {children}
+        <TimerProvider>
+          {children}
+          <MiniTimer />
+        </TimerProvider>
       </body>
     </html>
   );

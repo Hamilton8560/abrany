@@ -1,13 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { BrainGlyph } from "./icons";
 
-const LINKS = ["Home", "Courses", "Trainers", "Pricing"];
+const LINKS = [
+  { label: "Home", href: "/" },
+  { label: "Focus", href: "/focus" },
+  { label: "Trainers", href: "/#top" },
+  { label: "Pricing", href: "/#top" },
+];
 
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <a href="#top" className="flex items-center gap-[9px]" aria-label="Abrany home">
+    <Link href="/" className="flex items-center gap-[9px]" aria-label="Abrany home">
       <span
         className="grid place-items-center rounded-full bg-ink text-white"
         style={{ width: compact ? 22 : 24, height: compact ? 22 : 24 }}
@@ -20,13 +27,14 @@ export function Logo({ compact = false }: { compact?: boolean }) {
       >
         ABRANY
       </span>
-    </a>
+    </Link>
   );
 }
 
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -59,18 +67,18 @@ export default function Nav() {
         <Logo />
 
         <div className="hidden items-center gap-9 text-[14px] md:flex">
-          {LINKS.map((l, i) => (
-            <a
-              key={l}
-              href="#top"
+          {LINKS.map((l) => (
+            <Link
+              key={l.label}
+              href={l.href}
               className={
-                i === 0
+                pathname === l.href
                   ? "font-medium text-ink"
                   : "font-normal text-muted transition-colors hover:text-ink"
               }
             >
-              {l}
-            </a>
+              {l.label}
+            </Link>
           ))}
         </div>
 
@@ -110,17 +118,19 @@ export default function Nav() {
         }`}
       >
         <div className="flex flex-col gap-1 px-6 pb-5 pt-1">
-          {LINKS.map((l, i) => (
-            <a
-              key={l}
-              href="#top"
+          {LINKS.map((l) => (
+            <Link
+              key={l.label}
+              href={l.href}
               onClick={() => setOpen(false)}
               className={`rounded-[12px] px-2 py-3 text-[16px] ${
-                i === 0 ? "font-semibold text-ink" : "font-medium text-muted"
+                pathname === l.href
+                  ? "font-semibold text-ink"
+                  : "font-medium text-muted"
               }`}
             >
-              {l}
-            </a>
+              {l.label}
+            </Link>
           ))}
           <a
             href="#footer"
