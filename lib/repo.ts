@@ -129,6 +129,8 @@ export type TimerState = {
   left_sec: number;
   focus_accum: number;
   focus_start: number | null;
+  book_id: number | null; // reading target for a focus block (→ Temporal on completion)
+  chapter_id: number | null;
   updated_at: string;
 };
 
@@ -141,6 +143,8 @@ const DEFAULT_TIMER: TimerState = {
   left_sec: 25 * 60,
   focus_accum: 0,
   focus_start: null,
+  book_id: null,
+  chapter_id: null,
   updated_at: "",
 };
 
@@ -154,12 +158,13 @@ export function getTimerState(userId: number): TimerState {
 export function setTimerState(userId: number, s: Omit<TimerState, "updated_at">): TimerState {
   getDb()
     .prepare(
-      `INSERT INTO timer_states (user_id, mode, focus_min, break_min, running, end_at, left_sec, focus_accum, focus_start, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `INSERT INTO timer_states (user_id, mode, focus_min, break_min, running, end_at, left_sec, focus_accum, focus_start, book_id, chapter_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(user_id) DO UPDATE SET
          mode=excluded.mode, focus_min=excluded.focus_min, break_min=excluded.break_min,
          running=excluded.running, end_at=excluded.end_at, left_sec=excluded.left_sec,
-         focus_accum=excluded.focus_accum, focus_start=excluded.focus_start, updated_at=datetime('now')`,
+         focus_accum=excluded.focus_accum, focus_start=excluded.focus_start,
+         book_id=excluded.book_id, chapter_id=excluded.chapter_id, updated_at=datetime('now')`,
     )
     .run(
       userId,
@@ -171,8 +176,47 @@ export function setTimerState(userId: number, s: Omit<TimerState, "updated_at">)
       s.left_sec,
       s.focus_accum,
       s.focus_start,
+      s.book_id ?? null,
+      s.chapter_id ?? null,
     );
   return getTimerState(userId);
+}
+
+/**
+ * If the user's running timer has passed its deadline, finalize it exactly
+ * once: log a session for a completed FOCUS block (reading if a book is
+ * attached → Temporal, else focus → Prefrontal) and reset the row. Idempotent
+ * and atomic-by-single-row — whichever device/request calls it first logs the
+ * session; later calls see running=0 and do nothing. This is what prevents
+ * duplicate logging across a user's open devices.
+ */
+export function finalizeTimerIfDue(userId: number): { timer: TimerState; justCompleted: boolean } {
+  const t = getTimerState(userId);
+  const due = t.running && t.end_at != null && t.end_at <= Date.now();
+  if (!due) return { timer: t, justCompleted: false };
+
+  // breaks are rest, not training — they complete but log nothing
+  if (t.mode !== "break") {
+    createSession({
+      userId,
+      mode: t.book_id ? "reading" : "focus",
+      durationSec: t.focus_min * 60,
+      bookId: t.book_id,
+      chapterId: t.chapter_id,
+    });
+  }
+  // reset to an acknowledged-complete state (left_sec=0 marks "done")
+  const timer = setTimerState(userId, {
+    ...t,
+    running: 0,
+    end_at: null,
+    left_sec: 0,
+    focus_accum: 0,
+    focus_start: null,
+    book_id: null,
+    chapter_id: null,
+  });
+  return { timer, justCompleted: true };
 }
 
 /** All users (owner-only use: the impersonation / instructor picker). */

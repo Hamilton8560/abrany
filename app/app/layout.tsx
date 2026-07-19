@@ -4,8 +4,6 @@ import Sidebar, { MobileBar } from "@/components/app/Sidebar";
 import ImpersonationBanner from "@/components/app/ImpersonationBanner";
 import { TimerProvider } from "@/components/timer/TimerProvider";
 import MiniTimer from "@/components/timer/MiniTimer";
-import { ReadingActivityProvider } from "@/components/app/ReadingActivityContext";
-import TimerSessionBridge from "@/components/app/TimerSessionBridge";
 import { getAuthState } from "@/lib/auth";
 import { publicUser } from "@/lib/user";
 import { ensureWeeklyReportScheduler } from "@/lib/weeklyReport";
@@ -25,22 +23,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <TimerProvider>
-      <ReadingActivityProvider>
-        {/* logs completed focus/reading blocks to /api/sessions (Prefrontal / Temporal) */}
-        <TimerSessionBridge />
-        <div className="flex min-h-dvh flex-col">
-          {impersonating && <ImpersonationBanner email={effective.email} />}
-          <div className="mx-auto flex w-full max-w-[1440px] flex-1">
-            <Sidebar user={me} />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <MobileBar user={me} />
-              <main className="flex-1 px-5 pb-24 pt-6 sm:px-8 lg:pb-10 lg:pt-8">{children}</main>
-            </div>
+      <div className="flex min-h-dvh flex-col">
+        {impersonating && <ImpersonationBanner email={effective.email} />}
+        <div className="mx-auto flex w-full max-w-[1440px] flex-1">
+          <Sidebar user={me} />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <MobileBar user={me} />
+            <main className="flex-1 px-5 pb-24 pt-6 sm:px-8 lg:pb-10 lg:pt-8">{children}</main>
           </div>
         </div>
-        {/* floating timer that follows you across every /app page */}
-        <MiniTimer />
-      </ReadingActivityProvider>
+      </div>
+      {/* floating timer that follows you across every /app page */}
+      <MiniTimer />
     </TimerProvider>
   );
 }

@@ -3,16 +3,15 @@
 import { useState } from "react";
 import { ArrowRight } from "@/components/icons";
 import { useTimer } from "@/components/timer/TimerProvider";
-import { useReadingActivity } from "@/components/app/ReadingActivityContext";
 
 /**
  * Soft, dismissible prompt encouraging the reader to run a focus block while
- * they read. Fully self-wiring: it tags the block as reading this book/chapter
- * and starts the global focus timer, so the completed block is logged as a
- * reading session (→ Temporal) by <TimerSessionBridge>.
+ * they read. Fully self-wiring: it starts the global focus timer tagged with
+ * this book/chapter, so when the block completes the server logs it as a
+ * reading session (→ Temporal).
  *
- * Drop it onto a book/chapter reader (it must be inside the app layout, which
- * provides <TimerProvider> and <ReadingActivityProvider>):
+ * Drop it onto a book/chapter reader (it lives inside the app layout, which
+ * provides <TimerProvider>):
  *
  *   <ReadingNudge bookId={book.id} chapterId={chapter?.id} bookTitle={book.title} />
  *
@@ -27,17 +26,13 @@ export default function ReadingNudge({
   chapterId?: number | null;
   bookTitle?: string;
 }) {
-  const { startFocus, status, hydrated } = useTimer();
-  const { setReading } = useReadingActivity();
+  const { startReading, status, hydrated } = useTimer();
   const [dismissed, setDismissed] = useState(false);
 
   // only surface when idle (never mid-session) and after hydration
   if (dismissed || !hydrated || status !== "idle") return null;
 
-  const start = () => {
-    setReading({ bookId: bookId ?? null, chapterId: chapterId ?? null, title: bookTitle });
-    startFocus();
-  };
+  const start = () => startReading({ bookId: bookId ?? null, chapterId: chapterId ?? null });
 
   return (
     <div className="glass flex items-center gap-3 rounded-[var(--radius-card)] px-4 py-3">

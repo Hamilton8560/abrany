@@ -387,6 +387,10 @@ function migrate(db: DatabaseSync) {
   // both stay null for external/physical books (title lives in sessions.tags)
   addCol("sessions", "book_id", "book_id INTEGER REFERENCES books(id) ON DELETE SET NULL");
   addCol("sessions", "chapter_id", "chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL");
+  // a running timer can be tagged with the book/chapter being read, so when the
+  // block completes the server logs it as a reading session (→ Temporal)
+  addCol("timer_states", "book_id", "book_id INTEGER REFERENCES books(id) ON DELETE SET NULL");
+  addCol("timer_states", "chapter_id", "chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL");
 
   // seed the community forums (idempotent; slugs are stable identifiers)
   const seedForum = db.prepare(

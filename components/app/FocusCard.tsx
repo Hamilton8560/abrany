@@ -10,7 +10,7 @@ const FOCUS_PRESETS = [15, 25, 45, 50];
 /**
  * Compact dashboard control for the global timer. Reads/writes the same
  * `useTimer()` state as the full FocusSession and the floating MiniTimer, so
- * all three stay in sync. Completed blocks are logged by <TimerSessionBridge>.
+ * all three stay in sync. Completed blocks are logged server-side by /api/timer.
  */
 export default function FocusCard() {
   const t = useTimer();
