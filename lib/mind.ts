@@ -274,10 +274,15 @@ function computeStats(
   // Hippocampus — Retention: spaced-repetition reps across all sections
   const reps = lessons.reduce((a, l) => a + (l.srs_reps || 0), 0);
 
-  // Temporal — Comprehension: minutes spent reading read/teach material
-  const comprehendMin = Math.round(
+  // Temporal — Comprehension: minutes spent reading read/teach material,
+  // plus time logged reading a book (in-app or external) via mode='reading' sessions
+  const lessonReadMin = Math.round(
     lessons.filter((l) => l.kind === "read" || l.kind === "teach").reduce((a, l) => a + (l.read_sec || 0), 0) / 60,
   );
+  const bookRead = db
+    .prepare("SELECT COALESCE(SUM(duration_sec),0) n FROM sessions WHERE user_id = ? AND mode='reading'")
+    .get(userId) as { n: number };
+  const comprehendMin = lessonReadMin + Math.round(bookRead.n / 60);
 
   // Cerebellum — Skill: practice/apply sections completed (+ their reading time)
   const skillDone = lessons.filter(

@@ -338,12 +338,14 @@ export type PlanItemWithProgress = PlanItem & {
 export type Session = {
   id: number;
   goal_id: number | null;
-  mode: "focus" | "break";
+  mode: "focus" | "break" | "reading";
   started_at: string;
   ended_at: string | null;
   duration_sec: number;
   notes: string;
   tags: string;
+  book_id: number | null;
+  chapter_id: number | null;
   created_at: string;
 };
 
@@ -539,31 +541,42 @@ export function deleteLesson(id: number): void {
 
 /* ── Sessions ──────────────────────────────────────────── */
 
-export function listSessions(userId: number, limit = 100): (Session & { goal_title: string | null })[] {
+export type SessionRow = Session & {
+  goal_title: string | null;
+  book_title: string | null;
+  chapter_title: string | null;
+};
+
+export function listSessions(userId: number, limit = 100): SessionRow[] {
   return getDb()
     .prepare(
-      `SELECT s.*, g.title AS goal_title
-       FROM sessions s LEFT JOIN goals g ON g.id = s.goal_id
+      `SELECT s.*, g.title AS goal_title, b.title AS book_title, c.title AS chapter_title
+       FROM sessions s
+       LEFT JOIN goals g ON g.id = s.goal_id
+       LEFT JOIN books b ON b.id = s.book_id
+       LEFT JOIN chapters c ON c.id = s.chapter_id
        WHERE s.user_id = ?
        ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
     )
-    .all(userId, limit) as (Session & { goal_title: string | null })[];
+    .all(userId, limit) as SessionRow[];
 }
 
 export function createSession(input: {
   userId: number;
   goalId?: number | null;
-  mode?: "focus" | "break";
+  mode?: "focus" | "break" | "reading";
   durationSec: number;
   notes?: string;
   tags?: string;
+  bookId?: number | null;
+  chapterId?: number | null;
   startedAt?: string;
   endedAt?: string;
 }): Session {
   const info = getDb()
     .prepare(
-      `INSERT INTO sessions (user_id, goal_id, mode, duration_sec, notes, tags, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
+      `INSERT INTO sessions (user_id, goal_id, mode, duration_sec, notes, tags, book_id, chapter_id, started_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
     )
     .run(
       input.userId,
@@ -572,6 +585,8 @@ export function createSession(input: {
       Math.round(input.durationSec),
       input.notes ?? "",
       input.tags ?? "",
+      input.bookId ?? null,
+      input.chapterId ?? null,
       input.startedAt ?? null,
       input.endedAt ?? null,
     );

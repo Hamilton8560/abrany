@@ -383,6 +383,10 @@ function migrate(db: DatabaseSync) {
   addCol("certificates", "org_id", "org_id INTEGER REFERENCES orgs(id) ON DELETE SET NULL");
   addCol("certificates", "org_name", "org_name TEXT NOT NULL DEFAULT ''");
   addCol("certificates", "org_logo", "org_logo TEXT NOT NULL DEFAULT ''");
+  // reading sessions (mode='reading') can link an in-app book/chapter they read;
+  // both stay null for external/physical books (title lives in sessions.tags)
+  addCol("sessions", "book_id", "book_id INTEGER REFERENCES books(id) ON DELETE SET NULL");
+  addCol("sessions", "chapter_id", "chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL");
 
   // seed the community forums (idempotent; slugs are stable identifiers)
   const seedForum = db.prepare(
