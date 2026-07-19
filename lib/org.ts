@@ -63,6 +63,7 @@ export type Assignment = {
   status: "assigned" | "in_progress" | "passed" | "failed";
   completed_at: string | null;
   created_at: string;
+  program_id: number | null;
 };
 
 /** An assignment joined with everything a manager needs to see at a glance. */
@@ -258,6 +259,7 @@ export function createAssignment(input: {
   note?: string;
   dueAt?: string | null;
   curriculum: CurriculumInput;
+  programId?: number | null;
 }): Assignment {
   const db = getDb();
   const cur = input.curriculum;
@@ -285,14 +287,31 @@ export function createAssignment(input: {
   }
   const info = db
     .prepare(
-      "INSERT INTO assignments (org_id, user_id, goal_id, assigned_by, note, due_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO assignments (org_id, user_id, goal_id, assigned_by, note, due_at, program_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .run(input.orgId, input.userId, goal.id, input.assignedBy ?? null, input.note ?? "", input.dueAt ?? null);
+    .run(
+      input.orgId,
+      input.userId,
+      goal.id,
+      input.assignedBy ?? null,
+      input.note ?? "",
+      input.dueAt ?? null,
+      input.programId ?? null,
+    );
   return getAssignment(Number(info.lastInsertRowid))!;
 }
 
 export function getAssignment(id: number): Assignment | undefined {
   return getDb().prepare("SELECT * FROM assignments WHERE id = ?").get(id) as Assignment | undefined;
+}
+
+/** True if this employee already has a non-failed assignment from this program. */
+export function hasActiveAssignmentForProgram(orgId: number, userId: number, programId: number): boolean {
+  return !!getDb()
+    .prepare(
+      "SELECT 1 FROM assignments WHERE org_id = ? AND user_id = ? AND program_id = ? AND status != 'failed' LIMIT 1",
+    )
+    .get(orgId, userId, programId);
 }
 
 export function deleteAssignment(orgId: number, id: number): void {

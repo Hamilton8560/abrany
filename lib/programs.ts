@@ -1,5 +1,7 @@
 import { getDb } from "./db";
-import type { CurriculumInput } from "./org";
+import { createAssignment, memberRole, hasActiveAssignmentForProgram, type CurriculumInput } from "./org";
+import { enqueueTranslation } from "./worker";
+import { isSupported } from "./languages";
 import type { LessonKind } from "./repo";
 
 /**
@@ -151,4 +153,67 @@ export function snapshotGoalToProgram(
     })),
   };
   return createProgram(orgId, curriculum, sourceLang, createdBy);
+}
+
+/**
+ * Deploy a program to many employees at once. Each employee gets their own copy
+ * (a goal under their account) via the existing createAssignment; we stamp
+ * program_id for cohort grouping and pre-enqueue a translation of every lesson
+ * that has content into the employee's language (skipped when it matches the
+ * program's source language). Employees already actively assigned this program
+ * are skipped rather than duplicated.
+ */
+export function deployProgram(input: {
+  orgId: number;
+  programId: number;
+  userIds: number[];
+  dueAt?: string | null;
+  note?: string;
+  assignedBy?: number | null;
+}): { deployed: number; skipped: number; results: { userId: number; status: "deployed" | "skipped" | "error"; error?: string }[] } {
+  const db = getDb();
+  const program = getProgram(input.programId);
+  if (!program || program.org_id !== input.orgId)
+    return { deployed: 0, skipped: 0, results: input.userIds.map((userId) => ({ userId, status: "error", error: "Program not found" })) };
+  const curriculum = programToCurriculum(input.programId)!;
+  const results: { userId: number; status: "deployed" | "skipped" | "error"; error?: string }[] = [];
+  let deployed = 0;
+  let skipped = 0;
+
+  for (const userId of input.userIds) {
+    if (!memberRole(input.orgId, userId)) {
+      results.push({ userId, status: "error", error: "Not a member of this organization" });
+      continue;
+    }
+    if (hasActiveAssignmentForProgram(input.orgId, userId, input.programId)) {
+      skipped++;
+      results.push({ userId, status: "skipped" });
+      continue;
+    }
+    const assignment = createAssignment({
+      orgId: input.orgId,
+      userId,
+      assignedBy: input.assignedBy ?? null,
+      note: input.note ?? "",
+      dueAt: input.dueAt ?? null,
+      curriculum,
+      programId: input.programId,
+    });
+    // pre-enqueue translations so content is ready when the employee opens it
+    const user = db.prepare("SELECT language FROM users WHERE id = ?").get(userId) as { language: string } | undefined;
+    const lang = user?.language ?? "en";
+    if (lang !== program.source_lang && isSupported(lang)) {
+      const lessons = db
+        .prepare(
+          `SELECT l.id FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id
+             JOIN plans p ON p.id = pi.plan_id
+           WHERE p.goal_id = ? AND l.content != '' AND l.content IS NOT NULL`,
+        )
+        .all(assignment.goal_id) as { id: number }[];
+      for (const l of lessons) enqueueTranslation("lesson", l.id, lang, userId);
+    }
+    deployed++;
+    results.push({ userId, status: "deployed" });
+  }
+  return { deployed, skipped, results };
 }
