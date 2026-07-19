@@ -359,6 +359,13 @@ function migrate(db: DatabaseSync) {
   addCol("lessons", "srs_last", "srs_last TEXT");
   // jobs run with the enqueuing user's AI credentials
   addCol("jobs", "user_id", "user_id INTEGER");
+  // idempotency key so a second click / concurrent request for the same target
+  // reuses the in-flight job instead of generating a duplicate.
+  addCol("jobs", "dedup_key", "dedup_key TEXT");
+  // hard backstop against a race: only ONE active (queued|running) job per key.
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_dedup ON jobs(dedup_key) WHERE dedup_key IS NOT NULL AND status IN ('queued','running')",
+  );
   // each user's content is generated in their chosen language
   addCol("users", "language", "language TEXT NOT NULL DEFAULT 'en'");
   // display name for certificates (falls back to email local-part if empty)
@@ -391,6 +398,32 @@ function migrate(db: DatabaseSync) {
   // block completes the server logs it as a reading session (→ Temporal)
   addCol("timer_states", "book_id", "book_id INTEGER REFERENCES books(id) ON DELETE SET NULL");
   addCol("timer_states", "chapter_id", "chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL");
+
+  // the language a piece of content was authored in (NULL = unknown → detected
+  // lazily on first translate). Powers "show translate button only when it isn't
+  // already in my language" and stamps the epub/OPF correctly.
+  addCol("lessons", "language", "language TEXT");
+  addCol("chapters", "language", "language TEXT");
+  addCol("books", "language", "language TEXT");
+  addCol("presentations", "language", "language TEXT");
+  addCol("study_guides", "language", "language TEXT");
+
+  // cached AI translations of generated content, keyed by (kind, source, lang).
+  // `source_stamp` is the source row's updated_at at translation time — if the
+  // source is later regenerated, the stale cache entry is ignored/replaced.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS translations (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind         TEXT NOT NULL,            -- lesson|chapter|book|presentation|study_guide
+      source_id    INTEGER NOT NULL,
+      lang         TEXT NOT NULL,            -- target language code
+      title        TEXT NOT NULL DEFAULT '',
+      content      TEXT NOT NULL DEFAULT '',
+      source_stamp TEXT NOT NULL DEFAULT '',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(kind, source_id, lang)
+    );
+  `);
 
   // seed the community forums (idempotent; slugs are stable identifiers)
   const seedForum = db.prepare(

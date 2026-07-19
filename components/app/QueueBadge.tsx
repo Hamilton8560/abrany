@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type State = { active: number; queued: number; max: number };
+type State = { active: number; queued: number; max: number; pending?: number; running?: number };
 
 /** Live indicator of the shared MiniMax queue: how many AI calls are running/waiting. */
 export default function QueueBadge() {
@@ -27,7 +27,9 @@ export default function QueueBadge() {
     };
   }, []);
 
-  const busy = !!s && (s.active > 0 || s.queued > 0);
+  const running = s ? (s.running ?? s.active) : 0;
+  const pending = s ? (s.pending ?? s.queued) : 0;
+  const busy = !!s && (running > 0 || pending > 0);
 
   return (
     <div className="glassx flex items-center gap-2.5 rounded-full px-3 py-2">
@@ -43,7 +45,7 @@ export default function QueueBadge() {
       <span className="text-[11px] font-medium text-muted">
         {s
           ? busy
-            ? `AI ${s.active}/${s.max}${s.queued ? ` · ${s.queued} queued` : ""}`
+            ? `AI ${running} generating${pending ? ` · ${pending} queued` : ""}`
             : "AI idle"
           : "AI …"}
       </span>

@@ -3,6 +3,7 @@ import {
   finishJob,
   requeueJob,
   enqueueJobRow,
+  findActiveJob,
   recoverOrphanedJobs,
   getLesson,
   setLessonStatus,
@@ -24,9 +25,18 @@ import {
   milestoneReadySections,
   type Job,
 } from "./repo";
-import { generateLessonContent, generatePresentation, generateChapter, generateStudyGuide } from "./coach";
+import {
+  generateLessonContent,
+  generatePresentation,
+  generateChapter,
+  generateStudyGuide,
+  translateMarkdownChunked,
+  translateLine,
+} from "./coach";
 import { braveSearch } from "./search";
 import { withLlm, resolveUserLlm } from "./minimax";
+import { readContent, saveTranslation, isContentKind } from "./translate";
+import { languageName } from "./languages";
 
 /**
  * Durable, continuous background worker. Jobs live in the `jobs` table so they
@@ -123,6 +133,19 @@ async function processJob(job: Job): Promise<void> {
     return;
   }
 
+  if (job.type === "generate_translation") {
+    const { kind, id, lang } = JSON.parse(job.payload) as { kind: string; id: number; lang: string };
+    if (!isContentKind(kind)) return;
+    const src = readContent(kind, id);
+    if (!src || !src.content.trim()) return;
+    const targetName = languageName(lang);
+    // chunked + sequential (stingy on the shared queue); title translated after.
+    const content = await translateMarkdownChunked(src.content, targetName);
+    const title = src.title.trim() ? await translateLine(src.title, targetName) : src.title;
+    saveTranslation(kind, id, lang, title, content, src.stamp);
+    return;
+  }
+
   throw new Error(`Unknown job type: ${job.type}`);
 }
 
@@ -138,7 +161,10 @@ function tick() {
     // run generation with the enqueuing user's AI credentials (owner → server env)
     const user = job.user_id ? getUser(job.user_id) : undefined;
     const creds = user ? (() => { const r = resolveUserLlm(user); return r.mode === "byo" ? r.creds : null; })() : null;
-    withLlm(creds, () => processJob(job), user?.language)
+    // translation carries its own explicit target language in the prompt — don't
+    // also inject the user's-language directive or the two would fight.
+    const lang = job.type === "generate_translation" ? undefined : user?.language;
+    withLlm(creds, () => processJob(job), lang)
       .then(() => finishJob(job.id, "done"))
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
@@ -175,34 +201,52 @@ export function ensureWorker(): void {
   (g.__abranyWorker.timer as { unref?: () => void }).unref?.();
 }
 
-/** Queue a lesson for background generation. */
+/** Queue a lesson for background generation (idempotent while one is in flight). */
 export function enqueueLesson(lessonId: number, userId: number): Job {
+  const existing = findActiveJob(`lesson:${lessonId}`);
+  if (existing) return existing;
   setLessonStatus(lessonId, "queued");
-  const job = enqueueJobRow("generate_lesson", { lessonId }, userId);
+  const job = enqueueJobRow("generate_lesson", { lessonId }, userId, `lesson:${lessonId}`);
   ensureWorker();
   return job;
 }
 
-/** Queue a presentation deck for background generation. */
+/** Queue a presentation deck for background generation (idempotent). */
 export function enqueuePresentation(presentationId: number, userId: number): Job {
+  const existing = findActiveJob(`presentation:${presentationId}`);
+  if (existing) return existing;
   setPresentationStatus(presentationId, "generating");
-  const job = enqueueJobRow("generate_presentation", { presentationId }, userId);
+  const job = enqueueJobRow("generate_presentation", { presentationId }, userId, `presentation:${presentationId}`);
   ensureWorker();
   return job;
 }
 
-/** Queue one book chapter for background generation. */
+/** Queue one book chapter for background generation (idempotent). */
 export function enqueueChapter(chapterId: number, userId: number): Job {
+  const existing = findActiveJob(`chapter:${chapterId}`);
+  if (existing) return existing;
   setChapterStatus(chapterId, "queued");
-  const job = enqueueJobRow("generate_chapter", { chapterId }, userId);
+  const job = enqueueJobRow("generate_chapter", { chapterId }, userId, `chapter:${chapterId}`);
   ensureWorker();
   return job;
 }
 
-/** Queue a study guide for background generation. */
+/** Queue a study guide for background generation (idempotent). */
 export function enqueueStudyGuide(guideId: number, userId: number): Job {
+  const existing = findActiveJob(`guide:${guideId}`);
+  if (existing) return existing;
   setStudyGuideStatus(guideId, "generating");
-  const job = enqueueJobRow("generate_study_guide", { guideId }, userId);
+  const job = enqueueJobRow("generate_study_guide", { guideId }, userId, `guide:${guideId}`);
+  ensureWorker();
+  return job;
+}
+
+/** Queue a content translation for background generation (idempotent per target). */
+export function enqueueTranslation(kind: string, id: number, lang: string, userId: number): Job {
+  const key = `translation:${kind}:${id}:${lang}`;
+  const existing = findActiveJob(key);
+  if (existing) return existing;
+  const job = enqueueJobRow("generate_translation", { kind, id, lang }, userId, key);
   ensureWorker();
   return job;
 }

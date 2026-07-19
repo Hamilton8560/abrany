@@ -1,5 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 import { complete, type ChatMessage } from "./minimax";
+import { chunkMarkdown } from "./translate";
 
 /**
  * The Abrany coach persona + structured plan generation.
@@ -419,6 +420,68 @@ When a concept is inherently visual or structural, include a diagram. Use a \`\`
       },
     ],
   });
+}
+
+/* ── Translation: render existing content into another language ── */
+
+/**
+ * Faithfully translate generated markdown into `targetLangName`, preserving all
+ * structure. Runs on whatever model the caller's `withLlm` scope resolves — so a
+ * keyless English learner on a free-AI deployment can translate a Spanish course
+ * for free. NOTE: pass the RAW target language name (e.g. "English"), not a
+ * language directive, and DO NOT wrap this call in a `withLanguage`-injected
+ * scope pinned to the reader's own language — that would fight the instruction.
+ */
+export async function translateMarkdown(markdown: string, targetLangName: string): Promise<string> {
+  if (!markdown.trim()) return markdown;
+  // Translation output ≈ input length; cap proportionally so it can't run away,
+  // and prefer the fast non-reasoning model (K3's thinking is wasted on translation).
+  const maxTokens = Math.min(16000, Math.max(2000, Math.ceil(markdown.length / 2) + 1000));
+  const out = await complete({
+    prefer: "minimax",
+    maxTokens,
+    system: `You are an expert translator. Translate the user's markdown document into ${targetLangName}.
+
+STRICT RULES:
+- Output ONLY the translated document. No preamble, no notes, no fences around the whole thing.
+- Preserve EVERY markdown construct exactly: headings (#), lists, tables, bold/italic, links, blockquotes, and horizontal rules. Keep the literal slide separator lines (a line that is exactly ---) unchanged and in place.
+- Inside fenced code blocks (\`\`\`), translate ONLY comments and human-readable string literals; never translate code, identifiers, keywords, or syntax.
+- In \`\`\`mermaid and \`\`\`arch diagram blocks, translate the visible node/edge LABEL text only; leave diagram keywords, ids, arrows, and structure exactly as-is.
+- Keep URLs, file paths, code identifiers, math, and proper nouns unchanged.
+- Translate naturally and completely into ${targetLangName} — do not leave sentences in the original language.`,
+    temperature: 0.2,
+    messages: [{ role: "user", content: markdown }],
+  });
+  return out.trim();
+}
+
+/**
+ * Translate a long document by splitting it into fence-safe chunks and doing them
+ * ONE AT A TIME. Sequential (not parallel) is deliberate: each chunk is a small,
+ * fast MiniMax request, and holding just one shared queue slot at a time keeps us
+ * a good citizen when other users are generating too.
+ */
+export async function translateMarkdownChunked(markdown: string, targetLangName: string): Promise<string> {
+  if (!markdown.trim()) return markdown;
+  const chunks = chunkMarkdown(markdown, 3000);
+  if (chunks.length <= 1) return translateMarkdown(markdown, targetLangName);
+  const out: string[] = [];
+  for (const c of chunks) out.push(await translateMarkdown(c, targetLangName));
+  return out.join("\n\n");
+}
+
+/** Translate a single short line (a title) into `targetLangName`. */
+export async function translateLine(text: string, targetLangName: string): Promise<string> {
+  const t = text.trim();
+  if (!t) return text;
+  const out = await complete({
+    prefer: "minimax",
+    system: `Translate the user's text into ${targetLangName}. Output ONLY the translation — no quotes, no notes, no punctuation you weren't given. Keep proper nouns and code identifiers unchanged.`,
+    maxTokens: 400,
+    temperature: 0.2,
+    messages: [{ role: "user", content: t }],
+  });
+  return out.trim().replace(/^["']|["']$/g, "") || text;
 }
 
 /* ── "Quiz me": generate + grade a recall quiz for spaced review ── */

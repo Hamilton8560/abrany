@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, fmtWhen } from "@/lib/client";
 import { GuideIcon, PlusIcon, ChatIcon } from "@/components/icons";
 import Markdown from "./Markdown";
+import { useContentTranslation, TranslateButton } from "./TranslateControl";
 import ListenButton from "./ListenButton";
 import QueueHint from "./QueueHint";
 
@@ -33,6 +34,7 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
   const [reading, setReading] = useState<Guide | null>(null);
   const [creating, setCreating] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tr = useContentTranslation("study_guide", reading?.id ?? 0, reading?.title ?? "", reading?.content ?? "");
 
   const refresh = useCallback(async () => {
     try {
@@ -91,11 +93,12 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
               {SOURCE_LABEL[reading.source]} study guide
             </p>
             <h2 className="mt-1 font-display text-[clamp(22px,4vw,30px)] font-extrabold uppercase leading-[1.05] text-ink">
-              {reading.title}
+              {tr.displayTitle}
             </h2>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {reading.status === "ready" && reading.content && <ListenButton text={reading.content} />}
+            {reading.status === "ready" && reading.content && <TranslateButton t={tr} />}
+            {reading.status === "ready" && reading.content && <ListenButton text={tr.displayContent} />}
             <Link
               href={`/app/coach?guide=${reading.id}`}
               className="glassx-dark flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-semibold text-white"
@@ -107,7 +110,7 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
 
         <article className="glass rounded-[var(--radius-card-lg)] p-6 sm:p-8 [&_h2]:mt-6 [&_h2]:font-display [&_h2]:text-[19px] [&_h2]:font-bold [&_h2]:uppercase [&_h2]:tracking-wide [&_p]:text-[15px] [&_p]:leading-[1.7] [&_li]:text-[15px]">
           {reading.status === "ready" ? (
-            <Markdown>{reading.content}</Markdown>
+            <Markdown>{tr.displayContent}</Markdown>
           ) : reading.status === "error" ? (
             <p className="text-[14px] text-accent">Generation failed: {reading.error || "unknown error"}</p>
           ) : (

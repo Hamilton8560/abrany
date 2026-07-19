@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { motion, useReducedMotion, type Variants } from "motion/react";
 import {
   BrainGlyph,
@@ -42,7 +43,7 @@ const fade: Variants = {
 
 function StartTrainingPill() {
   return (
-    <a
+    <Link
       href="/app"
       className="glassx group inline-flex items-center gap-[14px] rounded-full py-[7px] pl-[7px] pr-[7px] shadow-[var(--shadow-cta)] transition-transform duration-300 hover:-translate-y-0.5"
     >
@@ -53,7 +54,7 @@ function StartTrainingPill() {
       <span className="glassx grid size-[42px] place-items-center rounded-full text-ink transition-transform duration-300 group-hover:translate-x-0.5">
         <ArrowRight className="size-4" />
       </span>
-    </a>
+    </Link>
   );
 }
 
