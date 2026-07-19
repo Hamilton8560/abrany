@@ -8,6 +8,7 @@ import type { Book, Chapter } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
 import QueueHint from "@/components/app/QueueHint";
 import BookCover from "@/components/app/BookCover";
+import ReadingNudge from "@/components/app/ReadingNudge";
 import { ArrowRight, CheckIcon } from "@/components/icons";
 
 type Resp = { book: Book; chapters: Chapter[] };
@@ -92,6 +93,10 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
         >
           <ArrowRight className="size-3.5 rotate-180" /> Contents
         </button>
+
+        {current.status === "ready" && (
+          <ReadingNudge bookId={book.id} chapterId={current.id} bookTitle={book.title} />
+        )}
 
         <header className="text-center">
           <p className="text-[12px] font-semibold uppercase tracking-[3px] text-accent">

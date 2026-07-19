@@ -219,6 +219,53 @@ export function finalizeTimerIfDue(userId: number): { timer: TimerState; justCom
   return { timer, justCompleted: true };
 }
 
+/** minimum elapsed time (seconds) an abandoned block must have to be worth logging */
+const MIN_LOGGABLE_SEC = 60;
+
+/**
+ * Stop the timer early. If a focus/reading block was in progress, log the time
+ * actually elapsed (when it clears MIN_LOGGABLE_SEC) so a stopped-short session
+ * still counts, then reset to idle. Breaks and trivially-short blocks log
+ * nothing. The elapsed time is computed server-side (not client-supplied).
+ */
+export function stopTimer(userId: number): { timer: TimerState; logged: boolean } {
+  const t = getTimerState(userId);
+  const fullSec = t.focus_min * 60;
+  let elapsedSec = 0;
+  if (t.running && t.end_at != null) {
+    const remaining = Math.max(0, Math.round((t.end_at - Date.now()) / 1000));
+    elapsedSec = Math.max(0, fullSec - remaining);
+  } else if (!t.running && t.left_sec > 0 && t.left_sec < fullSec) {
+    // paused mid-block
+    elapsedSec = fullSec - t.left_sec;
+  }
+
+  let logged = false;
+  if (t.mode !== "break" && elapsedSec >= MIN_LOGGABLE_SEC) {
+    createSession({
+      userId,
+      mode: t.book_id ? "reading" : "focus",
+      durationSec: elapsedSec,
+      bookId: t.book_id,
+      chapterId: t.chapter_id,
+    });
+    logged = true;
+  }
+
+  const timer = setTimerState(userId, {
+    ...t,
+    mode: "focus",
+    running: 0,
+    end_at: null,
+    left_sec: t.focus_min * 60,
+    focus_accum: 0,
+    focus_start: null,
+    book_id: null,
+    chapter_id: null,
+  });
+  return { timer, logged };
+}
+
 /** All users (owner-only use: the impersonation / instructor picker). */
 export function listUsers(): Pick<User, "id" | "email" | "is_owner" | "language" | "created_at">[] {
   return getDb()

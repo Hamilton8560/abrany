@@ -368,21 +368,26 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   }, [persist]);
 
   const stop = useCallback(() => {
+    const wasActive = state.status === "running" || state.status === "paused";
     activityRef.current = { bookId: null, chapterId: null };
-    setState((s) => {
-      endAtRef.current = null;
-      notifiedRef.current = true;
-      const next: LocalState = {
-        ...s,
-        status: "idle",
-        phase: "focus",
-        leftMs: s.focusMin * 60_000,
-      };
-      suppress();
+    endAtRef.current = null;
+    notifiedRef.current = true;
+    const next: LocalState = { ...state, status: "idle", phase: "focus", leftMs: state.focusMin * 60_000 };
+    setState(next);
+    suppress();
+    if (wasActive) {
+      // stopping an in-progress block: the server logs elapsed time if it's
+      // worth keeping, then resets the row
+      api<{ logged?: boolean }>("/api/timer/stop", { method: "POST" })
+        .then((d) => {
+          if (d?.logged) window.dispatchEvent(new Event("abrany:session-logged"));
+        })
+        .catch(() => {});
+    } else {
+      // dismissing a done/idle timer — nothing to log
       persist(next, null);
-      return next;
-    });
-  }, [persist]);
+    }
+  }, [state, persist]);
 
   const setFocusMin = useCallback(
     (min: number) => {
