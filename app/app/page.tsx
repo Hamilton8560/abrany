@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import PomodoroTimer from "@/components/app/PomodoroTimer";
+import FocusCard from "@/components/app/FocusCard";
 import { api, fmtDuration, fmtWhen } from "@/lib/client";
-import type { Goal, Session, SessionStats } from "@/lib/repo";
+import type { Goal, SessionRow, SessionStats } from "@/lib/repo";
 import { ArrowRight, TargetIcon } from "@/components/icons";
 
-type SessionsResp = { sessions: (Session & { goal_title: string | null })[]; stats: SessionStats };
+type SessionsResp = { sessions: SessionRow[]; stats: SessionStats };
 
 export default function Dashboard() {
   const [stats, setStats] = useState<SessionStats | null>(null);
-  const [sessions, setSessions] = useState<(Session & { goal_title: string | null })[]>([]);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
 
   const load = useCallback(async () => {
@@ -26,6 +26,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     load().catch(() => {});
+    // refresh when the timer bridge logs a completed block
+    const onLogged = () => load().catch(() => {});
+    window.addEventListener("abrany:session-logged", onLogged);
+    return () => window.removeEventListener("abrany:session-logged", onLogged);
   }, [load]);
 
   return (
@@ -52,7 +56,7 @@ export default function Dashboard() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* timer */}
         <section className="glass rounded-[var(--radius-card-lg)] p-6 sm:p-8">
-          <PomodoroTimer onLogged={load} />
+          <FocusCard />
         </section>
 
         {/* side column */}
@@ -101,22 +105,29 @@ export default function Dashboard() {
               {sessions.length === 0 && (
                 <p className="text-[13px] text-muted">No sessions yet — run a focus block above.</p>
               )}
-              {sessions.map((s) => (
-                <div key={s.id} className="flex flex-col gap-0.5 border-b border-line/70 pb-3 last:border-0 last:pb-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12.5px] font-semibold text-ink">
-                      {fmtDuration(s.duration_sec)} focus
-                    </span>
-                    <span className="text-[11px] text-muted">{fmtWhen(s.created_at)}</span>
+              {sessions.map((s) => {
+                const reading = s.mode === "reading";
+                const bookLabel = reading ? s.book_title || s.tags : "";
+                return (
+                  <div key={s.id} className="flex flex-col gap-0.5 border-b border-line/70 pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12.5px] font-semibold text-ink">
+                        {fmtDuration(s.duration_sec)} {reading ? "reading" : "focus"}
+                      </span>
+                      <span className="text-[11px] text-muted">{fmtWhen(s.created_at)}</span>
+                    </div>
+                    {reading && bookLabel && (
+                      <p className="line-clamp-1 text-[12.5px] font-medium text-ink/80">{bookLabel}</p>
+                    )}
+                    {s.notes && <p className="line-clamp-2 text-[12.5px] leading-snug text-muted">{s.notes}</p>}
+                    {!reading && s.goal_title && (
+                      <span className="mt-0.5 w-fit rounded-full bg-accent/10 px-2 py-0.5 text-[10.5px] font-medium text-accent">
+                        {s.goal_title}
+                      </span>
+                    )}
                   </div>
-                  {s.notes && <p className="line-clamp-2 text-[12.5px] leading-snug text-muted">{s.notes}</p>}
-                  {s.goal_title && (
-                    <span className="mt-0.5 w-fit rounded-full bg-accent/10 px-2 py-0.5 text-[10.5px] font-medium text-accent">
-                      {s.goal_title}
-                    </span>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         </div>

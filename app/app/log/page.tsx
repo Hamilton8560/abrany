@@ -19,6 +19,10 @@ export default function LogPage() {
 
   useEffect(() => {
     load();
+    // refresh when the timer bridge logs a completed focus/reading block
+    const onLogged = () => load();
+    window.addEventListener("abrany:session-logged", onLogged);
+    return () => window.removeEventListener("abrany:session-logged", onLogged);
   }, [load]);
 
   const sessions = data?.sessions ?? [];

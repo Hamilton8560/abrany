@@ -2,30 +2,42 @@
 
 import { useState } from "react";
 import { ArrowRight } from "@/components/icons";
+import { useTimer } from "@/components/timer/TimerProvider";
+import { useReadingActivity } from "@/components/app/ReadingActivityContext";
 
 /**
  * Soft, dismissible prompt encouraging the reader to run a focus block while
- * they read. Purely presentational — it owns no timer state. Wire `onStart` to
- * the focus timer's start() (optionally attaching the book/chapter) once that
- * API exists:
+ * they read. Fully self-wiring: it tags the block as reading this book/chapter
+ * and starts the global focus timer, so the completed block is logged as a
+ * reading session (→ Temporal) by <TimerSessionBridge>.
  *
- *   <ReadingNudge
- *     bookTitle={book.title}
- *     onStart={() => timer.start({ bookId: book.id, chapterId })}
- *   />
+ * Drop it onto a book/chapter reader (it must be inside the app layout, which
+ * provides <TimerProvider> and <ReadingActivityProvider>):
  *
- * Render it only when NO block is running (the parent decides that from timer
- * state) so it never nags mid-session.
+ *   <ReadingNudge bookId={book.id} chapterId={chapter?.id} bookTitle={book.title} />
+ *
+ * It hides itself while a timer is already running, so it never nags mid-block.
  */
 export default function ReadingNudge({
+  bookId,
+  chapterId,
   bookTitle,
-  onStart,
 }: {
+  bookId?: number | null;
+  chapterId?: number | null;
   bookTitle?: string;
-  onStart: () => void;
 }) {
+  const { startFocus, status, hydrated } = useTimer();
+  const { setReading } = useReadingActivity();
   const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
+
+  // only surface when idle (never mid-session) and after hydration
+  if (dismissed || !hydrated || status !== "idle") return null;
+
+  const start = () => {
+    setReading({ bookId: bookId ?? null, chapterId: chapterId ?? null, title: bookTitle });
+    startFocus();
+  };
 
   return (
     <div className="glass flex items-center gap-3 rounded-[var(--radius-card)] px-4 py-3">
@@ -39,7 +51,7 @@ export default function ReadingNudge({
       </div>
       <button
         type="button"
-        onClick={onStart}
+        onClick={start}
         className="glassx-dark inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-transform hover:-translate-y-0.5"
       >
         Start <ArrowRight className="size-3.5" />
