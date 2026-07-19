@@ -19,6 +19,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (effective.must_reset_password) redirect("/reset-password");
   const me = publicUser(effective);
 
+  // <TimerProvider> + <MiniTimer> are mounted once at the root layout
+  // (app/layout.tsx), so they span both the marketing site and the app.
   return (
     <div className="flex min-h-dvh flex-col">
       {impersonating && <ImpersonationBanner email={effective.email} />}

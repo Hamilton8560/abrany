@@ -17,7 +17,7 @@ export default function MiniTimer() {
   const t = useTimer();
   const pathname = usePathname();
 
-  const visible = t.hydrated && t.status !== "idle" && pathname !== "/focus";
+  const visible = t.hydrated && t.status !== "idle" && pathname !== "/app/timer";
   const isBreak = t.phase === "break";
   const color = isBreak ? "var(--color-up)" : "var(--color-accent)";
 
@@ -72,7 +72,7 @@ export default function MiniTimer() {
           ) : (
             <div className="glassx flex items-center gap-3 rounded-full py-2 pl-2 pr-2 shadow-[var(--shadow-cta)]">
               <Link
-                href="/focus"
+                href="/app/timer"
                 aria-label="Open focus timer"
                 className="relative grid place-items-center transition-transform duration-200 hover:scale-105"
               >

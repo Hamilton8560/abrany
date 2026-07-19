@@ -129,6 +129,8 @@ export type TimerState = {
   left_sec: number;
   focus_accum: number;
   focus_start: number | null;
+  book_id: number | null; // reading target for a focus block (→ Temporal on completion)
+  chapter_id: number | null;
   updated_at: string;
 };
 
@@ -141,6 +143,8 @@ const DEFAULT_TIMER: TimerState = {
   left_sec: 25 * 60,
   focus_accum: 0,
   focus_start: null,
+  book_id: null,
+  chapter_id: null,
   updated_at: "",
 };
 
@@ -154,12 +158,13 @@ export function getTimerState(userId: number): TimerState {
 export function setTimerState(userId: number, s: Omit<TimerState, "updated_at">): TimerState {
   getDb()
     .prepare(
-      `INSERT INTO timer_states (user_id, mode, focus_min, break_min, running, end_at, left_sec, focus_accum, focus_start, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `INSERT INTO timer_states (user_id, mode, focus_min, break_min, running, end_at, left_sec, focus_accum, focus_start, book_id, chapter_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(user_id) DO UPDATE SET
          mode=excluded.mode, focus_min=excluded.focus_min, break_min=excluded.break_min,
          running=excluded.running, end_at=excluded.end_at, left_sec=excluded.left_sec,
-         focus_accum=excluded.focus_accum, focus_start=excluded.focus_start, updated_at=datetime('now')`,
+         focus_accum=excluded.focus_accum, focus_start=excluded.focus_start,
+         book_id=excluded.book_id, chapter_id=excluded.chapter_id, updated_at=datetime('now')`,
     )
     .run(
       userId,
@@ -171,8 +176,94 @@ export function setTimerState(userId: number, s: Omit<TimerState, "updated_at">)
       s.left_sec,
       s.focus_accum,
       s.focus_start,
+      s.book_id ?? null,
+      s.chapter_id ?? null,
     );
   return getTimerState(userId);
+}
+
+/**
+ * If the user's running timer has passed its deadline, finalize it exactly
+ * once: log a session for a completed FOCUS block (reading if a book is
+ * attached → Temporal, else focus → Prefrontal) and reset the row. Idempotent
+ * and atomic-by-single-row — whichever device/request calls it first logs the
+ * session; later calls see running=0 and do nothing. This is what prevents
+ * duplicate logging across a user's open devices.
+ */
+export function finalizeTimerIfDue(userId: number): { timer: TimerState; justCompleted: boolean } {
+  const t = getTimerState(userId);
+  const due = t.running && t.end_at != null && t.end_at <= Date.now();
+  if (!due) return { timer: t, justCompleted: false };
+
+  // breaks are rest, not training — they complete but log nothing
+  if (t.mode !== "break") {
+    createSession({
+      userId,
+      mode: t.book_id ? "reading" : "focus",
+      durationSec: t.focus_min * 60,
+      bookId: t.book_id,
+      chapterId: t.chapter_id,
+    });
+  }
+  // reset to an acknowledged-complete state (left_sec=0 marks "done")
+  const timer = setTimerState(userId, {
+    ...t,
+    running: 0,
+    end_at: null,
+    left_sec: 0,
+    focus_accum: 0,
+    focus_start: null,
+    book_id: null,
+    chapter_id: null,
+  });
+  return { timer, justCompleted: true };
+}
+
+/** minimum elapsed time (seconds) an abandoned block must have to be worth logging */
+const MIN_LOGGABLE_SEC = 60;
+
+/**
+ * Stop the timer early. If a focus/reading block was in progress, log the time
+ * actually elapsed (when it clears MIN_LOGGABLE_SEC) so a stopped-short session
+ * still counts, then reset to idle. Breaks and trivially-short blocks log
+ * nothing. The elapsed time is computed server-side (not client-supplied).
+ */
+export function stopTimer(userId: number): { timer: TimerState; logged: boolean } {
+  const t = getTimerState(userId);
+  const fullSec = t.focus_min * 60;
+  let elapsedSec = 0;
+  if (t.running && t.end_at != null) {
+    const remaining = Math.max(0, Math.round((t.end_at - Date.now()) / 1000));
+    elapsedSec = Math.max(0, fullSec - remaining);
+  } else if (!t.running && t.left_sec > 0 && t.left_sec < fullSec) {
+    // paused mid-block
+    elapsedSec = fullSec - t.left_sec;
+  }
+
+  let logged = false;
+  if (t.mode !== "break" && elapsedSec >= MIN_LOGGABLE_SEC) {
+    createSession({
+      userId,
+      mode: t.book_id ? "reading" : "focus",
+      durationSec: elapsedSec,
+      bookId: t.book_id,
+      chapterId: t.chapter_id,
+    });
+    logged = true;
+  }
+
+  const timer = setTimerState(userId, {
+    ...t,
+    mode: "focus",
+    running: 0,
+    end_at: null,
+    left_sec: t.focus_min * 60,
+    focus_accum: 0,
+    focus_start: null,
+    book_id: null,
+    chapter_id: null,
+  });
+  return { timer, logged };
 }
 
 /** All users (owner-only use: the impersonation / instructor picker). */
@@ -338,12 +429,14 @@ export type PlanItemWithProgress = PlanItem & {
 export type Session = {
   id: number;
   goal_id: number | null;
-  mode: "focus" | "break";
+  mode: "focus" | "break" | "reading";
   started_at: string;
   ended_at: string | null;
   duration_sec: number;
   notes: string;
   tags: string;
+  book_id: number | null;
+  chapter_id: number | null;
   created_at: string;
 };
 
@@ -539,31 +632,42 @@ export function deleteLesson(id: number): void {
 
 /* ── Sessions ──────────────────────────────────────────── */
 
-export function listSessions(userId: number, limit = 100): (Session & { goal_title: string | null })[] {
+export type SessionRow = Session & {
+  goal_title: string | null;
+  book_title: string | null;
+  chapter_title: string | null;
+};
+
+export function listSessions(userId: number, limit = 100): SessionRow[] {
   return getDb()
     .prepare(
-      `SELECT s.*, g.title AS goal_title
-       FROM sessions s LEFT JOIN goals g ON g.id = s.goal_id
+      `SELECT s.*, g.title AS goal_title, b.title AS book_title, c.title AS chapter_title
+       FROM sessions s
+       LEFT JOIN goals g ON g.id = s.goal_id
+       LEFT JOIN books b ON b.id = s.book_id
+       LEFT JOIN chapters c ON c.id = s.chapter_id
        WHERE s.user_id = ?
        ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
     )
-    .all(userId, limit) as (Session & { goal_title: string | null })[];
+    .all(userId, limit) as SessionRow[];
 }
 
 export function createSession(input: {
   userId: number;
   goalId?: number | null;
-  mode?: "focus" | "break";
+  mode?: "focus" | "break" | "reading";
   durationSec: number;
   notes?: string;
   tags?: string;
+  bookId?: number | null;
+  chapterId?: number | null;
   startedAt?: string;
   endedAt?: string;
 }): Session {
   const info = getDb()
     .prepare(
-      `INSERT INTO sessions (user_id, goal_id, mode, duration_sec, notes, tags, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
+      `INSERT INTO sessions (user_id, goal_id, mode, duration_sec, notes, tags, book_id, chapter_id, started_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
     )
     .run(
       input.userId,
@@ -572,6 +676,8 @@ export function createSession(input: {
       Math.round(input.durationSec),
       input.notes ?? "",
       input.tags ?? "",
+      input.bookId ?? null,
+      input.chapterId ?? null,
       input.startedAt ?? null,
       input.endedAt ?? null,
     );

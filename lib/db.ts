@@ -390,6 +390,14 @@ function migrate(db: DatabaseSync) {
   addCol("certificates", "org_id", "org_id INTEGER REFERENCES orgs(id) ON DELETE SET NULL");
   addCol("certificates", "org_name", "org_name TEXT NOT NULL DEFAULT ''");
   addCol("certificates", "org_logo", "org_logo TEXT NOT NULL DEFAULT ''");
+  // reading sessions (mode='reading') can link an in-app book/chapter they read;
+  // both stay null for external/physical books (title lives in sessions.tags)
+  addCol("sessions", "book_id", "book_id INTEGER REFERENCES books(id) ON DELETE SET NULL");
+  addCol("sessions", "chapter_id", "chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL");
+  // a running timer can be tagged with the book/chapter being read, so when the
+  // block completes the server logs it as a reading session (→ Temporal)
+  addCol("timer_states", "book_id", "book_id INTEGER REFERENCES books(id) ON DELETE SET NULL");
+  addCol("timer_states", "chapter_id", "chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL");
 
   // the language a piece of content was authored in (NULL = unknown → detected
   // lazily on first translate). Powers "show translate button only when it isn't

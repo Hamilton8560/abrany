@@ -9,6 +9,7 @@ import Markdown from "@/components/app/Markdown";
 import { useContentTranslation, TranslateButton } from "@/components/app/TranslateControl";
 import QueueHint from "@/components/app/QueueHint";
 import BookCover from "@/components/app/BookCover";
+import ReadingNudge from "@/components/app/ReadingNudge";
 import { ArrowRight, CheckIcon } from "@/components/icons";
 
 type Resp = { book: Book; chapters: Chapter[] };
@@ -99,6 +100,10 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
           </button>
           {current.status === "ready" && current.content ? <TranslateButton t={tr} /> : null}
         </div>
+
+        {current.status === "ready" && (
+          <ReadingNudge bookId={book.id} chapterId={current.id} bookTitle={book.title} />
+        )}
 
         <header className="text-center">
           <p className="text-[12px] font-semibold uppercase tracking-[3px] text-accent">

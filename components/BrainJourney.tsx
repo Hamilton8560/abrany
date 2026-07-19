@@ -57,13 +57,13 @@ const BEATS: Beat[] = [
   },
   {
     n: "03",
-    region: "AMYGDALA",
-    title: ["Calm under", "pressure"],
-    copy: "Regulation exercises that lower reactivity and steady your stress response.",
+    region: "TEMPORAL LOBE",
+    title: ["Understand", "deeply"],
+    copy: "Reading and lectures that deepen comprehension — every minute you read trains it.",
     variant: "light",
     pos: "top-left",
     ghost: "bl",
-    still: "/regions/amygdala.webp",
+    still: "/regions/temporal.webp",
     lock: 0.75,
   },
   {
@@ -85,7 +85,7 @@ type Seg =
   | { type: "lock"; at: number; scene: number; w: number };
 
 // clean region end-frames (0-based indices into the frame sequence):
-// f_050 prefrontal · f_100 hippocampus · f_150 amygdala · f_200 cerebellum
+// f_050 prefrontal · f_100 hippocampus · f_150 temporal · f_200 cerebellum
 const LOCK_FRAME = [49, 99, 149, 200];
 const LV = LOCK_FRAME.map((f) => f / (FRAME_COUNT - 1));
 
