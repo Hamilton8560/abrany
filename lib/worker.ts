@@ -34,7 +34,7 @@ import {
   translateLine,
 } from "./coach";
 import { braveSearch } from "./search";
-import { withLlm, resolveUserLlm } from "./minimax";
+import { withLlm, withMinimaxTranslation, resolveUserLlm } from "./minimax";
 import { readContent, saveTranslation, isContentKind } from "./translate";
 import { languageName } from "./languages";
 
@@ -160,11 +160,15 @@ function tick() {
     w.inFlight++;
     // run generation with the enqueuing user's AI credentials (owner → server env)
     const user = job.user_id ? getUser(job.user_id) : undefined;
+    const isTranslation = job.type === "generate_translation";
     const creds = user ? (() => { const r = resolveUserLlm(user); return r.mode === "byo" ? r.creds : null; })() : null;
-    // translation carries its own explicit target language in the prompt — don't
-    // also inject the user's-language directive or the two would fight.
-    const lang = job.type === "generate_translation" ? undefined : user?.language;
-    withLlm(creds, () => processJob(job), lang)
+    // Translation ALWAYS runs on the server MiniMax, whatever provider the user
+    // brings. Every other job runs on the enqueuing user's creds (owner → server
+    // env). Translation carries its target language in the prompt, so no directive.
+    const run = isTranslation
+      ? withMinimaxTranslation(() => processJob(job))
+      : withLlm(creds, () => processJob(job), user?.language);
+    run
       .then(() => finishJob(job.id, "done"))
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
