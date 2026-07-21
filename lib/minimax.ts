@@ -48,7 +48,7 @@ const DEFAULTS: Record<Provider, { style: Style; baseURL: string; model: string 
 export const PROVIDERS = Object.keys(DEFAULTS) as Provider[];
 
 /* ── per-request credential context ────────────────────────── */
-type LlmCtx = { creds: LlmCreds | null; lang?: string };
+type LlmCtx = { creds: LlmCreds | null; lang?: string; forceServer?: "minimax" };
 type G = typeof globalThis & { __llmStore?: AsyncLocalStorage<LlmCtx | null>; __llmRR?: number; __llmClients?: Map<string, Resolved> };
 const g = globalThis as G;
 const store = (g.__llmStore ??= new AsyncLocalStorage<LlmCtx | null>());
@@ -61,6 +61,16 @@ const store = (g.__llmStore ??= new AsyncLocalStorage<LlmCtx | null>());
  */
 export function withLlm<T>(creds: LlmCreds | null, fn: () => Promise<T>, lang?: string): Promise<T> {
   return store.run({ creds, lang }, fn);
+}
+
+/**
+ * Run `fn` pinned to the server's MiniMax model — ignoring any per-user creds and
+ * the Kimi fallback. Translation ALWAYS goes through MiniMax, whatever provider a
+ * user brings, so localized content is consistent and never routed to a reasoning
+ * model (K3) that isn't suited to translation.
+ */
+export function withMinimaxTranslation<T>(fn: () => Promise<T>): Promise<T> {
+  return store.run({ creds: null, forceServer: "minimax" }, fn);
 }
 
 /** Prepend the active language directive to a system prompt, if a language is set. */
@@ -142,7 +152,10 @@ function serverChain(prefer?: "minimax" | "kimi"): Resolved[] {
 
 /** Providers to attempt in order: BYO users get their one; server gets a fallback chain. */
 function attemptChain(prefer?: "minimax" | "kimi"): Resolved[] {
-  const creds = store.getStore()?.creds ?? null;
+  const ctx = store.getStore();
+  // Forced (translation): server MiniMax only — never a user's provider or Kimi.
+  if (ctx?.forceServer === "minimax") return [serverClient("minimax")];
+  const creds = ctx?.creds ?? null;
   return creds ? [clientFor(creds)] : serverChain(prefer);
 }
 
