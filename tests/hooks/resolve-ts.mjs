@@ -12,12 +12,17 @@ const EXTENSIONS = [".ts", ".tsx", ".mjs", ".js"];
 
 export async function resolve(specifier, context, nextResolve) {
   const isRelative = specifier.startsWith("./") || specifier.startsWith("../");
-  const hasExtension = /\.[a-zA-Z0-9]+$/.test(specifier.split("?")[0]);
+  const queryIndex = specifier.indexOf("?");
+  const path = queryIndex === -1 ? specifier : specifier.slice(0, queryIndex);
+  const query = queryIndex === -1 ? "" : specifier.slice(queryIndex);
+  const hasExtension = /\.[a-zA-Z0-9]+$/.test(path);
   if (isRelative && !hasExtension && context.parentURL) {
-    const base = new URL(specifier, context.parentURL);
+    const base = new URL(path, context.parentURL);
     for (const ext of EXTENSIONS) {
       if (existsSync(fileURLToPath(base) + ext)) {
-        return nextResolve(specifier + ext, context);
+        // Append the extension to the path portion, then re-attach the query string, so
+        // `./foo?raw` resolves to `./foo.ts?raw` rather than the malformed `./foo?raw.ts`.
+        return nextResolve(path + ext + query, context);
       }
     }
   }
