@@ -49,3 +49,9 @@ test("manual enroll clears opt-out and is due today", () => {
   assert.equal(row.srs_optout, 0);
   assert.equal(row.srs_due, new Date().toISOString().slice(0, 10)); // date('now')
 });
+
+test("completing then autoEnrolling a ready lesson enrolls exactly once", () => {
+  const { lesson } = seedReadyLesson();
+  assert.equal(autoEnrollLesson(lesson.id).enrolled, true); // first completion
+  assert.equal(autoEnrollLesson(lesson.id).enrolled, false); // unchecking + re-checking won't re-add
+});

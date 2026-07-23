@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLesson, setLessonCompleted, updateLessonFields, deleteLesson, userOwnsLesson } from "@/lib/repo";
+import { getLesson, setLessonCompleted, updateLessonFields, deleteLesson, userOwnsLesson, autoEnrollLesson } from "@/lib/repo";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -28,7 +28,14 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/lessons/[i
       objective: typeof body.objective === "string" ? body.objective : undefined,
     });
   }
-  const lesson = body.done !== undefined ? setLessonCompleted(Number(id), !!body.done) : getLesson(Number(id));
+  let enrolled = false;
+  if (body.done !== undefined) {
+    const updated = setLessonCompleted(Number(id), !!body.done);
+    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (body.done === true) enrolled = autoEnrollLesson(Number(id)).enrolled;
+    return NextResponse.json({ lesson: updated, enrolled });
+  }
+  const lesson = getLesson(Number(id));
   if (!lesson) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ lesson });
 }

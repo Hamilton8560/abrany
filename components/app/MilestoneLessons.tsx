@@ -36,6 +36,7 @@ export default function MilestoneLessons({
   const [expanding, setExpanding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Lesson | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Mark a section read/done (optimistic) and let the parent refresh the plan %.
@@ -46,7 +47,14 @@ export default function MilestoneLessons({
       );
       setViewing((v) => (v && v.id === lesson.id ? { ...v, completed_at: done ? new Date().toISOString() : null } : v));
       try {
-        await api(`/api/lessons/${lesson.id}`, { method: "PATCH", body: JSON.stringify({ done }) });
+        const res = await api<{ lesson: Lesson; enrolled?: boolean }>(
+          `/api/lessons/${lesson.id}`,
+          { method: "PATCH", body: JSON.stringify({ done }) },
+        );
+        if (res.enrolled) {
+          setToast("✓ Added to your reviews — first check-in tomorrow.");
+          setTimeout(() => setToast(null), 4000);
+        }
         onProgress?.();
       } catch {
         setLessons((ls) => ls?.map((l) => (l.id === lesson.id ? { ...l, completed_at: lesson.completed_at } : l)) ?? ls);
@@ -260,6 +268,12 @@ export default function MilestoneLessons({
           onClose={() => setViewing(null)}
           onSetDone={(done) => setDone(viewing, done)}
         />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-ink px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   );
