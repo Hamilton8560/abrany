@@ -1230,13 +1230,63 @@ export function dueCount(userId: number): number {
   return r.c;
 }
 
-export type SrsUpcoming = { enrolled: number; dueToday: number };
+export type SrsUpcoming = { enrolled: number; dueToday: number; learning: number; mastered: number };
 
 export function srsSummary(userId: number): SrsUpcoming {
-  const enrolled = (getDb()
-    .prepare(`SELECT COUNT(*) c ${DUE_JOIN} WHERE g.user_id = ? AND l.srs_due IS NOT NULL`)
-    .get(userId) as { c: number }).c;
-  return { enrolled, dueToday: dueCount(userId) };
+  const row = getDb()
+    .prepare(
+      `SELECT
+         COUNT(*) AS enrolled,
+         SUM(CASE WHEN l.srs_reps < 2 THEN 1 ELSE 0 END) AS learning,
+         SUM(CASE WHEN l.srs_interval >= 21 THEN 1 ELSE 0 END) AS mastered
+       ${DUE_JOIN}
+       WHERE g.user_id = ? AND l.srs_due IS NOT NULL`,
+    )
+    .get(userId) as { enrolled: number; learning: number | null; mastered: number | null };
+  return {
+    enrolled: row.enrolled,
+    dueToday: dueCount(userId),
+    learning: row.learning ?? 0,
+    mastered: row.mastered ?? 0,
+  };
+}
+
+export type UpcomingReview = { id: number; title: string; goal_title: string; srs_due: string };
+
+/** Next few lessons due after today (for the "coming up" preview). */
+export function upcomingReviews(userId: number, limit = 5): UpcomingReview[] {
+  return getDb()
+    .prepare(
+      `SELECT l.id, l.title, g.title AS goal_title, l.srs_due
+       ${DUE_JOIN}
+       WHERE g.user_id = ? AND l.srs_due IS NOT NULL AND date(l.srs_due) > date('now') AND l.status = 'ready'
+       ORDER BY l.srs_due, l.id LIMIT ?`,
+    )
+    .all(userId, limit) as UpcomingReview[];
+}
+
+export type EnrolledLesson = {
+  id: number;
+  title: string;
+  goal_id: number;
+  goal_title: string;
+  milestone_title: string;
+  srs_due: string;
+  srs_reps: number;
+  srs_interval: number;
+};
+
+/** Every lesson in the user's review rotation, grouped-friendly (goal, then due date). */
+export function enrolledLessons(userId: number): EnrolledLesson[] {
+  return getDb()
+    .prepare(
+      `SELECT l.id, l.title, g.id AS goal_id, g.title AS goal_title, pi.title AS milestone_title,
+              l.srs_due, l.srs_reps, l.srs_interval
+       ${DUE_JOIN}
+       WHERE g.user_id = ? AND l.srs_due IS NOT NULL
+       ORDER BY g.title, l.srs_due, l.id`,
+    )
+    .all(userId) as EnrolledLesson[];
 }
 
 /** Persist a computed SM-2 result and the next due date. */

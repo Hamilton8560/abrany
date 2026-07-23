@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/client";
 import { schedule, dueLabel, type Rating } from "@/lib/srs";
-import type { DueLesson, SrsUpcoming } from "@/lib/repo";
+import type { DueLesson, SrsUpcoming, UpcomingReview, EnrolledLesson } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
 import ReviewQuiz from "@/components/app/ReviewQuiz";
 import { ReviewIcon } from "@/components/icons";
 
-type Resp = { due: DueLesson[]; summary: SrsUpcoming };
+type Resp = { due: DueLesson[]; summary: SrsUpcoming; upcoming: UpcomingReview[]; rotation: EnrolledLesson[] };
 
 const RATINGS: { key: Rating; label: string; tone: string }[] = [
   { key: "again", label: "Again", tone: "bg-accent/12 text-accent hover:bg-accent/20" },
@@ -28,6 +28,8 @@ export default function ReviewPage() {
   const [grading, setGrading] = useState(false);
   const [recall, setRecall] = useState("");
   const [verdict, setVerdict] = useState<string | null>(null);
+  const [upcoming, setUpcoming] = useState<UpcomingReview[]>([]);
+  const [rotation, setRotation] = useState<EnrolledLesson[]>([]);
 
   const resetCard = () => {
     setRevealed(false);
@@ -41,6 +43,8 @@ export default function ReviewPage() {
     const d = await api<Resp>("/api/reviews");
     setQueue(d.due);
     setSummary(d.summary);
+    setUpcoming(d.upcoming);
+    setRotation(d.rotation);
     setI(0);
     resetCard();
   }, []);
@@ -66,6 +70,11 @@ export default function ReviewPage() {
     }
   };
 
+  const removeFromRotation = async (lessonId: number) => {
+    await api(`/api/lessons/${lessonId}/enroll`, { method: "DELETE" }).catch(() => {});
+    load().catch(() => {});
+  };
+
   return (
     <div className="mx-auto flex max-w-[720px] flex-col gap-7">
       <header>
@@ -81,8 +90,8 @@ export default function ReviewPage() {
         {summary && (
           <p className="mt-2 text-[14px] text-muted">
             {summary.dueToday > 0
-              ? `${summary.dueToday} due today · ${summary.enrolled} in your review rotation.`
-              : `${summary.enrolled} lessons in rotation. Your coach resurfaces weak ones and spaces out the ones you know.`}
+              ? `${summary.dueToday} due today · ${summary.learning} still learning · ${summary.mastered} mastered · ${summary.enrolled} in rotation.`
+              : `${summary.enrolled} in rotation · ${summary.learning} still learning · ${summary.mastered} mastered. Nothing due right now.`}
           </p>
         )}
       </header>
@@ -215,6 +224,55 @@ export default function ReviewPage() {
           </div>
         </section>
       )}
+
+      {upcoming.length > 0 && (
+        <section className="glass rounded-[var(--radius-card-lg)] p-6">
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-accent">Coming up</h2>
+          <ul className="mt-3 flex flex-col gap-2">
+            {upcoming.map((u) => (
+              <li key={u.id} className="flex items-center justify-between gap-3 text-[13.5px]">
+                <span className="truncate text-ink">{u.title}</span>
+                <span className="shrink-0 text-muted">{dueLabel(daysUntil(u.srs_due))}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {rotation.length > 0 && (
+        <details className="glass rounded-[var(--radius-card-lg)] p-6">
+          <summary className="cursor-pointer text-[12px] font-semibold uppercase tracking-wider text-accent">
+            Your rotation · {rotation.length}
+          </summary>
+          <ul className="mt-3 flex flex-col gap-2">
+            {rotation.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="min-w-0">
+                  <span className="truncate text-ink">{r.title}</span>
+                  <span className="ml-2 text-[11px] text-muted">{r.goal_title}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-muted">{dueLabel(daysUntil(r.srs_due))}</span>
+                  <button
+                    onClick={() => removeFromRotation(r.id)}
+                    className="text-[11.5px] font-semibold text-muted hover:text-accent"
+                  >
+                    Remove
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
+}
+
+/** Whole days from today to an ISO date string (yyyy-mm-dd), clamped at 0. */
+function daysUntil(iso: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(iso + "T00:00:00");
+  return Math.max(0, Math.round((due.getTime() - today.getTime()) / 86_400_000));
 }
