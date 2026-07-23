@@ -26,11 +26,15 @@ export default function ReviewPage() {
   const [quizzing, setQuizzing] = useState(false);
   const [suggested, setSuggested] = useState<Rating | null>(null);
   const [grading, setGrading] = useState(false);
+  const [recall, setRecall] = useState("");
+  const [verdict, setVerdict] = useState<string | null>(null);
 
   const resetCard = () => {
     setRevealed(false);
     setQuizzing(false);
     setSuggested(null);
+    setRecall("");
+    setVerdict(null);
   };
 
   const load = useCallback(async () => {
@@ -53,7 +57,7 @@ export default function ReviewPage() {
     try {
       await api(`/api/reviews/${current.id}`, {
         method: "POST",
-        body: JSON.stringify({ rating }),
+        body: JSON.stringify({ rating, recall_text: recall, verdict: verdict ?? undefined }),
       });
       resetCard();
       setI((n) => n + 1);
@@ -126,10 +130,19 @@ export default function ReviewPage() {
           </h2>
 
           <div className="mt-4 rounded-[14px] bg-white/55 px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">Try to recall</p>
-            <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink">
-              {current.objective || "Recall the key points of this lesson before revealing it."}
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
+              From memory — no peeking
             </p>
+            <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink">
+              {current.objective || "Explain what you learned in this lesson, in your own words."}
+            </p>
+            <textarea
+              value={recall}
+              onChange={(e) => setRecall(e.target.value)}
+              rows={4}
+              placeholder="Write what you remember…"
+              className="mt-3 w-full resize-none rounded-[12px] border border-line bg-white/70 px-3 py-2 text-[13.5px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
+            />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -137,14 +150,16 @@ export default function ReviewPage() {
               onClick={() => setRevealed((v) => !v)}
               className="glassx rounded-full px-4 py-2 text-[13px] font-semibold text-ink"
             >
-              {revealed ? "Hide lesson" : "Show lesson"}
+              {revealed ? "Hide lesson" : "Reveal & self-rate"}
             </button>
             {!quizzing && (
               <button
                 onClick={() => setQuizzing(true)}
-                className="glassx-dark rounded-full px-4 py-2 text-[13px] font-semibold text-white"
+                disabled={!recall.trim()}
+                title={recall.trim() ? "Have your coach grade your recall" : "Write your recall first"}
+                className="glassx-dark rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
               >
-                Quiz me
+                Grade my recall
               </button>
             )}
           </div>
@@ -156,7 +171,14 @@ export default function ReviewPage() {
           )}
 
           {quizzing && (
-            <ReviewQuiz key={current.id} lessonId={current.id} onSuggest={setSuggested} />
+            <ReviewQuiz
+              key={current.id}
+              lessonId={current.id}
+              objective={current.objective}
+              recall={recall}
+              onSuggest={setSuggested}
+              onVerdict={setVerdict}
+            />
           )}
 
           {/* grade buttons — the coach's suggested rating (after a quiz) is highlighted */}

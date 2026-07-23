@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLesson, saveReview, userOwnsLesson } from "@/lib/repo";
+import { getLesson, saveReview, userOwnsLesson, logReview } from "@/lib/repo";
 import { schedule, type Rating } from "@/lib/srs";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
@@ -28,5 +28,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reviews/[id
     rating,
   );
   saveReview(lesson.id, next);
+  const recallText = typeof body.recall_text === "string" ? body.recall_text : "";
+  const verdict = typeof body.verdict === "string" ? body.verdict : "";
+  if (recallText) logReview({ lessonId: lesson.id, userId: user.id, recallText, rating, verdict });
   return NextResponse.json({ next });
 }
