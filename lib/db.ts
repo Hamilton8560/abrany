@@ -470,6 +470,7 @@ function migrate(db: DatabaseSync) {
       verdict     TEXT NOT NULL DEFAULT '',
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE INDEX IF NOT EXISTS idx_review_log_lesson ON review_log(lesson_id);
   `);
 
   // seed the community forums (idempotent; slugs are stable identifiers)
