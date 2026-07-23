@@ -284,6 +284,7 @@ export type Lesson = {
   srs_ease: number;
   srs_reps: number;
   srs_last: string | null;
+  srs_optout: number; // 1 = user removed it from reviews; auto-enroll skips it
   created_at: string;
   updated_at: string;
 };
@@ -1168,19 +1169,38 @@ export function setChapterContent(id: number, content: string): void {
 
 /* ── Spaced repetition (assessments / follow-ups) ──────────── */
 
-/** Enroll a lesson in spaced review — due today, fresh SM-2 state. Idempotent. */
+/** Enroll a lesson in spaced review — due today, fresh SM-2 state, opt-out cleared. Manual. */
 export function enrollLesson(id: number): Lesson | undefined {
   getDb()
     .prepare(
       `UPDATE lessons SET srs_due = date('now'), srs_interval = 0, srs_ease = 2.3, srs_reps = 0,
-       updated_at = datetime('now') WHERE id = ? AND srs_due IS NULL`,
+       srs_optout = 0, updated_at = datetime('now') WHERE id = ? AND srs_due IS NULL`,
     )
     .run(id);
   return getLesson(id);
 }
 
+/** Remove a lesson from reviews and remember the opt-out so auto-enroll won't re-add it. */
 export function unenrollLesson(id: number): void {
-  getDb().prepare("UPDATE lessons SET srs_due = NULL WHERE id = ?").run(id);
+  getDb()
+    .prepare("UPDATE lessons SET srs_due = NULL, srs_optout = 1 WHERE id = ?")
+    .run(id);
+}
+
+/**
+ * Auto-enroll on lesson completion: only for ready, not-opted-out, not-already-enrolled lessons.
+ * First review is scheduled for tomorrow (interval 1) — recall the day after learning, not the
+ * same day. Idempotent; never throws for a missing row.
+ */
+export function autoEnrollLesson(id: number): { enrolled: boolean } {
+  const info = getDb()
+    .prepare(
+      `UPDATE lessons SET srs_due = date('now', '+1 day'), srs_interval = 1, srs_ease = 2.3,
+       srs_reps = 0, updated_at = datetime('now')
+       WHERE id = ? AND srs_due IS NULL AND srs_optout = 0 AND status = 'ready'`,
+    )
+    .run(id);
+  return { enrolled: info.changes > 0 };
 }
 
 const DUE_JOIN = `FROM lessons l
