@@ -30,6 +30,14 @@ export async function POST(request: Request, ctx: RouteContext<"/api/reviews/[id
   saveReview(lesson.id, next);
   const recallText = typeof body.recall_text === "string" ? body.recall_text : "";
   const verdict = typeof body.verdict === "string" ? body.verdict : "";
-  if (recallText) logReview({ lessonId: lesson.id, userId: user.id, recallText, rating, verdict });
+  // Persisting the recall attempt is non-fatal: the SM-2 reschedule above already committed,
+  // so a log-write hiccup must not fail the request (which would strand the card client-side).
+  if (recallText) {
+    try {
+      logReview({ lessonId: lesson.id, userId: user.id, recallText, rating, verdict });
+    } catch {
+      /* recall history is best-effort */
+    }
+  }
   return NextResponse.json({ next });
 }

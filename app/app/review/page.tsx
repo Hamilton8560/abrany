@@ -139,9 +139,10 @@ export default function ReviewPage() {
             <textarea
               value={recall}
               onChange={(e) => setRecall(e.target.value)}
+              disabled={quizzing}
               rows={4}
               placeholder="Write what you remember…"
-              className="mt-3 w-full resize-none rounded-[12px] border border-line bg-white/70 px-3 py-2 text-[13.5px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
+              className="mt-3 w-full resize-none rounded-[12px] border border-line bg-white/70 px-3 py-2 text-[13.5px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50 disabled:opacity-70"
             />
           </div>
 
