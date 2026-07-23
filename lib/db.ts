@@ -459,6 +459,19 @@ function migrate(db: DatabaseSync) {
     );
   `);
 
+  // one row per graded recall attempt (the learner's own words + the rating it earned).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS review_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_id   INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recall_text TEXT NOT NULL DEFAULT '',
+      rating      TEXT NOT NULL DEFAULT '',
+      verdict     TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // seed the community forums (idempotent; slugs are stable identifiers)
   const seedForum = db.prepare(
     "INSERT OR IGNORE INTO forums (slug, kind, title, description, order_index) VALUES (?, ?, ?, ?, ?)",

@@ -1252,6 +1252,39 @@ export function saveReview(
     .run(next.interval, next.ease, next.reps, Math.max(0, Math.round(next.interval)), id);
 }
 
+export type ReviewLogEntry = {
+  id: number;
+  lesson_id: number;
+  user_id: number;
+  recall_text: string;
+  rating: string;
+  verdict: string;
+  created_at: string;
+};
+
+/** Record one recall attempt (the learner's own words + the rating it earned). */
+export function logReview(args: {
+  lessonId: number;
+  userId: number;
+  recallText: string;
+  rating: string;
+  verdict?: string;
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO review_log (lesson_id, user_id, recall_text, rating, verdict)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(args.lessonId, args.userId, args.recallText, args.rating, args.verdict ?? "");
+}
+
+/** A lesson's recent recall attempts, newest first. */
+export function recentRecall(lessonId: number, limit = 5): ReviewLogEntry[] {
+  return getDb()
+    .prepare("SELECT * FROM review_log WHERE lesson_id = ? ORDER BY id DESC LIMIT ?")
+    .all(lessonId, limit) as ReviewLogEntry[];
+}
+
 /* ── Jobs (durable async queue) ────────────────────────────── */
 
 /** The active (queued or running) job for a dedup key, if one exists. */
