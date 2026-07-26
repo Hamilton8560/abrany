@@ -336,3 +336,46 @@ body {
 }
 .mind-portal { animation: mindPulse 2.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mind-portal { animation: none; } }
+
+/* ── Print-to-PDF for slide decks ──────────────────────────────────────────
+   SlideDeck portals an all-slides view (.deck-print-root) to <body>; on screen
+   it's hidden, and when printing we hide the entire app and lay out one slide
+   per landscape page. */
+.deck-print-root { display: none; }
+
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  html, body { background: #fff !important; }
+  /* hide every top-level app node, reveal only the deck */
+  body > *:not(.deck-print-root) { display: none !important; }
+  .deck-print-root { display: block !important; }
+
+  .deck-print-slide {
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    min-height: 170mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 6mm 4mm;
+    color: #1b2436;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .deck-print-slide:last-child { break-after: auto; page-break-after: auto; }
+  .deck-print-title { text-align: center; align-items: center; }
+
+  .deck-print-slide h1 { font-size: 34pt; font-weight: 800; text-transform: uppercase; line-height: 1.05; margin: 0 0 10pt; }
+  .deck-print-slide h2 { font-size: 22pt; font-weight: 800; margin: 0 0 12pt; border-bottom: 3px solid #ff4326; padding-bottom: 4pt; }
+  .deck-print-slide h3 { font-size: 15pt; font-weight: 700; margin: 8pt 0 4pt; }
+  .deck-print-slide p, .deck-print-slide li { font-size: 13pt; line-height: 1.5; margin: 3pt 0; }
+  .deck-print-slide ul, .deck-print-slide ol { padding-left: 18pt; }
+  .deck-print-slide em { color: #5c6675; font-style: normal; }
+  .deck-print-slide svg { max-width: 100%; height: auto; max-height: 120mm; }
+  .deck-print-slide img { max-width: 100%; height: auto; }
+  .deck-print-slide table { width: 100%; border-collapse: collapse; font-size: 11pt; }
+  .deck-print-slide th, .deck-print-slide td { border: 1px solid #9fb0c6; padding: 4pt 6pt; text-align: left; }
+  .deck-print-slide details { display: none; } /* never print a "couldn't render" fallback */
+}

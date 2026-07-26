@@ -105,19 +105,37 @@ export default function MermaidBlock({ code }: { code: string }) {
 
   useEffect(() => {
     let alive = true;
+    const rid = idRef.current;
     (async () => {
       try {
         const mermaid = await getMermaid();
-        try {
-          const { svg } = await mermaid.render(`${idRef.current}-a`, code.trim());
+        // Gate rendering on a successful parse. parse() validates the grammar with
+        // NO DOM side-effect; render() on invalid syntax appends its own "Syntax
+        // error in text" SVG to <body> and then throws *before* cleaning it up, so
+        // the orphaned error graphic would show on the slide even though we catch
+        // the throw below. Parsing first means render() only ever runs on valid
+        // input, so that error diagram is never drawn.
+        const renderIfValid = async (src: string, suffix: string) => {
+          const ok = await mermaid.parse(src, { suppressErrors: true });
+          if (!ok) return false;
+          const { svg } = await mermaid.render(`${rid}-${suffix}`, src);
           if (alive) setSvg(svg);
-        } catch {
-          // second chance: auto-repaired source
-          const { svg } = await mermaid.render(`${idRef.current}-b`, sanitizeMermaid(code));
-          if (alive) setSvg(svg);
-        }
+          return true;
+        };
+        if (await renderIfValid(code.trim(), "a")) return;
+        // second chance: auto-repaired source
+        if (await renderIfValid(sanitizeMermaid(code), "b")) return;
+        if (alive) setFailed(true);
       } catch {
         if (alive) setFailed(true);
+      } finally {
+        // Defense in depth: should a render ever throw *after* a clean parse,
+        // mermaid can still leave its temp <div id="d{id}"> (and the #{id} svg)
+        // orphaned in <body>. Remove any such leftovers for both attempts.
+        for (const suffix of ["a", "b"]) {
+          document.getElementById(`d${rid}-${suffix}`)?.remove();
+          document.getElementById(`${rid}-${suffix}`)?.remove();
+        }
       }
     })();
     return () => {

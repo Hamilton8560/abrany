@@ -7,12 +7,23 @@ import type { Presentation } from "@/lib/repo";
 import { ArrowRight, PlusIcon, SlidesIcon } from "@/components/icons";
 import DraftAssistant from "@/components/app/DraftAssistant";
 
+const PAGE_SIZE = 8;
+
 export default function PresentationsPage() {
   const [decks, setDecks] = useState<Presentation[]>([]);
   const [topic, setTopic] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const pageCount = Math.max(1, Math.ceil(decks.length / PAGE_SIZE));
+  const visible = decks.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  // keep the current page in range when the deck count changes (e.g. a deletion)
+  useEffect(() => {
+    if (page > pageCount - 1) setPage(pageCount - 1);
+  }, [page, pageCount]);
 
   const load = useCallback(async () => {
     const d = await api<{ presentations: Presentation[] }>("/api/presentations");
@@ -53,6 +64,7 @@ export default function PresentationsPage() {
     try {
       await api("/api/presentations", { method: "POST", body: JSON.stringify({ topic }) });
       setTopic("");
+      setPage(0); // jump back to the newest deck we just started
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the deck");
@@ -107,9 +119,31 @@ export default function PresentationsPage() {
         {decks.length === 0 && (
           <p className="text-[14px] text-muted">No decks yet — build one above.</p>
         )}
-        {decks.map((d) => (
+        {visible.map((d) => (
           <DeckRow key={d.id} deck={d} onDeleted={load} />
         ))}
+
+        {pageCount > 1 && (
+          <nav className="mt-2 flex items-center justify-between gap-3">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink transition-opacity disabled:opacity-40"
+            >
+              ← Prev
+            </button>
+            <span className="text-[12px] tabular-nums text-muted">
+              Page {page + 1} of {pageCount} · {decks.length} decks
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              disabled={page >= pageCount - 1}
+              className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink transition-opacity disabled:opacity-40"
+            >
+              Next →
+            </button>
+          </nav>
+        )}
       </section>
     </div>
   );

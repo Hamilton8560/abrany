@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Markdown from "./Markdown";
 import { ArrowRight, BrainGlyph } from "@/components/icons";
 
@@ -24,8 +25,14 @@ export default function SlideDeck({ content }: { content: string }) {
   );
   const [i, setI] = useState(0);
   const [fs, setFs] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const touchX = useRef<number | null>(null);
+
+  // The print view is portaled to <body> so print CSS can hide the whole app and
+  // show only the slides. It stays mounted (not print-triggered) so its Mermaid
+  // diagrams finish rendering in the background and are ready the instant you print.
+  useEffect(() => setMounted(true), []);
 
   const go = useCallback(
     (d: number) => setI((n) => Math.max(0, Math.min(slides.length - 1, n + d))),
@@ -174,6 +181,23 @@ export default function SlideDeck({ content }: { content: string }) {
           </button>
         </div>
       </div>
+
+      {/* Print-to-PDF: every slide, one per page. Hidden on screen; the print
+          stylesheet (globals.css) hides the app and reveals only this. */}
+      {mounted &&
+        createPortal(
+          <div className="deck-print-root" aria-hidden>
+            {slides.map((s, k) => (
+              <section
+                key={k}
+                className={`deck-print-slide${/^#\s/.test(s) ? " deck-print-title" : ""}`}
+              >
+                <Markdown>{s}</Markdown>
+              </section>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
