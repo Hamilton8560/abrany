@@ -28,6 +28,7 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Employer dashboard (/app/org): team, assignments + live progress, branding, API key
 - [x] Partner REST API (/api/v1) — author curricula with any AI model
 - [x] MCP endpoint (/api/mcp) — plug Abrany into Claude Code / any MCP client
+- [x] Partner focus-session stats: GET /api/v1/sessions — per member per UTC day, pomodoros (25+ min) + focus seconds
 - [x] White-label certificates (company logo + name, "in partnership with Abrany")
 - [x] Strategy report: why plans feel generalized + V2 design (docs/reports/…)
 - [x] V2 plans: intake → outcome-first milestones, hours math, difficulty ramp, capstone (legacy v1 untouched)
