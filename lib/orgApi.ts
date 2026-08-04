@@ -4,6 +4,7 @@ import {
   memberRole,
   listMembers,
   listAssignments,
+  listSessionDays,
   getAssignment,
   assignmentDetail,
   getOrgByApiKey,
@@ -112,6 +113,29 @@ export function buildAssignment(
 
 /* ── serializers shared by REST + MCP ──────────────────────── */
 
+/** Strict YYYY-MM-DD calendar date (rejects 2026-13-01 and friends). */
+const isDay = (s: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+
+const MAX_RANGE_DAYS = 366;
+
+/**
+ * Validate the `from`/`to` query params of GET /api/v1/sessions. Both are required,
+ * inclusive, UTC calendar days; the range is capped at 366 days.
+ */
+export function parseDateRange(url: string): { from: string; to: string } | { error: string } {
+  const q = new URL(url).searchParams;
+  const from = (q.get("from") ?? "").trim();
+  const to = (q.get("to") ?? "").trim();
+  if (!isDay(from) || !isDay(to))
+    return { error: "from and to are required as ISO dates (e.g. 2026-08-01)" };
+  if (from > to) return { error: "from must be on or before to" };
+  // from..to inclusive, so the span in midnight steps may be at most MAX_RANGE_DAYS - 1
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+  if (days >= MAX_RANGE_DAYS) return { error: `Keep the range to ${MAX_RANGE_DAYS} days or fewer` };
+  return { from, to };
+}
+
 export const memberJson = (org: Org) =>
   listMembers(org.id).map((m) => ({
     userId: m.user_id,
@@ -142,6 +166,19 @@ export const progressJson = (a: AssignmentProgress) => ({
 });
 
 export const assignmentsJson = (org: Org) => listAssignments(org.id).map(progressJson);
+
+/**
+ * Per member per calendar day (UTC): `pomodoros` = completed focus sessions of 25+
+ * minutes, `focusSec` = all focus seconds that day. Only member-days with at least
+ * one logged focus session appear — absence of a row means zero.
+ */
+export const sessionDaysJson = (org: Org, from: string, to: string) =>
+  listSessionDays(org.id, from, to).map((d) => ({
+    email: d.email,
+    date: d.day,
+    pomodoros: d.pomodoros,
+    focusSec: d.focus_sec,
+  }));
 
 export function assignmentDetailJson(org: Org, id: number) {
   const a = getAssignment(id);
