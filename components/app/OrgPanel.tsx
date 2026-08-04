@@ -1135,7 +1135,12 @@ function ApiTab({ org, refresh }: { org: OrgView; refresh: () => void }) {
           </pre>
           <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
             Also: GET /api/v1/members · POST /api/v1/members · GET /api/v1/assignments ·
-            GET /api/v1/assignments/:id (per-section reading time, grades, exams). Authenticate with
+            GET /api/v1/assignments/:id (per-section reading time, grades, exams) ·
+            GET /api/v1/sessions?from=YYYY-MM-DD&to=YYYY-MM-DD (per member per UTC day:
+            {" { email, date, pomodoros, focusSec }"} — pomodoros = completed focus sessions of 25+
+            minutes, ad-hoc ones included; a member-day with no focus sessions has no row, i.e. zero;
+            both dates are required and inclusive, up to 366 days per call).
+            Authenticate with
             <span className="font-mono text-ink"> Authorization: Bearer {"{key}"}</span>.
           </p>
         </div>
