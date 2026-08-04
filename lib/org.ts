@@ -421,6 +421,10 @@ export type OrgSessionDay = {
  * Per-member, per-calendar-day focus-session aggregates for an org, from/to inclusive.
  * Counts every logged focus session — including ad-hoc pomodoros with no goal/assignment —
  * which is exactly what assignment progress totals miss. Breaks never count.
+ *
+ * The raw `started_at` bounds are a sargable prefilter served by idx_sessions_user_started;
+ * they are widened a day either side so any stored UTC offset still falls inside, and the
+ * exact `date()` comparison below does the real bucketing.
  */
 export function listSessionDays(orgId: number, from: string, to: string): OrgSessionDay[] {
   return getDb()
@@ -431,11 +435,13 @@ export function listSessionDays(orgId: number, from: string, to: string): OrgSes
        FROM sessions s
        JOIN org_members m ON m.user_id = s.user_id AND m.org_id = ?
        JOIN users u ON u.id = s.user_id
-       WHERE s.mode = 'focus' AND date(s.started_at) BETWEEN ? AND ?
+       WHERE s.mode = 'focus'
+         AND s.started_at >= date(?, '-1 day') AND s.started_at < date(?, '+2 days')
+         AND date(s.started_at) BETWEEN ? AND ?
        GROUP BY s.user_id, day
        ORDER BY day, u.email`,
     )
-    .all(orgId, from, to) as OrgSessionDay[];
+    .all(orgId, from, to, from, to) as OrgSessionDay[];
 }
 
 /** The employee's view: what their company assigned them, with deadlines. */

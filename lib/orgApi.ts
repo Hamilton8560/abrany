@@ -114,8 +114,13 @@ export function buildAssignment(
 /* ── serializers shared by REST + MCP ──────────────────────── */
 
 /** Strict YYYY-MM-DD calendar date (rejects 2026-13-01 and friends). */
-const isDay = (s: string) =>
-  /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+const isDay = (s: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const t = Date.parse(`${s}T00:00:00Z`);
+  // out-of-range components (month 13, day 32) parse to NaN; rollovers (2026-02-30)
+  // parse fine but land on a different day than the one asked for
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
+};
 
 const MAX_RANGE_DAYS = 366;
 

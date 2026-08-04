@@ -86,6 +86,22 @@ test("sessions outside the date range are excluded", () => {
   assert.deepEqual(sessionDaysJson(org, "2026-08-01", "2026-08-04"), []);
 });
 
+test("the range includes its first and last UTC second, whatever the stored format", () => {
+  const { org, users } = seedOrg();
+  const [u] = users;
+  focus(u.id, 1500, "2026-08-01 00:00:00");
+  focus(u.id, 1500, "2026-08-04T23:59:59Z"); // ISO form buckets by the same UTC day
+  focus(u.id, 1500, "2026-08-05T02:00:00+05:00"); // 21:00Z on the 4th, so it belongs to the 4th
+  focus(u.id, 1500, "2026-08-05 00:00:00"); // first second after the window
+
+  const rows = sessionDaysJson(org, "2026-08-01", "2026-08-04");
+  assert.deepEqual(
+    rows.map((r) => r.date),
+    ["2026-08-01", "2026-08-04"],
+  );
+  assert.equal(rows[1].pomodoros, 2);
+});
+
 test("every member of the org appears under their own email", () => {
   const { org, users } = seedOrg({ members: 2 });
   focus(users[0].id, 1500, "2026-08-01 09:00:00");
@@ -134,7 +150,11 @@ test("parseDateRange rejects bad input with a clear error", () => {
   err("https://x.test/api/v1/sessions"); // missing both
   err("https://x.test/?from=2026-08-01"); // missing to
   err("https://x.test/?from=08-01-2026&to=2026-08-31"); // wrong format
-  err("https://x.test/?from=2026-02-30&to=2026-08-31"); // not a real date
+  err("https://x.test/?from=2026-02-30&to=2026-08-31"); // not a real date (rolls over)
+  err("https://x.test/?from=2026-13-01&to=2026-12-31"); // month out of range
+  err("https://x.test/?from=2026-00-10&to=2026-08-31"); // month zero
+  err("https://x.test/?from=2026-01-32&to=2026-08-31"); // day out of range
+  err("https://x.test/?from=2026-08-01&to=2026-13-01"); // out of range on `to` too
   err("https://x.test/?from=2026-08-31&to=2026-08-01"); // inverted
   err("https://x.test/?from=2026-01-01&to=2027-01-02"); // 367 days
 });
