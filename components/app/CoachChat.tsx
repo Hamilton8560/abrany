@@ -8,6 +8,7 @@ import { languageName } from "@/lib/languages";
 import { BrainGlyph, SendIcon } from "@/components/icons";
 import Markdown from "./Markdown";
 import Portal from "./Portal";
+import QueueHint from "./QueueHint";
 
 type ToolCall = { name: string; detail: string };
 type ChatMsg = { role: "user" | "assistant"; content: string; thinking?: string; tools?: ToolCall[] };
@@ -41,6 +42,9 @@ export default function CoachChat({
   const [pending, setPending] = useState<{ text: string; mismatch: Mismatch } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // a history load that resolves AFTER the user has started sending must not clobber the
+  // live conversation (it used to wipe the streaming bubble on slow first loads)
+  const sendEpoch = useRef(0);
 
   // A lesson pins the conversation to its goal's thread.
   useEffect(() => {
@@ -59,9 +63,13 @@ export default function CoachChat({
 
   useEffect(() => {
     setLoaded(false);
+    const epoch = sendEpoch.current;
     const q = scopeGoal != null ? `?goalId=${scopeGoal}` : "";
     api<{ messages: Message[] }>(`/api/chat${q}`)
-      .then((d) => setMessages(d.messages.map((m) => ({ role: m.role, content: m.content }))))
+      .then((d) => {
+        if (sendEpoch.current !== epoch) return; // the user already started talking — keep the live view
+        setMessages(d.messages.map((m) => ({ role: m.role, content: m.content })));
+      })
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [scopeGoal]);
@@ -104,6 +112,7 @@ export default function CoachChat({
     }
 
     setInput("");
+    sendEpoch.current++;
     setMessages((m) => [...m, { role: "user", content }, { role: "assistant", content: "", thinking: "", tools: [] }]);
     setStreaming(true);
 
@@ -140,6 +149,9 @@ export default function CoachChat({
       const patchLast = (fn: (last: ChatMsg) => ChatMsg) =>
         setMessages((m) => {
           const copy = [...m];
+          const last = copy[copy.length - 1];
+          // only ever patch the assistant bubble we appended; never a user turn, never nothing
+          if (!last || last.role !== "assistant") copy.push({ role: "assistant", content: "", thinking: "", tools: [] });
           copy[copy.length - 1] = fn(copy[copy.length - 1]);
           return copy;
         });
@@ -165,6 +177,14 @@ export default function CoachChat({
           else if (ev.t === "error") patchLast((l) => ({ ...l, content: l.content + `\n\n⚠️ ${String(ev.c)}` }));
         }
       }
+      // stream ended cleanly but nothing visible arrived: say so instead of leaving a blank
+      setMessages((m) => {
+        const last = m[m.length - 1];
+        if (last && last.role === "assistant" && !last.content.trim() && !(last.thinking || "").trim()) {
+          return [...m.slice(0, -1), { ...last, content: "⚠️ No reply came back. Please send that again." }];
+        }
+        return m;
+      });
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         setMessages((m) => {
@@ -447,9 +467,26 @@ function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {
           <div className="rounded-[18px] rounded-tl-[6px] bg-white/70 px-4 py-3">
             {shown ? <Markdown>{shown}</Markdown> : null}
             {streaming && <span className="anim-bob ml-0.5 inline-block h-3.5 w-[2px] bg-accent align-middle" />}
+            {/* nothing has arrived yet: say why, so a busy queue doesn't look like a hang */}
+            {streaming && !hasAnswer && !thinking && <WaitingNote />}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** After a couple of seconds with no tokens, show the live queue state instead of a bare cursor. */
+function WaitingNote() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShow(true), 2500);
+    return () => clearTimeout(t);
+  }, []);
+  if (!show) return null;
+  return (
+    <div className="mt-2 max-w-[420px]">
+      <QueueHint />
     </div>
   );
 }

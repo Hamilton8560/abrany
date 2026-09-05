@@ -158,6 +158,8 @@ export async function POST(request: Request) {
             send("text", chunk.text);
           }
         }, user.language);
+        // an empty reply must never look like a silent success — tell the client so it can offer a retry
+        if (!full.replace(REMEMBER, "").trim()) send("error", "The coach returned an empty reply. Please send that again.");
       } catch (err) {
         send("error", err instanceof Error ? err.message : "Coach is unavailable");
       } finally {

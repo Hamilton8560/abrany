@@ -54,3 +54,25 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Wired into all free-text surfaces: assignments, programs, goals, plan intake, presentations, books, study guides
 - [x] SMART-directed prompts per surface; personal context (learnerProfile) + today's-date resolution; `mustDraft` escape hatch
 - [ ] Later: co-pilot the Programs-monitor + partner API surfaces once built
+
+## Commercial hardening — American Iron employee path + education quality (2026-09-04)
+
+- [x] Org members inherit their company's AI (owner org → server keys; BYO owner → their key) — no more "add your key" for employees
+- [x] Assign education → background `build_course` job (plan → sections → exams → content); employee opens a READY course
+- [x] Just-in-time content: first 2 milestones eager, next milestone prefetched as the learner advances
+- [x] Company-assigned courses are locked (no delete/rebuild/structural edits) with an employer banner + deadline
+- [x] Assigned training surfaced first on Dashboard + Goals list (deadline, progress, status)
+- [x] Exam integrity: cached study guide, server-issued + stored questions, graded by index vs the whole course, unlock gate (all scoped sections complete)
+- [x] Password reset: public forgot-password, single-use token links, admin "Send reset link" (fixes trapped welcome email)
+- [x] Assignment deadline/note editing; due dates = end of day; destructive actions confirm; 401 → login
+- [x] `goalStats` / org progress scoped to the LATEST plan (rebuild used to double-count)
+- [x] Chat: one thread per goal, capped history, 16k output budget, New conversation, dynamic provider label
+- [x] Lesson-grounded tutor ("Ask the tutor" from any lesson) + hint-ladder teaching rules (TUTOR_SYSTEM)
+- [x] Lesson generation calibrated to level/outcomes/sibling lessons; practice stages = warm-up/core/stretch + hints + worked answers
+- [x] Interactive practice engine (ADR-0021): progressive problems, hint ladder, AI check, variants, debrief → section grade
+- [x] Overlays rendered via Portal (modals opened off-screen inside backdrop-filter cards)
+- [x] AI queue priority lanes: interactive requests never wait behind background generation
+- [x] Worker wakes on app render / health probe (restarts no longer strand queued jobs)
+- [ ] Localized transactional emails (spec Part B) — not built
+- [ ] Program monitor dashboard + partner `/api/v1/programs` — still open from the programs spec
+- [ ] Require a passed practice set before "complete" on company assignments? (David's call, see ADR-0021)

@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { acquireSlot, withQueue } from "./queue";
+import { acquireSlot, withQueue, type Priority } from "./queue";
 import { isFreeAiEnabled, getUser, type User } from "./repo";
 import { orgForUser } from "./org";
 import { languageDirective } from "./languages";
@@ -49,7 +49,7 @@ const DEFAULTS: Record<Provider, { style: Style; baseURL: string; model: string 
 export const PROVIDERS = Object.keys(DEFAULTS) as Provider[];
 
 /* ── per-request credential context ────────────────────────── */
-type LlmCtx = { creds: LlmCreds | null; lang?: string };
+type LlmCtx = { creds: LlmCreds | null; lang?: string; priority?: Priority };
 type G = typeof globalThis & { __llmStore?: AsyncLocalStorage<LlmCtx | null>; __llmRR?: number; __llmClients?: Map<string, Resolved> };
 const g = globalThis as G;
 const store = (g.__llmStore ??= new AsyncLocalStorage<LlmCtx | null>());
@@ -60,9 +60,16 @@ const store = (g.__llmStore ??= new AsyncLocalStorage<LlmCtx | null>());
  * AsyncLocalStorage so complete()/streamText() pick them up without threading
  * args through each coach function.
  */
-export function withLlm<T>(creds: LlmCreds | null, fn: () => Promise<T>, lang?: string): Promise<T> {
-  return store.run({ creds, lang }, fn);
+export function withLlm<T>(
+  creds: LlmCreds | null,
+  fn: () => Promise<T>,
+  lang?: string,
+  opts?: { priority?: Priority },
+): Promise<T> {
+  return store.run({ creds, lang, priority: opts?.priority ?? "interactive" }, fn);
 }
+
+const currentPriority = (): Priority => store.getStore()?.priority ?? "interactive";
 
 /** Prepend the active language directive to a system prompt, if a language is set. */
 function withLanguage(system: string): string {
@@ -262,7 +269,7 @@ export async function complete(params: {
   let lastErr: unknown = null;
   for (let i = 0; i < chain.length; i++) {
     try {
-      const text = await withQueue(() => runComplete(chain[i], system, params));
+      const text = await withQueue(() => runComplete(chain[i], system, params), { priority: currentPriority() });
       if (text && text.trim()) return text;
       lastErr = new Error(`Empty response from ${chain[i].model}`);
     } catch (err) {
@@ -291,7 +298,7 @@ export async function* streamText(params: {
 }): AsyncGenerator<StreamChunk, void, unknown> {
   const chain = attemptChain();
   const system = withLanguage(params.system);
-  const release = await acquireSlot();
+  const release = await acquireSlot(currentPriority());
   try {
     for (let i = 0; i < chain.length; i++) {
       const r = chain[i];

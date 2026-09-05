@@ -231,7 +231,7 @@ function tick() {
     // translation carries its own explicit target language in the prompt — don't
     // also inject the user's-language directive or the two would fight.
     const lang = job.type === "generate_translation" ? undefined : user?.language;
-    withLlm(creds, () => processJob(job), lang)
+    withLlm(creds, () => processJob(job), lang, { priority: "background" })
       .then(() => finishJob(job.id, "done"))
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
