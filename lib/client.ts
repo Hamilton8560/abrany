@@ -34,6 +34,11 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && typeof window !== "undefined" && !/^\/(login|signup|forgot|reset)/.test(window.location.pathname)) {
+    // the session expired (or was signed out in another tab): go sign in instead of
+    // sprinkling "Unauthorized" errors across every panel
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+  }
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
   return data as T;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/client";
 import type { Lesson } from "@/lib/repo";
 import Markdown from "./Markdown";
@@ -22,14 +23,19 @@ const kindLabel = (k: string) => KIND_LABEL[k as Lesson["kind"]] ?? "Lesson";
 export default function MilestoneLessons({
   planItemId,
   milestoneTitle,
+  goalId,
   onProgress,
   editing = false,
+  autoOpen = false,
 }: {
   planItemId: number;
   milestoneTitle: string;
+  goalId?: number;
   onProgress?: () => void;
   /** Course-edit mode: allows renaming/removing sections. */
   editing?: boolean;
+  /** Open the section list immediately (a built course shouldn't hide its sections behind a click). */
+  autoOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
@@ -38,6 +44,7 @@ export default function MilestoneLessons({
   const [viewing, setViewing] = useState<Lesson | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoOpened = useRef(false);
 
   // Mark a section read/done (optimistic) and let the parent refresh the plan %.
   const setDone = useCallback(
@@ -91,6 +98,14 @@ export default function MilestoneLessons({
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
   }, []);
+
+  // a built course arrives with its sections already there — show them without a click
+  useEffect(() => {
+    if (!autoOpen || autoOpened.current) return;
+    autoOpened.current = true;
+    setOpen(true);
+    refresh().catch(() => {});
+  }, [autoOpen, refresh]);
 
   const toggle = async () => {
     const next = !open;
@@ -265,6 +280,7 @@ export default function MilestoneLessons({
       {viewing && (
         <LessonViewer
           lesson={viewing}
+          goalId={goalId}
           onClose={() => setViewing(null)}
           onSetDone={(done) => setDone(viewing, done)}
         />
@@ -339,10 +355,12 @@ function useReadingHeartbeat(lessonId: number, active: boolean) {
 
 function LessonViewer({
   lesson,
+  goalId,
   onClose,
   onSetDone,
 }: {
   lesson: Lesson;
+  goalId?: number;
   onClose: () => void;
   onSetDone: (done: boolean) => void;
 }) {
@@ -405,6 +423,15 @@ function LessonViewer({
             </button>
             {lesson.content ? <TranslateButton t={tr} /> : null}
             {lesson.content ? <ListenButton text={tr.displayContent} /> : null}
+            {lesson.content ? (
+              <Link
+                href={`/app/coach?lesson=${lesson.id}${goalId ? `&goal=${goalId}` : ""}`}
+                title="Open the tutor with this lesson loaded — ask for a hint, check an answer, get it re-explained"
+                className="glassx-dark rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
+              >
+                Ask the tutor
+              </Link>
+            ) : null}
             <button
               onClick={onClose}
               className="glassx rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink"

@@ -22,9 +22,12 @@ const STARTERS = [
 export default function CoachChat({
   goalId,
   studyGuideId,
+  lessonId,
 }: {
   goalId?: number;
   studyGuideId?: number;
+  /** Ground the tutor in a specific lesson the learner is working through. */
+  lessonId?: number;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -32,19 +35,47 @@ export default function CoachChat({
   const [loaded, setLoaded] = useState(false);
   const [myLang, setMyLang] = useState("en");
   const [guideTitle, setGuideTitle] = useState<string | null>(null);
+  const [lesson, setLesson] = useState<{ title: string; kind: string; goalId: number | null } | null>(null);
+  const [scopeGoal, setScopeGoal] = useState<number | null>(goalId ?? null);
   const [pending, setPending] = useState<{ text: string; mismatch: Mismatch } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // A lesson pins the conversation to its goal's thread.
   useEffect(() => {
-    api<{ messages: Message[] }>("/api/chat")
+    if (lessonId == null) {
+      setLesson(null);
+      setScopeGoal(goalId ?? null);
+      return;
+    }
+    api<{ lesson: { title: string; kind: string }; goalId: number | null }>(`/api/lessons/${lessonId}`)
+      .then((d) => {
+        setLesson({ title: d.lesson.title, kind: d.lesson.kind, goalId: d.goalId });
+        if (d.goalId != null) setScopeGoal(d.goalId);
+      })
+      .catch(() => setLesson(null));
+  }, [lessonId, goalId]);
+
+  useEffect(() => {
+    setLoaded(false);
+    const q = scopeGoal != null ? `?goalId=${scopeGoal}` : "";
+    api<{ messages: Message[] }>(`/api/chat${q}`)
       .then((d) => setMessages(d.messages.map((m) => ({ role: m.role, content: m.content }))))
       .catch(() => {})
       .finally(() => setLoaded(true));
+  }, [scopeGoal]);
+
+  useEffect(() => {
     api<{ user: PublicUser }>("/api/auth/me")
       .then((d) => setMyLang(d.user?.language || "en"))
       .catch(() => {});
   }, []);
+
+  const newConversation = async () => {
+    if (streaming) return;
+    await api("/api/chat/threads", { method: "POST", body: JSON.stringify({ goalId: scopeGoal }) }).catch(() => {});
+    setMessages([]);
+  };
 
   // When opened against a study guide, show a context banner.
   useEffect(() => {
@@ -83,8 +114,9 @@ export default function CoachChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: content,
-          goalId: goalId ?? null,
+          goalId: scopeGoal,
           studyGuideId: studyGuideId ?? null,
+          lessonId: lessonId ?? null,
           confirmLang: opts?.confirmLang ?? false,
         }),
         signal: ctrl.signal,
@@ -125,6 +157,7 @@ export default function CoachChat({
           } catch {
             continue;
           }
+          if (ev.t === "meta") continue;
           if (ev.t === "think") patchLast((l) => ({ ...l, thinking: (l.thinking || "") + String(ev.c) }));
           else if (ev.t === "text") patchLast((l) => ({ ...l, content: l.content + String(ev.c) }));
           else if (ev.t === "tool") patchLast((l) => ({ ...l, tools: [...(l.tools || []), ev.c as ToolCall] }));
@@ -158,15 +191,54 @@ export default function CoachChat({
     "What are the most common mistakes this covers?",
     "Summarize the must-know points in 5 bullets.",
   ];
+  const lessonStarters = lesson
+    ? lesson.kind === "practice" || lesson.kind === "apply"
+      ? [
+          "I'm stuck on exercise 1 — give me a hint, not the answer.",
+          "Check my answer to the first exercise: ",
+          "Walk me through the worked example one step at a time.",
+          "Give me one more problem like these, a bit harder.",
+        ]
+      : [
+          "Explain the main idea of this lesson like I'm new to it.",
+          "Quiz me on this lesson — one question at a time.",
+          "What's the most common mistake here and how do I avoid it?",
+          "How does this connect to what came before in the course?",
+        ]
+    : null;
+  const starters = lessonStarters ?? (guideTitle ? guideStarters : STARTERS);
+  const contextLabel = lesson ? lesson.title : guideTitle;
 
   return (
     <div className="glass flex h-[calc(100dvh-190px)] min-h-[440px] flex-col overflow-hidden rounded-[var(--radius-card-lg)] lg:h-[calc(100dvh-150px)]">
-      {guideTitle && (
+      {(contextLabel || messages.length > 0) && (
         <div className="flex items-center gap-2 border-b border-line/70 bg-accent/8 px-4 py-2.5 text-[12.5px] text-ink sm:px-6">
-          <span className="size-1.5 shrink-0 rounded-full bg-accent" />
-          <span className="min-w-0 truncate">
-            Discussing your study guide: <span className="font-semibold">{guideTitle}</span>
-          </span>
+          {contextLabel ? (
+            <>
+              <span className="size-1.5 shrink-0 rounded-full bg-accent" />
+              <span className="min-w-0 flex-1 truncate">
+                {lesson ? "Working on the lesson: " : "Discussing your study guide: "}
+                <span className="font-semibold">{contextLabel}</span>
+                {lesson && (lesson.kind === "practice" || lesson.kind === "apply") ? (
+                  <span className="text-muted"> · hints first, answers when you ask</span>
+                ) : null}
+              </span>
+            </>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-muted">
+              {scopeGoal != null ? "This conversation is about your course." : "General coaching conversation."}
+            </span>
+          )}
+          {messages.length > 0 && (
+            <button
+              onClick={newConversation}
+              disabled={streaming}
+              className="shrink-0 text-[11.5px] font-semibold text-muted hover:text-accent disabled:opacity-50"
+              title="Start fresh — the old conversation is kept but no longer sent to the coach"
+            >
+              New conversation
+            </button>
+          )}
         </div>
       )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
@@ -177,19 +249,21 @@ export default function CoachChat({
             </span>
             <div>
               <h2 className="font-display text-[24px] font-extrabold uppercase text-ink">
-                {guideTitle ? "Discuss your study guide" : "Your training coach"}
+                {lesson ? "Your tutor, on this lesson" : guideTitle ? "Discuss your study guide" : "Your training coach"}
               </h2>
               <p className="mt-2 text-[14px] text-muted">
-                {guideTitle
-                  ? "I've read your study guide. Ask me anything about it, and I'll explain, quiz you, or go deeper."
-                  : "Tell me what you want to learn. I'll keep it realistic and break it into steps you can actually do."}
+                {lesson
+                  ? "I've read this lesson. Ask about anything in it, check an answer, or ask for a hint — I'll nudge before I tell."
+                  : guideTitle
+                    ? "I've read your study guide. Ask me anything about it, and I'll explain, quiz you, or go deeper."
+                    : "Tell me what you want to learn. I'll keep it realistic and break it into steps you can actually do."}
               </p>
             </div>
             <div className="grid w-full gap-2.5 sm:grid-cols-2">
-              {(guideTitle ? guideStarters : STARTERS).map((s) => (
+              {starters.map((s) => (
                 <button
                   key={s}
-                  onClick={() => send(s)}
+                  onClick={() => (s.endsWith(": ") ? setInput(s) : send(s))}
                   className="rounded-[14px] bg-white/60 px-4 py-3 text-left text-[13px] font-medium text-ink transition-colors hover:bg-white/90"
                 >
                   {s}

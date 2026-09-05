@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getGoal, getPlanForGoal, createPlan, userOwnsGoal } from "@/lib/repo";
+import { getGoal, getPlanForGoal, createPlan, ensureExams, userOwnsGoal } from "@/lib/repo";
+import { assignmentForGoal } from "@/lib/org";
 import { generatePlanV2, DEFAULT_INTAKE, type PlanIntake } from "@/lib/coach";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 import { llmContext, withLlm } from "@/lib/minimax";
@@ -24,6 +25,13 @@ export async function POST(req: Request, ctx: RouteContext<"/api/goals/[id]/plan
   const llm = llmContext(user);
   if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
   const goal = getGoal(Number(id))!;
+  // a company-assigned course is the employer's curriculum — once it exists it can't be rebuilt
+  if (getPlanForGoal(goal.id) && assignmentForGoal(goal.id)) {
+    return NextResponse.json(
+      { error: "This course was assigned by your company, so its plan can't be rebuilt." },
+      { status: 403 },
+    );
+  }
 
   const body = await req.json().catch(() => ({}));
   const intake: PlanIntake = {
@@ -39,6 +47,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/goals/[id]/plan
       version: 2,
       intake,
     });
+    ensureExams(goal.id); // the final-exam gate exists from day one, not on first visit
     return NextResponse.json({ plan }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Plan generation failed";

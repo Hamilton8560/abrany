@@ -19,6 +19,8 @@ import {
 import { hashPassword } from "./password";
 import { sendTempPasswordEmail, sendOrgAddedEmail } from "./email";
 import { appBaseUrl } from "./urls";
+import { enqueueBuildCourse, enqueueLesson } from "./worker";
+import { LATEST_PLAN } from "./repo";
 
 /**
  * Organizations (businesses): a company signs its employees up, assigns them
@@ -63,8 +65,24 @@ export type Assignment = {
   status: "assigned" | "in_progress" | "passed" | "failed";
   completed_at: string | null;
   created_at: string;
+  updated_at: string | null;
   program_id: number | null;
 };
+
+/**
+ * Normalize a deadline for storage. A bare date ("2026-08-01", what the date picker gives)
+ * means the END of that day — not midnight UTC, which would flip an assignment to
+ * "failed" the evening before in every US timezone. Returns null for "no deadline" and
+ * undefined for garbage.
+ */
+export function normalizeDueAt(input: unknown): string | null | undefined {
+  if (input == null || input === "") return null;
+  const str = String(input).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return `${str}T23:59:59.000Z`;
+  const d = new Date(str);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toISOString();
+}
 
 /** An assignment joined with everything a manager needs to see at a glance. */
 export type AssignmentProgress = Assignment & {
@@ -78,6 +96,8 @@ export type AssignmentProgress = Assignment & {
   exam_best: number; // best final-exam score (0-100, 0 if none)
   exam_passed: number; // 0/1
   passed_late: number; // 0/1 — passed after the deadline
+  build_status: string; // ''|queued|building|ready|error — course auto-build (empty = not applicable)
+  build_error: string;
 };
 
 const newApiKey = () => `abr_org_${randomBytes(24).toString("hex")}`;
@@ -264,6 +284,7 @@ export function createAssignment(input: {
   const db = getDb();
   const cur = input.curriculum;
   const goal = createGoal(input.userId, cur.title, cur.description ?? "");
+  const stubLessons: number[] = [];
   if (cur.milestones?.length) {
     const plan = createPlan(
       goal.id,
@@ -281,6 +302,7 @@ export function createAssignment(input: {
       created.forEach((row, j) => {
         const content = lessons[j]?.content;
         if (content && content.trim()) setLessonContent(row.id, content);
+        else stubLessons.push(row.id);
       });
     });
     ensureExams(goal.id);
@@ -298,7 +320,66 @@ export function createAssignment(input: {
       input.dueAt ?? null,
       input.programId ?? null,
     );
+  // The employee must open a READY course, never an empty goal with an intake form:
+  // with no curriculum the worker builds the plan + sections in the background; with a
+  // curriculum, every section that arrived without content is generated now. Both run on
+  // the company's AI access (see resolveUserLlm), in the employee's language.
+  if (!cur.milestones?.length) {
+    enqueueBuildCourse(goal.id, input.userId, {
+      focus: [cur.description, input.note].filter((x) => x && x.trim()).join(" — ").slice(0, 300) || undefined,
+    });
+  } else {
+    for (const id of stubLessons) enqueueLesson(id, input.userId);
+  }
   return getAssignment(Number(info.lastInsertRowid))!;
+}
+
+/** The assignment (if any) that owns this goal — a company-assigned course is locked for the employee. */
+export function assignmentForGoal(goalId: number): (Assignment & { org_name: string; org_logo: string }) | undefined {
+  return getDb()
+    .prepare(
+      `SELECT a.*, o.name AS org_name, o.logo AS org_logo FROM assignments a JOIN orgs o ON o.id = a.org_id
+       WHERE a.goal_id = ? ORDER BY a.id LIMIT 1`,
+    )
+    .get(goalId) as (Assignment & { org_name: string; org_logo: string }) | undefined;
+}
+
+/** What the goal page needs to know about a company-assigned course (null when personal). */
+export function assignmentView(goalId: number) {
+  const a = assignmentForGoal(goalId);
+  if (!a) return null;
+  return {
+    id: a.id,
+    orgName: a.org_name,
+    orgLogo: a.org_logo,
+    dueAt: a.due_at,
+    note: a.note,
+    status: a.status,
+    // an assigned course is the company's curriculum: the employee studies it, but can't
+    // delete it or rebuild/edit its structure (that would silently break the employer's view)
+    locked: true,
+  };
+}
+
+/** Is structural editing of this goal blocked because a company assigned it? */
+export const goalIsLocked = (goalId: number | undefined): boolean => goalId != null && !!assignmentForGoal(goalId);
+
+/** Edit an assignment after the fact (push a deadline, change the note). */
+export function updateAssignment(
+  orgId: number,
+  id: number,
+  fields: { dueAt?: string | null; note?: string },
+): Assignment | undefined {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (fields.dueAt !== undefined) { sets.push("due_at = ?"); vals.push(fields.dueAt); }
+  if (fields.note !== undefined) { sets.push("note = ?"); vals.push(fields.note.slice(0, 300)); }
+  if (!sets.length) return getAssignment(id);
+  sets.push("updated_at = datetime('now')");
+  getDb().prepare(`UPDATE assignments SET ${sets.join(", ")} WHERE id = ? AND org_id = ?`).run(...(vals as never[]), id, orgId);
+  const a = getAssignment(id);
+  // a pushed deadline un-fails an assignment on the next read (status is recomputed there)
+  return a ? refreshAssignmentStatus(a) : undefined;
 }
 
 export function getAssignment(id: number): Assignment | undefined {
@@ -346,7 +427,7 @@ export function refreshAssignmentStatus(a: Assignment): Assignment {
       .prepare(
         `SELECT 1 FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id
          JOIN plans p ON p.id = pi.plan_id
-         WHERE p.goal_id = ? AND (l.completed_at IS NOT NULL OR l.read_sec > 0) LIMIT 1`,
+         WHERE p.goal_id = ? AND ${LATEST_PLAN} AND (l.completed_at IS NOT NULL OR l.read_sec > 0) LIMIT 1`,
       )
       .get(a.goal_id);
     status = started ? "in_progress" : "assigned";
@@ -373,7 +454,7 @@ const progressFor = (a: Assignment): AssignmentProgress => {
   const read = db
     .prepare(
       `SELECT COALESCE(SUM(l.read_sec),0) n FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id
-       JOIN plans p ON p.id = pi.plan_id WHERE p.goal_id = ?`,
+       JOIN plans p ON p.id = pi.plan_id WHERE p.goal_id = ? AND ${LATEST_PLAN}`,
     )
     .get(refreshed.goal_id) as { n: number };
   const focus = db
@@ -399,6 +480,8 @@ const progressFor = (a: Assignment): AssignmentProgress => {
     exam_best: exam?.best_score ?? 0,
     exam_passed: exam?.passed ?? 0,
     passed_late: passedLate ? 1 : 0,
+    build_status: goal?.build_status ?? "",
+    build_error: goal?.build_error ?? "",
   };
 };
 
@@ -432,7 +515,7 @@ export function assignmentDetail(a: Assignment): {
     .prepare(
       `SELECT l.title, l.kind, l.status, l.completed_at, l.grade, l.read_sec
        FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id
-       WHERE p.goal_id = ? ORDER BY pi.order_index, l.order_index`,
+       WHERE p.goal_id = ? AND ${LATEST_PLAN} ORDER BY pi.order_index, l.order_index`,
     )
     .all(a.goal_id) as { title: string; kind: string; status: string; completed_at: string | null; grade: string; read_sec: number }[];
   const exams = db

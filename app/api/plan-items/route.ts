@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPlanForGoal, addPlanItem, userOwnsGoal } from "@/lib/repo";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
+import { goalIsLocked } from "@/lib/org";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const goalId = Number(body.goalId);
   if (!goalId || !userOwnsGoal(user.id, goalId)) return forbidden();
+  if (goalIsLocked(goalId))
+    return NextResponse.json({ error: "This course was assigned by your company and its structure can't be edited." }, { status: 403 });
   const title = (body.title ?? "").toString().trim();
   if (!title) return NextResponse.json({ error: "Milestone title is required" }, { status: 400 });
   const plan = getPlanForGoal(goalId);

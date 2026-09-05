@@ -199,7 +199,8 @@ export function deployProgram(input: {
       curriculum,
       programId: input.programId,
     });
-    // pre-enqueue translations so content is ready when the employee opens it
+    // pre-enqueue translations of AUTHORED content so it's ready when the employee opens it
+    // (sections without content were just queued for generation directly in their language)
     const user = db.prepare("SELECT language FROM users WHERE id = ?").get(userId) as { language: string } | undefined;
     const lang = user?.language ?? "en";
     if (lang !== program.source_lang && isSupported(lang)) {

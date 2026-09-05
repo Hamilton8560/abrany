@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import PomodoroTimer from "@/components/app/PomodoroTimer";
 import { api, fmtDuration, fmtWhen } from "@/lib/client";
-import type { Goal, Session, SessionStats } from "@/lib/repo";
-import { ArrowRight, TargetIcon } from "@/components/icons";
+import type { GoalListItem as Goal, Session, SessionStats } from "@/lib/repo";
+import { ArrowRight, TargetIcon, BuildingIcon } from "@/components/icons";
 
 type SessionsResp = { sessions: (Session & { goal_title: string | null })[]; stats: SessionStats };
 
@@ -21,8 +21,11 @@ export default function Dashboard() {
     ]);
     setStats(s.stats);
     setSessions(s.sessions.slice(0, 5));
-    setGoals(g.goals.filter((x) => x.status === "active").slice(0, 4));
+    setGoals(g.goals.filter((x) => x.status === "active"));
   }, []);
+
+  const assigned = goals.filter((g) => g.assigned_org);
+  const own = goals.filter((g) => !g.assigned_org).slice(0, 4);
 
   useEffect(() => {
     load().catch(() => {});
@@ -49,6 +52,67 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* company-assigned training comes first: it has deadlines */}
+      {assigned.length > 0 && (
+        <section className="glass rounded-[var(--radius-card-lg)] p-5 sm:p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-ink">
+              <BuildingIcon className="size-4 text-accent" /> Assigned to you
+            </h2>
+            <Link href="/app/org" className="text-[12px] font-medium text-accent hover:underline">
+              My company
+            </Link>
+          </div>
+          <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
+            {assigned.map((g) => {
+              const dl = g.assignment_due ? Math.ceil((new Date(g.assignment_due).getTime() - Date.now()) / 86_400_000) : null;
+              const pct = g.sections_total > 0 ? Math.round((g.sections_done / g.sections_total) * 100) : 0;
+              const building = g.build_status === "queued" || g.build_status === "building";
+              const passed = g.assignment_status === "passed";
+              return (
+                <li key={g.id}>
+                  <Link
+                    href={`/app/goals/${g.id}`}
+                    className="group flex flex-col gap-2 rounded-[14px] bg-white/60 px-4 py-3.5 transition-colors hover:bg-white/90"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 truncate text-[14px] font-semibold text-ink">{g.title}</p>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          passed ? "bg-up/15 text-up" : g.assignment_status === "failed" ? "bg-accent/15 text-accent" : "bg-ink/8 text-muted"
+                        }`}
+                      >
+                        {passed ? "Passed" : g.assignment_status === "failed" ? "Past due" : building ? "Building" : g.assignment_status === "in_progress" ? "In progress" : "New"}
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-muted">
+                      {g.assigned_org}
+                      {g.assignment_due && !passed && (
+                        <span className={dl !== null && dl < 3 ? " font-semibold text-accent" : ""}>
+                          {" · "}
+                          {dl !== null && dl >= 0 ? `${dl} day${dl === 1 ? "" : "s"} left` : "overdue"}
+                        </span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+                        <span className="block h-full rounded-full bg-up transition-all" style={{ width: `${pct}%` }} />
+                      </span>
+                      <span className="text-[11px] text-muted">
+                        {building ? "preparing…" : g.sections_total > 0 ? `${g.sections_done}/${g.sections_total}` : "—"}
+                      </span>
+                    </div>
+                    <span className="text-[12px] font-semibold text-accent">
+                      {passed ? "View certificate" : g.sections_done > 0 ? "Continue" : "Start"} →
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* timer */}
         <section className="glass rounded-[var(--radius-card-lg)] p-6 sm:p-8">
@@ -67,7 +131,7 @@ export default function Dashboard() {
               </Link>
             </div>
             <div className="mt-4 flex flex-col gap-2.5">
-              {goals.length === 0 && (
+              {own.length === 0 && (
                 <Link
                   href="/app/goals"
                   className="flex items-center gap-2 rounded-[13px] border border-dashed border-line px-3.5 py-4 text-[13px] text-muted hover:border-accent/50 hover:text-ink"
@@ -75,7 +139,7 @@ export default function Dashboard() {
                   <TargetIcon className="size-[18px]" /> Set your first goal →
                 </Link>
               )}
-              {goals.map((g) => (
+              {own.map((g) => (
                 <Link
                   key={g.id}
                   href={`/app/goals/${g.id}`}

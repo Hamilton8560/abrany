@@ -192,9 +192,11 @@ export default function Sidebar({ user }: { user: PublicUser }) {
                   ? "Owner · built-in AI"
                   : user.hasKey
                     ? user.provider || "your key"
-                    : user.freeAiAccess
-                      ? "free shared AI"
-                      : "add your AI key"}
+                    : user.orgAi
+                      ? "your company's AI"
+                      : user.freeAiAccess
+                        ? "free shared AI"
+                        : "add your AI key"}
               </p>
             </div>
             <button
@@ -323,9 +325,11 @@ export function MobileBar({ user }: { user: PublicUser }) {
                     ? "Owner · built-in AI"
                     : user.hasKey
                       ? user.provider || "your key"
-                      : user.freeAiAccess
-                        ? "free shared AI"
-                        : "add your AI key"}
+                      : user.orgAi
+                        ? "your company's AI"
+                        : user.freeAiAccess
+                          ? "free shared AI"
+                          : "add your AI key"}
                 </p>
               </div>
               <button

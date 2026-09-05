@@ -13,7 +13,20 @@ import DraftAssistant from "@/components/app/DraftAssistant";
 
 type FullPlan = Plan & { items: PlanItemWithProgress[] };
 type TrackChild = Goal & { hasPlan: boolean; milestones: number; sectionsTotal: number; sectionsDone: number };
-type GoalResp = { goal: Goal; plan: FullPlan | null; children: TrackChild[] };
+type AssignmentInfo = {
+  id: number;
+  orgName: string;
+  orgLogo: string;
+  dueAt: string | null;
+  note: string;
+  status: "assigned" | "in_progress" | "passed" | "failed";
+  locked: boolean;
+};
+type GoalResp = { goal: Goal; plan: FullPlan | null; children: TrackChild[]; assignment: AssignmentInfo | null };
+
+const fmtDue = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+const daysLeft = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
 
 export default function GoalDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -21,6 +34,8 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   const [goal, setGoal] = useState<Goal | null>(null);
   const [plan, setPlan] = useState<FullPlan | null>(null);
   const [children, setChildren] = useState<TrackChild[]>([]);
+  const [assignment, setAssignment] = useState<AssignmentInfo | null>(null);
+  const [building, setBuilding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +65,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     setGoal(d.goal);
     setPlan(d.plan);
     setChildren(d.children ?? []);
+    setAssignment(d.assignment ?? null);
     setLoading(false);
     api<{ certificate: { id: string } | null }>(`/api/goals/${id}/complete`)
       .then((r) => setCert(r.certificate))
@@ -78,6 +94,32 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   useEffect(() => {
     load().catch(() => setLoading(false));
   }, [load]);
+
+  // while the course is being built in the background, keep the page live
+  const isBuilding = goal?.build_status === "queued" || goal?.build_status === "building";
+  useEffect(() => {
+    if (!isBuilding) return;
+    const t = setInterval(() => load().catch(() => {}), 3000);
+    return () => clearInterval(t);
+  }, [isBuilding, load]);
+
+  /** One click: plan (if missing) + every milestone's sections + all content, in the background. */
+  const buildAll = async () => {
+    setBuilding(true);
+    setError(null);
+    try {
+      await api(`/api/goals/${id}/build`, {
+        method: "POST",
+        body: JSON.stringify({ level, hoursPerWeek, targetDate: targetDate || undefined, focus: focus || undefined }),
+      });
+      setIntakeOpen(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't start the build.");
+    } finally {
+      setBuilding(false);
+    }
+  };
 
   const generate = async () => {
     setGenerating(true);
@@ -139,8 +181,13 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   };
 
   const remove = async () => {
-    await api(`/api/goals/${id}`, { method: "DELETE" });
-    router.push("/app/goals");
+    if (!window.confirm(`Delete “${goal?.title}” and everything in it — plan, sections, exams? This can't be undone.`)) return;
+    try {
+      await api(`/api/goals/${id}`, { method: "DELETE" });
+      router.push("/app/goals");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't delete this goal.");
+    }
   };
 
   if (loading) return <p className="text-[14px] text-muted">Loading…</p>;
@@ -170,6 +217,8 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   const finalExam = exams.find((e) => e.kind === "final");
   const finalPassed = !!finalExam?.passed;
   const canComplete = !finalExam || finalPassed;
+  const locked = !!assignment?.locked;
+  const dl = assignment?.dueAt ? daysLeft(assignment.dueAt) : null;
 
   return (
     <div className="mx-auto flex max-w-[760px] flex-col gap-7">
@@ -213,6 +262,41 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           </div>
         )}
 
+        {assignment && (
+          <div className="flex flex-wrap items-center gap-3 rounded-[14px] bg-white/60 px-4 py-3">
+            {assignment.orgLogo ? (
+              <img src={assignment.orgLogo} alt={assignment.orgName} className="h-7 max-w-[110px] object-contain" />
+            ) : (
+              <span className="text-[12px] font-bold uppercase tracking-wide text-ink">{assignment.orgName}</span>
+            )}
+            <div className="min-w-0 flex-1 text-[12.5px] text-muted">
+              <span>Assigned by <span className="font-semibold text-ink">{assignment.orgName}</span></span>
+              {assignment.dueAt && (
+                <span className={dl !== null && dl < 3 && assignment.status !== "passed" ? " font-semibold text-accent" : ""}>
+                  {" · "}Due {fmtDue(assignment.dueAt)}
+                  {assignment.status === "passed"
+                    ? ""
+                    : dl !== null && dl >= 0
+                      ? ` (${dl} day${dl === 1 ? "" : "s"} left)`
+                      : " (overdue)"}
+                </span>
+              )}
+              {assignment.note && <span className="block truncate">“{assignment.note}”</span>}
+            </div>
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wide ${
+                assignment.status === "passed"
+                  ? "bg-up/15 text-up"
+                  : assignment.status === "failed"
+                    ? "bg-accent/15 text-accent"
+                    : "bg-ink/10 text-ink"
+              }`}
+            >
+              {assignment.status === "in_progress" ? "In progress" : assignment.status}
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2.5">
           <Link
             href={`/app/coach?goal=${goal.id}`}
@@ -228,14 +312,46 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
               Reopen
             </button>
           )}
-          <button
-            onClick={remove}
-            className="rounded-full px-4 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
-          >
-            Delete
-          </button>
+          {!locked && (
+            <button
+              onClick={remove}
+              className="rounded-full px-4 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </header>
+
+      {/* the course is being written in the background */}
+      {isBuilding && !isUmbrella && (
+        <section className="glass flex items-start gap-4 rounded-[var(--radius-card-lg)] p-6">
+          <span className="mt-1 grid size-9 shrink-0 place-items-center rounded-full bg-accent/12">
+            <span className="size-2.5 animate-pulse rounded-full bg-accent" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold text-ink">
+              {plan ? "Writing your sections…" : "Building your course…"}
+            </p>
+            <p className="mt-1 text-[13px] text-muted">
+              Your coach is laying out the plan, breaking every milestone into sections and writing the material.
+              Sections appear below as they finish — you can start reading the moment the first one is ready.
+            </p>
+            <div className="mt-2">
+              <QueueHint background />
+            </div>
+          </div>
+        </section>
+      )}
+      {goal.build_status === "error" && !isUmbrella && (
+        <section className="glass rounded-[var(--radius-card-lg)] p-5">
+          <p className="text-[14px] font-semibold text-accent">The course build hit a problem.</p>
+          <p className="mt-1 text-[12.5px] text-muted">{goal.build_error || "Unknown error."}</p>
+          <button onClick={buildAll} disabled={building} className="mt-3 glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink disabled:opacity-50">
+            {building ? "Retrying…" : "Retry the build"}
+          </button>
+        </section>
+      )}
 
       {/* umbrella: this goal was too broad, so it's split into tracks */}
       {isUmbrella && (
@@ -292,27 +408,41 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             )}
           </h2>
           {plan && (
-            <span className="flex items-center gap-3">
-              <button
-                onClick={() => setEditing((v) => !v)}
-                className={`text-[12px] font-medium ${editing ? "text-up" : "text-accent"} hover:underline`}
-              >
-                {editing ? "Done editing" : "Edit course"}
-              </button>
-              <button
-                onClick={() => setIntakeOpen((v) => !v)}
-                disabled={generating}
-                className="text-[12px] font-medium text-accent hover:underline disabled:opacity-50"
-              >
-                {generating ? "Rebuilding…" : "Rebuild plan"}
-              </button>
+            <span className="flex flex-wrap items-center gap-3">
+              {!isBuilding && plan.items.some((it) => it.lessons_total === 0) && (
+                <button
+                  onClick={buildAll}
+                  disabled={building}
+                  title="Break every milestone into sections and write all the material in the background"
+                  className="glassx rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-50"
+                >
+                  {building ? "Starting…" : "Build all sections"}
+                </button>
+              )}
+              {!locked && (
+                <>
+                  <button
+                    onClick={() => setEditing((v) => !v)}
+                    className={`text-[12px] font-medium ${editing ? "text-up" : "text-accent"} hover:underline`}
+                  >
+                    {editing ? "Done editing" : "Edit course"}
+                  </button>
+                  <button
+                    onClick={() => setIntakeOpen((v) => !v)}
+                    disabled={generating}
+                    className="text-[12px] font-medium text-accent hover:underline disabled:opacity-50"
+                  >
+                    {generating ? "Rebuilding…" : "Rebuild plan"}
+                  </button>
+                </>
+              )}
             </span>
           )}
         </div>
 
         {error && <p className="mt-3 text-[13px] text-accent">{error}</p>}
 
-        {(!plan || intakeOpen) && (
+        {(!plan || intakeOpen) && !isBuilding && (
           <div className={`mt-4 flex flex-col gap-3 rounded-[16px] border border-dashed border-line px-5 py-5 ${plan ? "" : "items-stretch"}`}>
             {!plan && (
               <p className="text-center text-[14px] text-muted">
@@ -376,15 +506,31 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 />
               </label>
             </div>
-            <div className="flex justify-center">
+            <div className="flex flex-wrap justify-center gap-2.5">
               <button
                 onClick={generate}
-                disabled={generating}
+                disabled={generating || building}
                 className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-60"
               >
                 {generating ? "Building your plan…" : plan ? "Rebuild my plan (V2)" : "Build my plan with AI"}
               </button>
+              {!plan && (
+                <button
+                  onClick={buildAll}
+                  disabled={generating || building}
+                  title="Plan + every section's material, written in the background while you do other things"
+                  className="glassx rounded-full px-6 py-3 text-[14px] font-semibold text-ink disabled:opacity-60"
+                >
+                  {building ? "Starting…" : "Build the whole course"}
+                </button>
+              )}
             </div>
+            {!plan && (
+              <p className="text-center text-[11.5px] text-muted">
+                “Build my plan” gives you the milestones to review first. “Build the whole course” also writes every
+                section in the background — come back to a ready course.
+              </p>
+            )}
             {generating && (
               <div className="mx-auto max-w-[420px] text-center">
                 <QueueHint />
@@ -490,7 +636,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                           )}
                         </>
                       )}
-                      <MilestoneLessons planItemId={item.id} milestoneTitle={item.title} onProgress={load} editing={editing} />
+                      <MilestoneLessons
+                        planItemId={item.id}
+                        milestoneTitle={item.title}
+                        goalId={goal.id}
+                        onProgress={load}
+                        editing={editing && !locked}
+                        autoOpen={item.lessons_total > 0 && (i === 0 || isBuilding || goal.build_status === "ready")}
+                      />
                     </div>
                   </li>
                 );
@@ -524,8 +677,8 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
         <section className="glass rounded-[var(--radius-card-lg)] p-6">
           <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">Course exams</h2>
           <p className="mt-1.5 text-[13.5px] text-muted">
-            Each exam comes with a study guide. Pass the final (70%) to earn your certificate. The
-            spaced reviews are optional practice to help you pass.
+            Each exam comes with a study guide. Complete the sections it covers to unlock it, then pass
+            the final (70%) to earn your certificate. Spaced reviews are optional practice to help you pass.
           </p>
           <div className="mt-4 flex flex-col gap-2.5">
             {exams.map((e) => (

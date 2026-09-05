@@ -231,6 +231,22 @@ export const userOwnsPlanItem = (userId: number, planItemId: number) =>
     userId,
   );
 
+/** The goal a milestone / section belongs to (for lock checks on company-assigned courses). */
+export function goalIdOfPlanItem(planItemId: number): number | undefined {
+  const r = getDb()
+    .prepare("SELECT p.goal_id FROM plan_items pi JOIN plans p ON p.id = pi.plan_id WHERE pi.id = ?")
+    .get(planItemId) as { goal_id: number } | undefined;
+  return r?.goal_id;
+}
+export function goalIdOfLesson(lessonId: number): number | undefined {
+  const r = getDb()
+    .prepare(
+      "SELECT p.goal_id FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id WHERE l.id = ?",
+    )
+    .get(lessonId) as { goal_id: number } | undefined;
+  return r?.goal_id;
+}
+
 export const userOwnsLesson = (userId: number, lessonId: number) =>
   owns(
     `SELECT 1 FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id
@@ -259,9 +275,15 @@ export type Goal = {
   description: string;
   status: "active" | "done" | "archived";
   parent_goal_id: number | null;
+  /** Background course build (plan + sections): '' = not requested, else queued|building|ready|error. */
+  build_status: "" | "queued" | "building" | "ready" | "error";
+  build_error: string;
   created_at: string;
   updated_at: string;
 };
+
+/** SQL fragment: restrict a `plans p` join to the goal's LATEST plan (a rebuild supersedes older plans). */
+export const LATEST_PLAN = `p.id = (SELECT id FROM plans WHERE goal_id = p.goal_id ORDER BY created_at DESC, id DESC LIMIT 1)`;
 
 /** Pedagogical arc stages, in order. Each milestone's lessons follow this arc. */
 export type LessonKind = "read" | "teach" | "practice" | "apply" | "check" | "review";
@@ -364,6 +386,39 @@ export function listGoals(userId: number): Goal[] {
       "SELECT * FROM goals WHERE user_id = ? AND status != 'archived' AND parent_goal_id IS NULL ORDER BY status='done', updated_at DESC",
     )
     .all(userId) as Goal[];
+}
+
+/** A goal row plus what the list/dashboard needs: who assigned it (if a company did) and progress. */
+export type GoalListItem = Goal & {
+  assigned_org: string | null;
+  assignment_due: string | null;
+  assignment_status: string | null;
+  sections_total: number;
+  sections_done: number;
+};
+
+export function listGoalsWithMeta(userId: number): GoalListItem[] {
+  return getDb()
+    .prepare(
+      `SELECT g.*,
+         o.name AS assigned_org, a.due_at AS assignment_due, a.status AS assignment_status,
+         (SELECT COUNT(*) FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id
+            WHERE p.goal_id = g.id AND ${LATEST_PLAN}) AS sections_total,
+         (SELECT COUNT(*) FROM lessons l JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id
+            WHERE p.goal_id = g.id AND ${LATEST_PLAN} AND l.completed_at IS NOT NULL) AS sections_done
+       FROM goals g
+       LEFT JOIN assignments a ON a.id = (SELECT id FROM assignments WHERE goal_id = g.id ORDER BY id LIMIT 1)
+       LEFT JOIN orgs o ON o.id = a.org_id
+       WHERE g.user_id = ? AND g.status != 'archived' AND g.parent_goal_id IS NULL
+       ORDER BY g.status='done', (a.due_at IS NULL), a.due_at, g.updated_at DESC`,
+    )
+    .all(userId) as GoalListItem[];
+}
+
+export function setGoalBuild(id: number, status: Goal["build_status"], error = ""): void {
+  getDb()
+    .prepare("UPDATE goals SET build_status = ?, build_error = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, error, id);
 }
 
 export function getGoal(id: number): Goal | undefined {
@@ -598,15 +653,24 @@ export function sessionStats(userId: number): SessionStats {
 
 /* ── Threads & messages (coach) ────────────────────────── */
 
+/**
+ * The current conversation for a scope: one thread per goal, plus one general thread
+ * (goalId null). Newest thread wins, so "new conversation" is just createThread().
+ */
 export function getOrCreateDefaultThread(userId: number, goalId?: number | null): number {
   const db = getDb();
-  const existing = db
-    .prepare("SELECT id FROM threads WHERE user_id = ? ORDER BY id DESC LIMIT 1")
-    .get(userId) as { id: number } | undefined;
+  const existing = (
+    goalId != null
+      ? db.prepare("SELECT id FROM threads WHERE user_id = ? AND goal_id = ? ORDER BY id DESC LIMIT 1").get(userId, goalId)
+      : db.prepare("SELECT id FROM threads WHERE user_id = ? AND goal_id IS NULL ORDER BY id DESC LIMIT 1").get(userId)
+  ) as { id: number } | undefined;
   if (existing) return existing.id;
-  const info = db
-    .prepare("INSERT INTO threads (user_id, goal_id) VALUES (?, ?)")
-    .run(userId, goalId ?? null);
+  return createThread(userId, goalId ?? null);
+}
+
+/** Start a fresh conversation in a scope (becomes that scope's default). */
+export function createThread(userId: number, goalId: number | null): number {
+  const info = getDb().prepare("INSERT INTO threads (user_id, goal_id) VALUES (?, ?)").run(userId, goalId);
   return Number(info.lastInsertRowid);
 }
 
@@ -614,6 +678,32 @@ export function listMessages(threadId: number): Message[] {
   return getDb()
     .prepare("SELECT * FROM messages WHERE thread_id = ? ORDER BY id")
     .all(threadId) as Message[];
+}
+
+/**
+ * The tail of a conversation that fits a prompt budget: at most `maxMessages`, at most
+ * ~`maxChars` of content, always beginning on a user turn. An unbounded history was
+ * silently pushing long-running chats past the model's context (and the bill).
+ */
+export function recentHistory(
+  threadId: number,
+  opts: { maxMessages?: number; maxChars?: number } = {},
+): Message[] {
+  const maxMessages = opts.maxMessages ?? 40;
+  const maxChars = opts.maxChars ?? 30_000;
+  const rows = getDb()
+    .prepare("SELECT * FROM messages WHERE thread_id = ? ORDER BY id DESC LIMIT ?")
+    .all(threadId, maxMessages) as Message[];
+  const kept: Message[] = [];
+  let chars = 0;
+  for (const m of rows) {
+    chars += m.content.length;
+    if (kept.length && chars > maxChars) break;
+    kept.push(m);
+  }
+  kept.reverse();
+  while (kept.length && kept[0].role !== "user") kept.shift();
+  return kept;
 }
 
 export function addMessage(threadId: number, role: "user" | "assistant", content: string): Message {
@@ -645,7 +735,7 @@ export function goalReadySections(goalId: number): LessonSection[] {
     .prepare(
       `SELECT l.title, l.objective, l.content FROM lessons l
        JOIN plan_items pi ON pi.id = l.plan_item_id JOIN plans p ON p.id = pi.plan_id
-       WHERE p.goal_id = ? AND l.status = 'ready' ORDER BY pi.order_index, l.order_index`,
+       WHERE p.goal_id = ? AND ${LATEST_PLAN} AND l.status = 'ready' ORDER BY pi.order_index, l.order_index`,
     )
     .all(goalId) as LessonSection[];
 }
@@ -742,7 +832,7 @@ export function goalStats(goalId: number): {
          FROM lessons l
          JOIN plan_items pi ON pi.id = l.plan_item_id
          JOIN plans p ON p.id = pi.plan_id
-        WHERE p.goal_id = ?
+        WHERE p.goal_id = ? AND ${LATEST_PLAN}
         ORDER BY pi.order_index, l.order_index`,
     )
     .all(goalId) as TranscriptRow[];
@@ -850,11 +940,65 @@ export type Exam = {
   passed: number;
   attempts: number;
   error: string;
+  questions: string; // JSON array of the question set currently issued ('[]' = none)
   created_at: string;
   updated_at: string;
 };
 
 export const PASS_SCORE = 70;
+
+/** The questions the server issued for this exam (what grading is measured against). */
+export function examQuestions(exam: Exam): string[] {
+  try {
+    const arr = JSON.parse(exam.questions || "[]");
+    return Array.isArray(arr) ? arr.filter((q): q is string => typeof q === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setExamQuestions(id: number, questions: string[]): void {
+  getDb()
+    .prepare("UPDATE exams SET questions = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(questions), id);
+}
+
+export type ExamEligibility = { eligible: boolean; total: number; done: number; reason: string };
+
+/**
+ * Can this exam be sat yet? Every unit in scope must be complete: a milestone split into
+ * sections counts each section (completed_at), an un-expanded milestone counts as one unit
+ * (done when checked). Prevents passing a "final" on one lesson — which for company-assigned
+ * training would be a pass/fail credential earned on nothing.
+ */
+export function examEligibility(exam: Exam): ExamEligibility {
+  const plan = getPlanForGoal(exam.goal_id);
+  if (!plan || !plan.items.length) return { eligible: false, total: 0, done: 0, reason: "This course has no plan yet." };
+  const items = exam.kind === "midterm" ? plan.items.slice(0, Math.ceil(plan.items.length / 2)) : plan.items;
+  let total = 0;
+  let done = 0;
+  for (const it of items) {
+    if (it.lessons_total > 0) {
+      total += it.lessons_total;
+      done += it.lessons_done;
+    } else {
+      total += 1;
+      done += it.status === "done" ? 1 : 0;
+    }
+  }
+  const left = total - done;
+  return {
+    eligible: total > 0 && left === 0,
+    total,
+    done,
+    reason:
+      total === 0
+        ? "Break the milestones into sections first."
+        : left > 0
+          ? `Complete ${left} more section${left === 1 ? "" : "s"} to unlock this exam.`
+          : "",
+  };
+}
 
 export function examsForGoal(goalId: number): Exam[] {
   return getDb()
@@ -1441,11 +1585,14 @@ export function recoverOrphanedJobs(): void {
   for (const j of orphans) {
     db.prepare("UPDATE jobs SET status = 'queued', updated_at = datetime('now') WHERE id = ?").run(j.id);
     try {
-      const { lessonId } = JSON.parse(j.payload) as { lessonId?: number };
+      const { lessonId, goalId } = JSON.parse(j.payload) as { lessonId?: number; goalId?: number };
       if (lessonId) {
         db.prepare(
           "UPDATE lessons SET status = 'queued', updated_at = datetime('now') WHERE id = ? AND status = 'generating'",
         ).run(lessonId);
+      }
+      if (goalId && j.type === "build_course") {
+        db.prepare("UPDATE goals SET build_status = 'queued' WHERE id = ? AND build_status = 'building'").run(goalId);
       }
     } catch {
       /* ignore */

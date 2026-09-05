@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, fmtWhen } from "@/lib/client";
-import type { Goal } from "@/lib/repo";
+import type { GoalListItem as Goal } from "@/lib/repo";
 import { ArrowRight, CheckIcon, PlusIcon, TargetIcon } from "@/components/icons";
 import DraftAssistant from "@/components/app/DraftAssistant";
 
@@ -84,7 +84,8 @@ export default function GoalsPage() {
     }
   };
 
-  const active = goals.filter((g) => g.status === "active");
+  const assigned = goals.filter((g) => g.status === "active" && g.assigned_org);
+  const active = goals.filter((g) => g.status === "active" && !g.assigned_org);
   const done = goals.filter((g) => g.status === "done");
 
   return (
@@ -216,8 +217,20 @@ export default function GoalsPage() {
         )}
       </form>
 
+      {assigned.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">Assigned by your company</h2>
+          {assigned.map((g) => (
+            <GoalRow key={g.id} goal={g} />
+          ))}
+        </section>
+      )}
+
       <section className="flex flex-col gap-3">
-        {active.length === 0 && (
+        {assigned.length > 0 && active.length > 0 && (
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">Your own goals</h2>
+        )}
+        {active.length === 0 && assigned.length === 0 && (
           <p className="text-[14px] text-muted">No active goals yet.</p>
         )}
         {active.map((g) => (
@@ -237,7 +250,13 @@ export default function GoalsPage() {
   );
 }
 
+const daysLeft = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+
 function GoalRow({ goal }: { goal: Goal }) {
+  const building = goal.build_status === "queued" || goal.build_status === "building";
+  const pct = goal.sections_total > 0 ? Math.round((goal.sections_done / goal.sections_total) * 100) : 0;
+  const dl = goal.assignment_due ? daysLeft(goal.assignment_due) : null;
+  const passed = goal.assignment_status === "passed" || goal.status === "done";
   return (
     <Link
       href={`/app/goals/${goal.id}`}
@@ -253,9 +272,31 @@ function GoalRow({ goal }: { goal: Goal }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold text-ink">{goal.title}</p>
         <p className="truncate text-[12.5px] text-muted">
-          {goal.description || "No details"} · {fmtWhen(goal.created_at)}
+          {goal.assigned_org ? (
+            <>
+              <span className="font-medium text-ink">{goal.assigned_org}</span>
+              {goal.assignment_due && (
+                <span className={dl !== null && dl < 3 && !passed ? " font-semibold text-accent" : ""}>
+                  {" · "}due {new Date(goal.assignment_due).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  {!passed && dl !== null ? (dl >= 0 ? ` (${dl}d)` : " (overdue)") : ""}
+                </span>
+              )}
+              {building ? " · building your course…" : goal.sections_total > 0 ? ` · ${goal.sections_done}/${goal.sections_total} sections` : ""}
+            </>
+          ) : (
+            <>
+              {goal.description || "No details"} · {fmtWhen(goal.created_at)}
+              {goal.sections_total > 0 ? ` · ${goal.sections_done}/${goal.sections_total} sections` : ""}
+            </>
+          )}
         </p>
       </div>
+      {goal.sections_total > 0 && goal.status !== "done" && (
+        <span className="hidden h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-line sm:block">
+          <span className="block h-full rounded-full bg-up" style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      {building && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
       <ArrowRight className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
     </Link>
   );

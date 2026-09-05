@@ -459,6 +459,57 @@ function migrate(db: DatabaseSync) {
     );
   `);
 
+  // course auto-build: an org assignment (or any goal) can have its plan + sections built
+  // in the background so the learner opens a ready course instead of an empty goal.
+  addCol("goals", "build_status", "build_status TEXT NOT NULL DEFAULT ''"); // ''|queued|building|ready|error
+  addCol("goals", "build_error", "build_error TEXT NOT NULL DEFAULT ''");
+  // the current question set a learner is sitting (JSON array of strings). Persisted so an exam
+  // is graded against the questions the SERVER issued, never ones the client supplies.
+  addCol("exams", "questions", "questions TEXT NOT NULL DEFAULT '[]'");
+  // assignments can be edited after the fact (deadline pushed, note changed)
+  addCol("assignments", "updated_at", "updated_at TEXT");
+
+  // single-use password reset links (admin rescue + self-service forgot-password).
+  // Only a sha256 of the token is stored; the raw token lives solely in the email.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at    TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reset_hash ON password_reset_tokens(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_reset_user ON password_reset_tokens(user_id);
+  `);
+
+  // interactive practice: a generated, progressive problem set per lesson + every attempt
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS practice_sets (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_id  INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status     TEXT NOT NULL DEFAULT 'ready',   -- ready|done
+      problems   TEXT NOT NULL DEFAULT '[]',      -- JSON: [{prompt,kind,difficulty,starter,hints[],solution,rubric}]
+      summary    TEXT NOT NULL DEFAULT '',        -- debrief written when the set is finished
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_practice_lesson ON practice_sets(lesson_id);
+    CREATE TABLE IF NOT EXISTS practice_attempts (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      set_id        INTEGER NOT NULL REFERENCES practice_sets(id) ON DELETE CASCADE,
+      problem_index INTEGER NOT NULL,
+      answer        TEXT NOT NULL DEFAULT '',
+      verdict       TEXT NOT NULL DEFAULT '',     -- correct|partial|incorrect|revealed
+      feedback      TEXT NOT NULL DEFAULT '',
+      hints_used    INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_practice_attempt_set ON practice_attempts(set_id);
+  `);
+
   // one row per graded recall attempt (the learner's own words + the rating it earned).
   db.exec(`
     CREATE TABLE IF NOT EXISTS review_log (

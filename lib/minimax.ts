@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { acquireSlot, withQueue } from "./queue";
-import { isFreeAiEnabled, type User } from "./repo";
+import { isFreeAiEnabled, getUser, type User } from "./repo";
+import { orgForUser } from "./org";
 import { languageDirective } from "./languages";
 
 /**
@@ -70,21 +71,47 @@ function withLanguage(system: string): string {
   return `${languageDirective(lang)}\n\n${system}`;
 }
 
-/** How a user's generation should be powered. */
+export type LlmResolution = { mode: "server" } | { mode: "byo"; creds: LlmCreds } | { mode: "nokey" };
+
+const ownCreds = (u: Pick<User, "ai_provider" | "ai_key" | "ai_model">): LlmCreds | null =>
+  u.ai_provider && u.ai_key && PROVIDERS.includes(u.ai_provider as Provider)
+    ? { provider: u.ai_provider as Provider, key: u.ai_key, model: u.ai_model || "" }
+    : null;
+
+/**
+ * How a user's generation should be powered, in priority order:
+ *   1. the platform owner → server keys
+ *   2. their own key (Settings)
+ *   3. their COMPANY's AI — an org member inherits the org owner's access, so an
+ *      employee signed up by their employer never has to find an API key to study
+ *      what they were assigned (the company pays, exactly like any other seat)
+ *   4. the owner opened the built-in AI to everyone → server keys
+ */
 export function resolveUserLlm(
-  user: Pick<User, "is_owner" | "ai_provider" | "ai_key" | "ai_model">,
-): { mode: "server" } | { mode: "byo"; creds: LlmCreds } | { mode: "nokey" } {
+  user: Pick<User, "is_owner" | "ai_provider" | "ai_key" | "ai_model"> & { id?: number },
+): LlmResolution {
   if (user.is_owner) return { mode: "server" };
-  if (user.ai_provider && user.ai_key && PROVIDERS.includes(user.ai_provider as Provider)) {
-    return {
-      mode: "byo",
-      creds: { provider: user.ai_provider as Provider, key: user.ai_key, model: user.ai_model || "" },
-    };
+  const own = ownCreds(user);
+  if (own) return { mode: "byo", creds: own };
+  if (user.id != null) {
+    const viaOrg = orgAiFor(user.id);
+    if (viaOrg) return viaOrg;
   }
   // Keyless user, but the owner opened up the built-in AI to everyone: run on the
   // server keys, which all funnel through the one shared concurrency queue.
   if (isFreeAiEnabled()) return { mode: "server" };
   return { mode: "nokey" };
+}
+
+/** The AI a user gets through their organization's owner, if any (null = none). */
+export function orgAiFor(userId: number): LlmResolution | null {
+  const m = orgForUser(userId);
+  if (!m) return null;
+  const owner = getUser(m.org.owner_user_id);
+  if (!owner || owner.id === userId) return null;
+  if (owner.is_owner) return { mode: "server" };
+  const creds = ownCreds(owner);
+  return creds ? { mode: "byo", creds } : null;
 }
 
 function clientFor(creds: LlmCreds): Resolved {

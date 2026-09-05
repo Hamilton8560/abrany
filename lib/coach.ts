@@ -42,6 +42,48 @@ edges[2]{from,to,label}:
 \`\`\`
 group is one of frontend|backend|service|data|external|queue. Keep ids short with no spaces, labels short, and no commas inside any value. Keep diagrams focused; use them only where they genuinely help.`;
 
+/**
+ * How the coach behaves in live conversation — the pedagogy layer on top of the
+ * persona. The default chatbot failure mode is "dump a complete, generic answer":
+ * this makes it teach instead.
+ */
+export const TUTOR_SYSTEM = `${COACH_SYSTEM}
+
+HOW YOU TEACH (in conversation):
+- Answer the actual question first, directly, in the first sentence or two. Then teach around it. Never open with filler or restate the question.
+- Diagnose before you explain: if the learner is confused, ask ONE precise question or make ONE quick check ("what do you get for step 2?") rather than re-explaining everything.
+- When the learner is working a problem or exercise (code, math, a drill), use a HINT LADDER instead of handing over the answer: 1) a nudge that points at where to look, 2) the strategy or rule to apply, 3) the next concrete step or a partial solution, 4) the full worked solution — and only climb a rung when they ask or are clearly stuck. If they explicitly ask for the answer, give it, worked step by step.
+- After they finish something, DEBRIEF briefly: what they got right, the one misconception or slip that matters most, and the single next thing to practice.
+- Show your work for anything technical: worked steps for math, runnable code with the expected output for programming, the reasoning chain for analysis. Prefer one concrete example to three abstract sentences.
+- Match their level: don't re-teach what they already know (you know their progress), don't skip the step a beginner needs.
+- Keep it tight. Short paragraphs, lists only when there are real parallel items, no headers in a chat reply unless it's a long reference answer. End with ONE concrete next action or a single question — not a menu.`;
+
+/** Ground the tutor in the lesson the learner is currently working through. */
+export function lessonGroundingPrompt(lesson: {
+  title: string;
+  objective: string;
+  kind: string;
+  content: string;
+  milestoneTitle?: string;
+  goalTitle?: string;
+}): string {
+  const stage: Record<string, string> = {
+    read: "They are orienting — help them map the terrain and see what matters most.",
+    teach: "They are learning the core idea — explain, re-explain differently if needed, check understanding with a quick question.",
+    practice:
+      "They are DOING exercises from this lesson. Do NOT hand over answers: use the hint ladder, check their attempts against the lesson's answers, and explain the reasoning behind a correct answer only after they've tried.",
+    apply:
+      "They are applying the skill to a real task. Act as a reviewer: ask what they produced, give specific feedback against the lesson's checklist, and push them to improve one thing.",
+    check: "They are self-checking. Quiz them from the lesson, grade what they say, and explain each miss briefly.",
+    review: "They are doing spaced recall. Ask, don't tell: prompt recall first, reveal only after an attempt.",
+  };
+  return `\n\nTHE LEARNER IS CURRENTLY INSIDE THIS LESSON — treat it as the authoritative material and anchor every reply to it (quote or reference its parts, use its examples and terminology, don't contradict it; if it's missing something, say so and add it carefully).\n${
+    lesson.goalTitle ? `Course: ${lesson.goalTitle}\n` : ""
+  }${lesson.milestoneTitle ? `Milestone: ${lesson.milestoneTitle}\n` : ""}Lesson (${lesson.kind}): ${lesson.title}\nObjective: ${lesson.objective}\n${
+    stage[lesson.kind] ?? ""
+  }\n\n--- LESSON CONTENT ---\n${lesson.content.slice(0, 20000)}\n--- END LESSON ---`;
+}
+
 export function planSystem(): string {
   return `${COACH_SYSTEM}
 
@@ -449,25 +491,40 @@ Rules:
 
 export async function generateLessonContent(ctx: {
   goalTitle: string;
+  goalDescription?: string;
   milestoneTitle: string;
+  milestoneDetail?: string;
+  milestoneOutcomes?: string[];
   lessonTitle: string;
   lessonObjective: string;
   kind: LessonStub["kind"];
+  /** The other lessons in this milestone, in order, so this one neither repeats nor skips ahead. */
+  siblingTitles?: string[];
+  /** Learner calibration from the plan intake. */
+  level?: "new" | "some" | "solid";
+  focus?: string;
   sources?: { title: string; url: string; description: string }[];
 }): Promise<string> {
   const kindGuide: Record<LessonStub["kind"], string> = {
-    read: "STAGE: READ — a short, skimmable overview that maps what's coming. Use headings and a compact list or table of the key items/ideas. This is orientation, not deep teaching. Keep it tight.",
+    read: "STAGE: READ — a short, skimmable overview that maps what's coming in this milestone. Use headings and a compact list or table of the key items/ideas, say why each matters, and flag the 1-2 things people usually get wrong. This is orientation, not deep teaching. Keep it tight (the shortest lesson of the arc).",
     teach:
-      "STAGE: TEACH — teach the concept from first principles with concrete worked examples and analogies (the why and how). For a hands-on skill, demonstrate the technique step by step. End with 3 key takeaways.",
+      "STAGE: TEACH — teach the concept from first principles with concrete WORKED EXAMPLES (at least two, each fully worked step by step, with the reasoning at every step — never just the answer) and one good analogy (the why and how). For a hands-on skill, demonstrate the technique step by step with real code / real numbers / real phrases and the expected result. Include a short '## Common mistakes' section with the fix for each. End with '## Key takeaways' (3 bullets).",
     practice:
-      "STAGE: PRACTICE — active engagement the learner does themselves, ADAPTED TO THE SUBJECT: for a skill, 1-2 worked examples then 6-10 exercises/drills (vocab or conjugation tables for language; problem sets for math/EE); for a body of knowledge, prompts to summarize, argue, or connect the ideas; for an interpretive subject, reflection/discussion prompts. If there are exercises with objective answers, put them under a '## Answers' heading at the very end.",
+      "STAGE: PRACTICE — active work the learner does themselves, ADAPTED TO THE SUBJECT, laid out as a PROGRESSIVE ROUTE:\n- Start with ONE fully worked example that models the exact method.\n- Then 6-10 exercises in three rungs, labeled in the headings: '### Warm-up' (2-3, one idea each), '### Core' (3-4, the real skill), '### Stretch' (1-3, combine ideas or add a twist). Number every exercise (1, 2, 3…). For code: give the task, any starter code, and the expected output/behavior. For math/EE: give the problem cleanly, with units. For language: drills and sentences to produce. For a body of knowledge: prompts to summarize, argue, connect. For an interpretive subject: reflection/discussion prompts.\n- Then a '## Hints' section: exactly ONE nudge per exercise (numbered to match), each pointing at where to look or which rule applies — never the answer itself.\n- Then a '## Answers' section at the very end: the worked solution for EVERY exercise (numbered to match), with the reasoning, and a one-line 'if you missed this, the gap is probably…' note on the ones that usually trip people up.\nTell the learner up front: attempt each exercise, use a hint only when stuck, check against the answers, and note what tripped them up.",
     apply:
-      "STAGE: APPLY — one realistic task that TRANSFERS the skill to a novel, real context: produce the language in a short dialogue, build a small thing (code), solve word problems, analyze a real case through the framework, or (for interpretive subjects) apply it to the learner's own life. Give clear instructions, a model/example answer, and a short checklist of what a strong result looks like.",
+      "STAGE: APPLY — one realistic task that TRANSFERS the skill to a novel, real context: produce the language in a short dialogue, build a small thing (code — specify inputs, outputs and a way to test it), solve word problems, analyze a real case through the framework, or (for interpretive subjects) apply it to the learner's own life. Structure: '## The task' (clear brief + constraints), '## Plan before you start' (2-4 guiding questions), '## Hints if you get stuck' (a short ladder: nudge → strategy → first step), '## Model answer' (a complete strong example, worked), and '## Debrief checklist' (what a strong result does, the common shortfalls, and one way to push it further).",
     check:
-      "STAGE: CHECK — a low-stakes self-check. For skills/knowledge, a 6-10 question quiz with an '## Answer key' and brief explanations. For interpretive/values subjects, replace the quiz with honest self-reflection questions (no graded answers). For exam-targeted goals, mirror the real assessment's format.",
+      "STAGE: CHECK — a low-stakes self-check. For skills/knowledge, an 8-10 question quiz that ramps from recall to application (say which is which), covering every idea in the milestone at least once, with an '## Answer key' that gives the answer AND a one-sentence explanation of why (and what a typical wrong answer reveals). For interpretive/values subjects, replace the quiz with honest self-reflection questions (no graded answers). For exam-targeted goals, mirror the real assessment's format and timing. Close with '## Score yourself' — what different scores mean and what to revisit.",
     review:
-      "STAGE: REVIEW — an active-recall workout over the WHOLE milestone (spaced retrieval, not new material): 8-12 flashcard-style prompts (cover the answer, recall it) spanning everything covered, plus a short 'if you missed these, revisit…' guide.",
+      "STAGE: REVIEW — an active-recall workout over the WHOLE milestone (spaced retrieval, not new material): 10-14 flashcard-style prompts (question, then the answer under a 'Answer:' line so it can be covered) spanning everything covered, ordered easy → hard, plus '## If you missed these, revisit…' mapping each prompt to the lesson it came from, and a '## One-minute summary' the learner should be able to reproduce from memory.",
   };
+
+  const calibration =
+    ctx.level === "new"
+      ? "The learner is a COMPLETE BEGINNER: assume no prior knowledge, define every term the first time, go slower and smaller."
+      : ctx.level === "solid"
+        ? "The learner has a SOLID FOUNDATION: skip basics, go straight to nuance, edge cases and harder work."
+        : "The learner has SOME EXPERIENCE: skip the true basics, but don't assume mastery.";
 
   const hasSources = ctx.sources && ctx.sources.length > 0;
   const sourcesGuide = hasSources
@@ -479,10 +536,24 @@ export async function generateLessonContent(ctx: {
         .join("\n\n")}`
     : "";
 
+  const siblings = (ctx.siblingTitles ?? []).filter((t) => t !== ctx.lessonTitle);
+  const outcomes = ctx.milestoneOutcomes?.filter(Boolean) ?? [];
+  const contextBlock = [
+    ctx.goalDescription ? `Course details: ${ctx.goalDescription}` : "",
+    ctx.milestoneDetail ? `Milestone means: ${ctx.milestoneDetail}` : "",
+    outcomes.length ? `By the end of this milestone the learner can: ${outcomes.join("; ")}` : "",
+    siblings.length
+      ? `The other lessons in this milestone are: ${siblings.join(" | ")}. Stay in YOUR lane — don't re-teach what an earlier lesson covered or pre-empt a later one; reference them by name where useful.`
+      : "",
+    ctx.focus ? `Why the learner is doing this / what to emphasize: ${ctx.focus}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   return complete({
     system: `${COACH_SYSTEM}
 
-You are writing the ACTUAL learning material for a single lesson — the real content the user studies, not a description of it. Be genuinely useful and complete for this one lesson only. Output clean GitHub-flavored markdown. Do not include the lesson title as an H1 (the app shows it).
+You are writing the ACTUAL learning material for a single lesson — the real content the user studies, not a description of it. Be genuinely useful and complete for this one lesson only: specific to the subject, concrete, with real examples (real code that runs, real numbers, real sentences), never generic filler or "in this lesson we will…". Output clean GitHub-flavored markdown. Do not include the lesson title as an H1 (the app shows it). ${calibration}
 
 First silently judge HOW this subject is learned — a hands-on skill, a body of knowledge/ideas, something interpretive/reflective, memorization-heavy, or exam-targeted (or a mix) — and shape the content accordingly, so a reflective subject never gets rote worksheets and a skill never gets only prose.
 
@@ -492,7 +563,7 @@ When a concept is inherently visual or structural, include a diagram. Use a \`\`
     messages: [
       {
         role: "user",
-        content: `Goal: ${ctx.goalTitle}\nMilestone: ${ctx.milestoneTitle}\nLesson: ${ctx.lessonTitle}\nObjective: ${ctx.lessonObjective}${sourcesBlock}\n\nWrite this lesson's content now.`,
+        content: `Goal: ${ctx.goalTitle}\nMilestone: ${ctx.milestoneTitle}\nLesson: ${ctx.lessonTitle}\nObjective: ${ctx.lessonObjective}${contextBlock ? `\n${contextBlock}` : ""}${sourcesBlock}\n\nWrite this lesson's content now.`,
       },
     ],
   });
@@ -640,6 +711,47 @@ Respond with ONLY JSON, no prose or fences:
   return { studyGuide: typeof parsed.studyGuide === "string" ? parsed.studyGuide : "", questions };
 }
 
+/** A fresh question set for an exam whose study guide already exists (each sitting gets new questions). */
+export async function generateExamQuestions(ctx: {
+  goalTitle: string;
+  scope: "midterm" | "final";
+  sections: { title: string; objective: string; content: string }[];
+  studyGuide?: string;
+}): Promise<{ question: string }[]> {
+  const n = ctx.scope === "final" ? 8 : 6;
+  const material = ctx.sections
+    .map((s, i) => `### ${i + 1}. ${s.title}\n${s.objective}\n${s.content.slice(0, 1800)}`)
+    .join("\n\n")
+    .slice(0, 14000);
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+You are writing a FRESH set of exactly ${n} ${ctx.scope} exam questions for the course "${ctx.goalTitle}". Cover ALL the material evenly (spread questions across sections — never cluster on one). Mix recall, explanation and application; adapt to the subject (a skill gets "do it" questions, knowledge gets "explain/compare", exam-targeted subjects mirror the real test). Each must be answerable in a few sentences without any tool, and must be gradable against the material. Do NOT include answers. Respond with ONLY JSON, no prose or fences:
+{ "questions": [ "question one", "question two" ] }`,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.7,
+    messages: [
+      {
+        role: "user",
+        content: `COURSE MATERIAL:\n${material}${ctx.studyGuide ? `\n\nSTUDY GUIDE (what the learner revised from):\n${ctx.studyGuide.slice(0, 6000)}` : ""}\n\nWrite the ${n} questions.`,
+      },
+    ],
+  });
+  let parsed: { questions?: unknown };
+  try {
+    parsed = parseJson(raw);
+  } catch {
+    throw new Error("Coach returned unparseable questions");
+  }
+  const qs = (Array.isArray(parsed.questions) ? parsed.questions : [])
+    .map((q) => (typeof q === "string" ? q : (q as { question?: string })?.question))
+    .filter((q): q is string => typeof q === "string" && q.trim().length > 0)
+    .slice(0, n)
+    .map((q) => ({ question: q.slice(0, 500) }));
+  if (!qs.length) throw new Error("Coach returned no exam questions");
+  return qs;
+}
+
 export type QuizVerdict = "correct" | "partial" | "incorrect";
 
 export type QuizGrade = {
@@ -652,11 +764,20 @@ export async function gradeReviewQuiz(ctx: {
   lessonTitle: string;
   content: string;
   items: { question: string; answer: string }[];
+  /** How much reference material to show the grader (an exam spans a whole course). */
+  maxRef?: number;
+  /** "exam" grades strictly and treats the reference as the whole course; default is a lesson recall. */
+  mode?: "recall" | "exam";
 }): Promise<QuizGrade> {
+  const exam = ctx.mode === "exam";
   const raw = await complete({
     system: `${COACH_SYSTEM}
 
-You are grading a learner's recall quiz against the lesson content (the source of truth). For each question+answer, judge "correct", "partial", or "incorrect" and give one short, kind, specific feedback line (name what was missed). Then give a 1-2 sentence overall summary and a suggested spaced-repetition rating based on how they did overall: "again" (mostly wrong), "hard" (shaky), "good" (solid), "easy" (nailed it). A blank answer is "incorrect". Respond with ONLY JSON, no prose or fences:
+You are grading a learner's ${exam ? "EXAM" : "recall quiz"} against the reference material (the source of truth). For each question+answer, judge "correct", "partial", or "incorrect" and give one short, kind, specific feedback line (name exactly what was missed or wrong, and the correct idea in a few words). ${
+      exam
+        ? "Grade fairly but strictly: 'correct' means the answer would satisfy a knowledgeable examiner; 'partial' means the core idea is there with a gap or error; vague or generic answers that could be written without studying are 'incorrect'."
+        : ""
+    }Then give a 1-2 sentence overall summary and a suggested spaced-repetition rating based on how they did overall: "again" (mostly wrong), "hard" (shaky), "good" (solid), "easy" (nailed it). A blank answer is "incorrect". Respond with ONLY JSON, no prose or fences:
 { "results": [ { "verdict": "correct|partial|incorrect", "feedback": "..." } ], "summary": "...", "suggested": "again|hard|good|easy" }
 The results array MUST have exactly one entry per question, in order.`,
     maxTokens: MAX_OUTPUT_TOKENS,
@@ -664,7 +785,7 @@ The results array MUST have exactly one entry per question, in order.`,
     messages: [
       {
         role: "user",
-        content: `Lesson: ${ctx.lessonTitle}\n\nLESSON CONTENT:\n${ctx.content.slice(0, 6000)}\n\nQUIZ:\n${ctx.items
+        content: `${exam ? "Exam" : "Lesson"}: ${ctx.lessonTitle}\n\nREFERENCE MATERIAL:\n${ctx.content.slice(0, ctx.maxRef ?? 6000)}\n\nQUIZ:\n${ctx.items
           .map((it, i) => `Q${i + 1}: ${it.question}\nLearner's answer: ${it.answer || "(blank)"}`)
           .join("\n\n")}\n\nGrade it.`,
       },

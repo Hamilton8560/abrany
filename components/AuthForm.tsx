@@ -27,7 +27,8 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
         setBusy(false);
         return;
       }
-      window.location.href = "/app";
+      const next = new URLSearchParams(window.location.search).get("next");
+      window.location.href = next && next.startsWith("/app") ? next : "/app";
     } catch {
       setError("Network error — try again");
       setBusy(false);
@@ -75,6 +76,13 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
               className="w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
             />
             {error && <p className="text-[12.5px] text-accent">{error}</p>}
+            {isLogin && (
+              <p className="-mt-1 text-right text-[12px]">
+                <Link href="/forgot" className="font-medium text-muted hover:text-accent">
+                  Forgot password?
+                </Link>
+              </p>
+            )}
             <button
               type="submit"
               disabled={busy || !email || !password}
@@ -92,7 +100,9 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
           </p>
         </div>
         <p className="mt-4 text-center text-[11.5px] text-muted/80">
-          You&apos;ll add your own AI key after signing up — free to use.
+          {isLogin
+            ? "Signed up by your employer? Use the email they sent you — you'll set your own password on first login."
+            : "Free to join. Your company's AI is used automatically if you were invited by one; otherwise add your own key in Settings."}
         </p>
       </div>
     </main>

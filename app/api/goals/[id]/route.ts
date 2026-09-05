@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGoal, updateGoal, deleteGoal, getPlanForGoal, getChildGoals, goalStats, userOwnsGoal } from "@/lib/repo";
+import { assignmentForGoal, assignmentView } from "@/lib/org";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -28,6 +29,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/goals/[id]">) {
   return NextResponse.json({
     goal,
     children,
+    assignment: assignmentView(goal.id),
     // umbrella goals (with track children) have no plan of their own
     plan: rawChildren.length ? null : getPlanForGoal(goal.id) ?? null,
   });
@@ -39,6 +41,10 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/goals/[id]
   const { id } = await ctx.params;
   if (!userOwnsGoal(user.id, Number(id))) return forbidden();
   const body = await request.json().catch(() => ({}));
+  const locked = !!assignmentForGoal(Number(id));
+  if (locked && (body.title !== undefined || body.description !== undefined)) {
+    return NextResponse.json({ error: "This course was assigned by your company and can't be renamed." }, { status: 403 });
+  }
   const goal = updateGoal(Number(id), {
     title: body.title?.toString(),
     description: body.description?.toString(),
@@ -52,6 +58,13 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/goals/[id]">
   if (!user) return unauthorized();
   const { id } = await ctx.params;
   if (!userOwnsGoal(user.id, Number(id))) return forbidden();
+  const a = assignmentForGoal(Number(id));
+  if (a) {
+    return NextResponse.json(
+      { error: `This course was assigned to you by ${a.org_name}. Ask your training admin to remove the assignment.` },
+      { status: 403 },
+    );
+  }
   deleteGoal(Number(id));
   return NextResponse.json({ ok: true });
 }

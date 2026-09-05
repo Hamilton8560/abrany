@@ -1,4 +1,5 @@
 import { displayName, isFreeAiEnabled, type User } from "./repo";
+import { orgAiFor } from "./minimax";
 
 /** Client-safe view of a user — never exposes the password hash or the raw AI key. */
 export type PublicUser = {
@@ -10,7 +11,9 @@ export type PublicUser = {
   hasKey: boolean;
   /** Owner has opened the built-in AI to everyone (global flag, same for all). */
   freeAiAccess: boolean;
-  /** This user can generate right now — own key, owner, or free access is on. */
+  /** AI comes from the user's company (an org member inherits the org owner's access). */
+  orgAi: boolean;
+  /** This user can generate right now — own key, owner, company AI, or free access is on. */
   canUseAi: boolean;
   /** Language code content is generated in (see lib/languages). */
   language: string;
@@ -25,6 +28,7 @@ export type PublicUser = {
 export function publicUser(u: User): PublicUser {
   const freeAiAccess = isFreeAiEnabled();
   const hasKey = !!u.ai_key || !!u.is_owner; // owner uses the server's built-in keys
+  const orgAi = !hasKey && !!orgAiFor(u.id);
   return {
     id: u.id,
     email: u.email,
@@ -33,7 +37,8 @@ export function publicUser(u: User): PublicUser {
     model: u.ai_model,
     hasKey,
     freeAiAccess,
-    canUseAi: hasKey || freeAiAccess,
+    orgAi,
+    canUseAi: hasKey || orgAi || freeAiAccess,
     language: u.language || "en",
     name: u.name || "",
     displayName: displayName(u),

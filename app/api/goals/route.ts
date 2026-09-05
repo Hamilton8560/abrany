@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listGoals, createGoal } from "@/lib/repo";
+import { listGoalsWithMeta, createGoal } from "@/lib/repo";
 import { getSessionUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return unauthorized();
-  return NextResponse.json({ goals: listGoals(user.id) });
+  return NextResponse.json({ goals: listGoalsWithMeta(user.id) });
 }
 
 export async function POST(request: Request) {

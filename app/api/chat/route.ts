@@ -2,15 +2,19 @@ import { NextResponse } from "next/server";
 import {
   getOrCreateDefaultThread,
   listMessages,
+  recentHistory,
   addMessage,
   getGoal,
   getPlanForGoal,
   userOwnsGoal,
   getStudyGuide,
   userOwnsStudyGuide,
+  getLesson,
+  userOwnsLesson,
+  planItemWithContext,
 } from "@/lib/repo";
 import { streamText, withLlm, llmContext, type ChatMessage } from "@/lib/minimax";
-import { COACH_SYSTEM } from "@/lib/coach";
+import { TUTOR_SYSTEM, lessonGroundingPrompt } from "@/lib/coach";
 import { learnerProfile, addMemory, type MemoryCategory } from "@/lib/memory";
 import { languageMismatch } from "@/lib/langdetect";
 import { getSessionUser, unauthorized } from "@/lib/auth";
@@ -28,11 +32,20 @@ function captureMemories(userId: number, text: string): string {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+/** Reasoning models (Kimi K3) spend part of this budget thinking; 2k truncated answers mid-sentence. */
+const CHAT_MAX_TOKENS = 16000;
+
+const scopeGoal = (userId: number, raw: unknown): number | null =>
+  raw != null && raw !== "" && userOwnsGoal(userId, Number(raw)) ? Number(raw) : null;
+
+/** The current conversation for a scope: ?goalId=… for a goal's thread, none for the general one. */
+export async function GET(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorized();
-  const threadId = getOrCreateDefaultThread(user.id);
-  return NextResponse.json({ threadId, messages: listMessages(threadId) });
+  const url = new URL(request.url);
+  const goalId = scopeGoal(user.id, url.searchParams.get("goalId"));
+  const threadId = getOrCreateDefaultThread(user.id, goalId);
+  return NextResponse.json({ threadId, goalId, messages: listMessages(threadId) });
 }
 
 export async function POST(request: Request) {
@@ -41,6 +54,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const content = (body.message ?? "").toString().trim();
   if (!content) return NextResponse.json({ error: "Message is required" }, { status: 400 });
+  if (content.length > 12000) return NextResponse.json({ error: "That message is too long — try splitting it up." }, { status: 400 });
   const llm = llmContext(user);
   if ("error" in llm) return NextResponse.json({ error: llm.error }, { status: 400 });
 
@@ -51,17 +65,22 @@ export async function POST(request: Request) {
     if (mismatch) return NextResponse.json({ languageMismatch: mismatch }, { status: 409 });
   }
 
-  const ownsGoal = body.goalId != null && userOwnsGoal(user.id, Number(body.goalId));
-  const threadId = getOrCreateDefaultThread(user.id, ownsGoal ? Number(body.goalId) : null);
+  // A lesson pins the scope to its goal, so the conversation lands in that course's thread.
+  const lesson =
+    body.lessonId != null && userOwnsLesson(user.id, Number(body.lessonId)) ? getLesson(Number(body.lessonId)) : undefined;
+  const lessonCtx = lesson ? planItemWithContext(lesson.plan_item_id) : undefined;
+  const goalId = lessonCtx ? lessonCtx.goal.id : scopeGoal(user.id, body.goalId);
+
+  const threadId = getOrCreateDefaultThread(user.id, goalId);
   addMessage(threadId, "user", content);
 
-  // Build context: prior turns + optional focused goal/plan.
-  const history: ChatMessage[] = listMessages(threadId).map((m) => ({
+  // Context: the recent tail of this thread (bounded) + everything we know about the learner.
+  const history: ChatMessage[] = recentHistory(threadId, { maxMessages: 40, maxChars: 36_000 }).map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
-  let system = COACH_SYSTEM;
+  let system = TUTOR_SYSTEM;
 
   // Personalize: fold in what the tutor knows about this learner, and let it
   // record new durable facts as it goes (kept out of the visible reply).
@@ -71,8 +90,8 @@ export async function POST(request: Request) {
     `Use this to personalize every reply and push them forward: reference their real progress, gently steer them to what's shaky or overdue, and match their preferences. Don't recite it back verbatim.\n` +
     `When you learn something durable and useful about them (a preference, a goal, a recurring struggle, an important life/context detail), record it by emitting on its own line: <remember category="preference|goal|struggle|context">the fact, in one sentence</remember>. These tags are saved to their profile and never shown to them. Only remember things worth carrying into future sessions — don't remember trivia or restate what you already know.`;
 
-  if (ownsGoal) {
-    const goal = getGoal(Number(body.goalId));
+  if (goalId != null) {
+    const goal = getGoal(goalId);
     if (goal) {
       const plan = getPlanForGoal(goal.id);
       system += `\n\nThe user is currently focused on the goal: "${goal.title}".${
@@ -80,10 +99,21 @@ export async function POST(request: Request) {
       }`;
       if (plan) {
         system += ` Their current plan "${plan.title}" has these milestones: ${plan.items
-          .map((i) => `${i.title} (${i.status})`)
+          .map((i) => `${i.title} (${i.lessons_total ? `${i.lessons_done}/${i.lessons_total} sections done` : i.status})`)
           .join("; ")}.`;
       }
     }
+  }
+
+  if (lesson && lesson.content) {
+    system += lessonGroundingPrompt({
+      title: lesson.title,
+      objective: lesson.objective,
+      kind: lesson.kind,
+      content: lesson.content,
+      milestoneTitle: lessonCtx?.item.title,
+      goalTitle: lessonCtx?.goal.title,
+    });
   }
 
   // Ground the tutor in a specific study guide when the user is discussing one.
@@ -101,15 +131,16 @@ export async function POST(request: Request) {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      // NDJSON: one JSON event per line. { t: "think" | "text" | "tool" | "error", c: ... }
+      // NDJSON: one JSON event per line. { t: "think" | "text" | "tool" | "error" | "meta", c: ... }
       const send = (t: string, c: unknown) => controller.enqueue(encoder.encode(JSON.stringify({ t, c }) + "\n"));
+      send("meta", { threadId, goalId });
       let toolsSent = 0; // how many completed <remember> tags we've announced as tool calls
       try {
         await withLlm(llm.creds, async () => {
           for await (const chunk of streamText({
             system,
             messages: history,
-            maxTokens: 2048,
+            maxTokens: CHAT_MAX_TOKENS,
             signal: request.signal,
           })) {
             if (chunk.kind === "thinking") {

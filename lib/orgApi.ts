@@ -1,6 +1,7 @@
 import { getUserByEmail } from "./repo";
 import {
   createAssignment,
+  normalizeDueAt,
   memberRole,
   listMembers,
   listAssignments,
@@ -68,12 +69,8 @@ export function buildAssignment(
   const title = (input.title ?? "").toString().trim();
   if (!title) return { error: "Assignment title is required" };
 
-  let dueAt: string | null = null;
-  if (input.dueAt) {
-    const d = new Date(input.dueAt.toString());
-    if (Number.isNaN(d.getTime())) return { error: "dueAt must be an ISO date (e.g. 2026-08-01)" };
-    dueAt = d.toISOString();
-  }
+  const dueAt = normalizeDueAt(input.dueAt);
+  if (dueAt === undefined) return { error: "dueAt must be an ISO date (e.g. 2026-08-01)" };
 
   const curriculum: CurriculumInput = { title, description: (input.description ?? "").toString() };
   if (Array.isArray(input.milestones)) {
@@ -131,6 +128,9 @@ export const progressJson = (a: AssignmentProgress) => ({
   passedLate: !!a.passed_late,
   completedAt: a.completed_at,
   createdAt: a.created_at,
+  // '' once the course exists; queued|building while the AI is still writing it; error if it failed
+  courseBuild: a.build_status,
+  courseBuildError: a.build_error,
   progress: {
     sectionsDone: a.sections_done,
     sectionsTotal: a.sections_total,

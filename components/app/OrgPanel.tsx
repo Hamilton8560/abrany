@@ -27,6 +27,8 @@ type Progress = {
   focus_sec: number;
   exam_best: number;
   exam_passed: number;
+  build_status?: string;
+  build_error?: string;
   org_name?: string;
   org_logo?: string;
 };
@@ -67,14 +69,16 @@ const fmtDate = (iso: string) =>
 const daysLeft = (dueIso: string) =>
   Math.ceil((new Date(dueIso).getTime() - Date.now()) / 86_400_000);
 
-function StatusChip({ status, late }: { status: Progress["status"]; late?: boolean }) {
+function StatusChip({ status, late, build }: { status: Progress["status"]; late?: boolean; build?: string }) {
   const map = {
     passed: ["bg-up/15 text-up", late ? "Passed (late)" : "Passed"],
     failed: ["bg-accent/15 text-accent", "Failed — past due"],
     in_progress: ["bg-ink/10 text-ink", "In progress"],
     assigned: ["glassx text-muted", "Assigned"],
   } as const;
-  const [cls, label] = map[status];
+  let [cls, label] = map[status] as readonly [string, string];
+  if (status === "assigned" && (build === "queued" || build === "building")) [cls, label] = ["bg-accent/12 text-accent", "Building course…"];
+  if (status === "assigned" && build === "error") [cls, label] = ["bg-accent/15 text-accent", "Build failed"];
   return (
     <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wide ${cls}`}>
       {label}
@@ -113,6 +117,17 @@ export default function OrgPanel() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // while any assigned course is still being written, keep the dashboard live
+  const anyBuilding = !!(
+    data?.admin?.assignments.some((a) => a.build_status === "queued" || a.build_status === "building") ||
+    data?.myAssignments.some((a) => a.build_status === "queued" || a.build_status === "building")
+  );
+  useEffect(() => {
+    if (!anyBuilding) return;
+    const t = setInterval(refresh, 4000);
+    return () => clearInterval(t);
+  }, [anyBuilding, refresh]);
 
   if (error) return <p className="text-[13px] text-accent">{error}</p>;
   if (!data) return <p className="text-[13px] text-muted">Loading…</p>;
@@ -161,7 +176,13 @@ function MyTraining({ items }: { items: Progress[] }) {
                 </Link>
                 <div className="flex items-center gap-3">
                   <ProgressBar done={a.sections_done} total={a.sections_total} />
-                  <StatusChip status={a.status} late={!!a.passed_late} />
+                  <StatusChip status={a.status} late={!!a.passed_late} build={a.build_status} />
+                  <Link
+                    href={`/app/goals/${a.goal_id}`}
+                    className="glassx-dark shrink-0 rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-white"
+                  >
+                    {a.status === "passed" ? "Open" : a.sections_done > 0 ? "Continue" : "Start"}
+                  </Link>
                 </div>
               </div>
             </li>
@@ -369,7 +390,8 @@ function ProgramsTab({ members, refresh }: { members: Member[]; refresh: () => v
     }
   };
 
-  const del = async (id: number) => {
+  const del = async (id: number, title: string) => {
+    if (!window.confirm(`Delete the program “${title}”? Employees already assigned keep their courses.`)) return;
     try {
       const d = await api<{ programs: ProgramRow[] }>(`/api/orgs/programs/${id}`, { method: "DELETE" });
       setPrograms(d.programs);
@@ -395,7 +417,9 @@ function ProgramsTab({ members, refresh }: { members: Member[]; refresh: () => v
         method: "POST",
         body: JSON.stringify({ userIds: [...picked], dueAt: dueAt || null, note }),
       });
-      setDeployMsg(`Deployed to ${r.deployed} employee${r.deployed === 1 ? "" : "s"}${r.skipped ? `, ${r.skipped} already had it` : ""}.`);
+      setDeployMsg(
+        `Deployed to ${r.deployed} employee${r.deployed === 1 ? "" : "s"}${r.skipped ? `, ${r.skipped} already had it` : ""}. Section content is being written in the background — track it on the Assignments tab.`,
+      );
       setPicked(new Set());
       refresh();
     } catch (e) {
@@ -488,7 +512,7 @@ function ProgramsTab({ members, refresh }: { members: Member[]; refresh: () => v
                   Deploy
                 </button>
                 <button
-                  onClick={() => del(p.id)}
+                  onClick={() => del(p.id, p.title)}
                   className="rounded-full px-2.5 py-1.5 text-[12px] font-semibold text-muted hover:text-accent"
                 >
                   Delete
@@ -551,6 +575,27 @@ function TeamTab({ members, invites, refresh }: { members: Member[]; invites: In
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [linkBusy, setLinkBusy] = useState<number | null>(null);
+
+  /** Rescue path: a fresh single-use password link, delivered even if the welcome email never was. */
+  const sendResetLink = async (m: Member) => {
+    setLinkBusy(m.user_id);
+    setMsg(null);
+    try {
+      await api(`/api/orgs/members/${m.user_id}/reset-link`, { method: "POST" });
+      setMsg(`Reset link sent to ${m.email}. It works once and expires in 7 days.`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Could not send the link");
+    } finally {
+      setLinkBusy(null);
+    }
+  };
+
+  const remove = async (m: Member) => {
+    if (!window.confirm(`Remove ${m.display_name} (${m.email}) from the team? Their account and courses stay; you just stop tracking them.`)) return;
+    await api(`/api/orgs/members/${m.user_id}`, { method: "DELETE" }).catch(() => {});
+    refresh();
+  };
 
   const add = async () => {
     if (!email.trim() || busy) return;
@@ -563,9 +608,9 @@ function TeamTab({ members, invites, refresh }: { members: Member[]; invites: In
       });
       setMsg(
         r.status === "added"
-          ? "Added — they'll see assigned training on their Company page. We emailed them a heads-up."
+          ? "Added — they'll see assigned training on their Company page and dashboard. We emailed them a heads-up."
           : r.status === "created"
-            ? "Signed up — we emailed them a temporary password. They'll set their own the moment they log in."
+            ? "Signed up — we emailed them a temporary password. They'll set their own the moment they log in. If it doesn't arrive, use “Send reset link” on their row."
             : "Already a member.",
       );
       setEmail("");
@@ -608,14 +653,16 @@ function TeamTab({ members, invites, refresh }: { members: Member[]; invites: In
               <span className="rounded-full bg-ink/8 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wide text-muted">
                 {m.role}
               </span>
+              <button
+                onClick={() => sendResetLink(m)}
+                disabled={linkBusy === m.user_id}
+                title="Email them a single-use link to set a password — for anyone locked out or who never got their welcome email"
+                className="text-[11.5px] font-semibold text-muted hover:text-ink disabled:opacity-50"
+              >
+                {linkBusy === m.user_id ? "Sending…" : "Send reset link"}
+              </button>
               {m.role !== "admin" && (
-                <button
-                  onClick={async () => {
-                    await api(`/api/orgs/members/${m.user_id}`, { method: "DELETE" }).catch(() => {});
-                    refresh();
-                  }}
-                  className="text-[11.5px] font-semibold text-muted hover:text-accent"
-                >
+                <button onClick={() => remove(m)} className="text-[11.5px] font-semibold text-muted hover:text-accent">
                   Remove
                 </button>
               )}
@@ -668,8 +715,39 @@ function AssignmentsTab({
   const [dueAt, setDueAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [openDetail, setOpenDetail] = useState<number | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editDue, setEditDue] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+
+  const startEdit = (a: Progress) => {
+    setEditingId(a.id);
+    setEditDue(a.due_at ? a.due_at.slice(0, 10) : "");
+    setEditNote(a.note);
+  };
+  const saveEdit = async (id: number) => {
+    setEditBusy(true);
+    try {
+      await api(`/api/orgs/assignments/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ dueAt: editDue || null, note: editNote }),
+      });
+      setEditingId(null);
+      refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not update the assignment");
+    } finally {
+      setEditBusy(false);
+    }
+  };
+  const stopTracking = async (a: Progress) => {
+    if (!window.confirm(`Stop tracking “${a.goal_title}” for ${a.employee_name || a.employee_email}? They keep the course; it just disappears from this list.`)) return;
+    await api(`/api/orgs/assignments/${a.id}`, { method: "DELETE" }).catch(() => {});
+    refresh();
+  };
 
   const create = async () => {
     if (!email || !title.trim() || busy) return;
@@ -685,6 +763,8 @@ function AssignmentsTab({
       setNote("");
       setDueAt("");
       setShowForm(false);
+      setNotice("Assigned. The course is being built now — the employee opens a ready course with every section written. You'll see it fill in below.");
+      setTimeout(() => setNotice(null), 9000);
       refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not create the assignment");
@@ -785,7 +865,8 @@ function AssignmentsTab({
           {err && <p className="text-[12px] text-accent">{err}</p>}
           <div className="flex items-center justify-between">
             <p className="text-[11px] text-muted">
-              Want to author the full curriculum with your own AI? Use the API & MCP tab.
+              The AI builds the whole course (plan, sections, exams) in the background from the title and context.
+              Want to author it yourself? Use Programs, or the API & MCP tab.
             </p>
             <button
               onClick={create}
@@ -798,6 +879,8 @@ function AssignmentsTab({
         </div>
       )}
 
+      {notice && <p className="rounded-[12px] bg-up/10 px-4 py-2.5 text-[12.5px] text-ink">{notice}</p>}
+      {err && !showForm && <p className="text-[12px] text-accent">{err}</p>}
       {assignments.length === 0 && !showForm && (
         <p className="py-6 text-center text-[13px] text-muted">No assignments yet.</p>
       )}
@@ -821,16 +904,21 @@ function AssignmentsTab({
                     <span>Read {fmtDuration(a.read_sec)}</span>
                     <span>Focus {fmtDuration(a.focus_sec)}</span>
                     {a.exam_best > 0 && <span>Final {a.exam_best}%</span>}
+                    {a.build_status === "error" && <span className="text-accent">Build failed: {a.build_error || "unknown error"}</span>}
                   </p>
                 </button>
                 <div className="flex items-center gap-3">
                   <ProgressBar done={a.sections_done} total={a.sections_total} />
-                  <StatusChip status={a.status} late={!!a.passed_late} />
+                  <StatusChip status={a.status} late={!!a.passed_late} build={a.build_status} />
                   <button
-                    onClick={async () => {
-                      await api(`/api/orgs/assignments/${a.id}`, { method: "DELETE" }).catch(() => {});
-                      refresh();
-                    }}
+                    onClick={() => (editingId === a.id ? setEditingId(null) : startEdit(a))}
+                    title="Change the deadline or note"
+                    className="text-[11.5px] font-semibold text-muted hover:text-ink"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => stopTracking(a)}
                     title="Stop tracking (the employee keeps the course)"
                     className="text-[11.5px] font-semibold text-muted hover:text-accent"
                   >
@@ -838,6 +926,38 @@ function AssignmentsTab({
                   </button>
                 </div>
               </div>
+
+              {editingId === a.id && (
+                <div className="mt-3 grid gap-2 rounded-[12px] border border-line bg-white/60 p-3 sm:grid-cols-[1fr_2fr_auto]">
+                  <input
+                    type="date"
+                    value={editDue}
+                    onChange={(e) => setEditDue(e.target.value)}
+                    className="rounded-full border border-line bg-white/80 px-4 py-2 text-[13px] text-ink outline-none focus:border-accent"
+                  />
+                  <input
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    placeholder="Note the employee sees"
+                    className="rounded-full border border-line bg-white/80 px-4 py-2 text-[13px] text-ink outline-none focus:border-accent"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => saveEdit(a.id)}
+                      disabled={editBusy}
+                      className="glassx-dark rounded-full px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                    >
+                      {editBusy ? "Saving…" : "Save"}
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="text-[12px] font-semibold text-muted hover:text-ink">
+                      Cancel
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted sm:col-span-3">
+                    Pushing a deadline out un-fails a past-due assignment. Clear the date for no deadline.
+                  </p>
+                </div>
+              )}
 
               {openDetail === a.id && (
                 <div className="mt-3 border-t border-line/60 pt-3">

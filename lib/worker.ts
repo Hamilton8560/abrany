@@ -23,6 +23,12 @@ import {
   setStudyGuideStatus,
   goalReadySections,
   milestoneReadySections,
+  getPlanForGoal,
+  createPlan,
+  createLessonStubs,
+  ensureExams,
+  setGoalBuild,
+  listLessons,
   type Job,
 } from "./repo";
 import {
@@ -32,6 +38,10 @@ import {
   generateStudyGuide,
   translateMarkdownChunked,
   translateLine,
+  generatePlanV2,
+  expandMilestone,
+  DEFAULT_INTAKE,
+  type PlanIntake,
 } from "./coach";
 import { braveSearch } from "./search";
 import { withLlm, resolveUserLlm } from "./minimax";
@@ -66,17 +76,69 @@ async function processJob(job: Job): Promise<void> {
       ? await braveSearch(`${lesson.title} ${ctx.goal.title}`, 6)
       : [];
 
+    // calibrate to the learner (plan intake) and place the lesson within its milestone
+    let intake: { level?: "new" | "some" | "solid"; focus?: string } = {};
+    try {
+      intake = ctx.plan.intake ? JSON.parse(ctx.plan.intake) : {};
+    } catch {
+      /* legacy plan */
+    }
+    let outcomes: string[] = [];
+    try {
+      outcomes = JSON.parse(ctx.item.outcomes || "[]");
+    } catch {
+      /* legacy row */
+    }
     // generateLessonContent → complete() already routes through the shared queue;
     // do NOT wrap again here or nested acquisition can deadlock the cap.
     const content = await generateLessonContent({
       goalTitle: ctx.goal.title,
+      goalDescription: ctx.goal.description,
       milestoneTitle: ctx.item.title,
+      milestoneDetail: ctx.item.detail,
+      milestoneOutcomes: outcomes,
       lessonTitle: lesson.title,
       lessonObjective: lesson.objective,
       kind: lesson.kind,
+      siblingTitles: listLessons(lesson.plan_item_id).map((l) => l.title),
+      level: intake.level,
+      focus: intake.focus,
       sources,
     });
     setLessonContent(lessonId, content, sources);
+    return;
+  }
+
+  if (job.type === "build_course") {
+    // Build a whole course in the background: plan (if missing) → sections for every
+    // milestone → exams → queue every section's content. This is what makes "Assign
+    // education" hand the employee a ready course instead of an empty goal.
+    const payload = JSON.parse(job.payload) as { goalId: number; intake?: Partial<PlanIntake> };
+    const goal = getGoal(payload.goalId);
+    if (!goal) return;
+    setGoalBuild(goal.id, "building");
+    const intake: PlanIntake = { ...DEFAULT_INTAKE, ...(payload.intake ?? {}) };
+    let plan = getPlanForGoal(goal.id);
+    if (!plan || !plan.items.length) {
+      const generated = await generatePlanV2(goal, intake);
+      createPlan(goal.id, generated.title, generated.summary, generated.items, { version: 2, intake });
+      plan = getPlanForGoal(goal.id)!;
+    }
+    for (const item of plan.items) {
+      if (item.lessons_total > 0) continue; // resumed after a crash — keep what exists
+      const stubs = await expandMilestone({
+        goalTitle: goal.title,
+        goalDescription: goal.description,
+        milestoneTitle: item.title,
+        milestoneDetail: item.detail,
+      });
+      createLessonStubs(item.id, stubs);
+    }
+    ensureExams(goal.id);
+    for (const item of plan.items) {
+      for (const l of listLessons(item.id)) if (l.status === "stub" || l.status === "error") enqueueLesson(l.id, job.user_id ?? 0);
+    }
+    setGoalBuild(goal.id, "ready");
     return;
   }
 
@@ -177,8 +239,10 @@ function tick() {
             presentationId?: number;
             chapterId?: number;
             guideId?: number;
+            goalId?: number;
           };
           if (p.lessonId) setLessonStatus(p.lessonId, finalError ? "error" : "queued", finalError ? msg : "");
+          if (p.goalId && job.type === "build_course") setGoalBuild(p.goalId, finalError ? "error" : "queued", finalError ? msg : "");
           if (p.presentationId && finalError) setPresentationStatus(p.presentationId, "error", msg);
           if (p.chapterId) setChapterStatus(p.chapterId, finalError ? "error" : "queued", finalError ? msg : "");
           if (p.guideId && finalError) setStudyGuideStatus(p.guideId, "error", msg);
@@ -207,6 +271,16 @@ export function enqueueLesson(lessonId: number, userId: number): Job {
   if (existing) return existing;
   setLessonStatus(lessonId, "queued");
   const job = enqueueJobRow("generate_lesson", { lessonId }, userId, `lesson:${lessonId}`);
+  ensureWorker();
+  return job;
+}
+
+/** Queue a whole-course build (plan + sections + exams + content) for a goal (idempotent). */
+export function enqueueBuildCourse(goalId: number, userId: number, intake?: Partial<PlanIntake>): Job {
+  const existing = findActiveJob(`course:${goalId}`);
+  if (existing) return existing;
+  setGoalBuild(goalId, "queued");
+  const job = enqueueJobRow("build_course", { goalId, intake: intake ?? {} }, userId, `course:${goalId}`);
   ensureWorker();
   return job;
 }

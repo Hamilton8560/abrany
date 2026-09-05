@@ -106,6 +106,35 @@ export async function sendOrgAddedEmail(opts: { to: string; name: string; orgNam
   });
 }
 
+/* ── password reset link (admin rescue + forgot-password) ─────── */
+
+export async function sendPasswordResetEmail(opts: {
+  to: string;
+  name: string;
+  orgName: string;
+  resetUrl: string;
+  tokenId: number;
+}) {
+  const from = opts.orgName ? `${opts.orgName} uses Abrany for training.` : "You (or someone) asked to reset your Abrany password.";
+  const html = wrap(
+    `${eyebrow("Password reset")}
+     <h1 style="margin:0 0 12px;font-size:22px;font-weight:800;">Set a new password, ${opts.name.split(" ")[0]}</h1>
+     <p style="margin:0 0 6px;color:#5c6675;">${from} Use the button below to choose a new password and get straight back in.</p>
+     ${button(opts.resetUrl, "Set my password")}
+     <p style="margin:0;color:#8891a0;font-size:12.5px;">This link works once and expires in 7 days. If you didn't ask for it, you can ignore this email — your password stays the same.</p>`,
+    "Set a new Abrany password",
+  );
+  const text = `${from}\n\nSet a new password (link works once, expires in 7 days):\n${opts.resetUrl}\n\nIf you didn't ask for this, ignore this email.`;
+  await send({
+    to: opts.to,
+    subject: opts.orgName ? `${opts.orgName} — set your Abrany password` : "Reset your Abrany password",
+    html,
+    text,
+    // unique per issuance so a re-send ALWAYS delivers (unlike the one-shot welcome email)
+    idempotencyKey: `password-reset/${opts.tokenId}`,
+  });
+}
+
 /* ── certificate earned ────────────────────────────────────────── */
 
 export async function sendCertificateEmail(opts: {

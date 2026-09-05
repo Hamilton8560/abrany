@@ -299,7 +299,16 @@ export default function SettingsPage() {
       ) : (
         <>
           <section className="glass rounded-[var(--radius-card-lg)] p-6">
-            {me?.freeAiAccess && (
+            {me?.orgAi && !me.hasKey && (
+              <div className="mb-4 rounded-[14px] border border-up/30 bg-up/10 p-4">
+                <p className="text-[13.5px] font-semibold text-ink">Your company&apos;s AI is connected ✓</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted">
+                  You were signed up by your employer, so everything you generate — courses, the tutor, exams — runs
+                  on their AI. No key needed. You can still add a personal key below to use your own.
+                </p>
+              </div>
+            )}
+            {me?.freeAiAccess && !me.orgAi && (
               <div className="mb-4 rounded-[14px] border border-up/30 bg-up/10 p-4">
                 <p className="text-[13.5px] font-semibold text-ink">Free shared AI is available 🎉</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-muted">
@@ -313,7 +322,7 @@ export default function SettingsPage() {
               </div>
             )}
             <p className="text-[14px] text-muted">
-              {me?.freeAiAccess
+              {me?.freeAiAccess || me?.orgAi
                 ? "Prefer your own AI? Pick a provider and paste your key — DeepSeek and OpenRouter are the cheapest to start with."
                 : "Abrany is free — you just connect your own AI. Pick a provider, paste your API key, and you're set. DeepSeek and OpenRouter are the cheapest to start with."}
             </p>
@@ -325,6 +334,8 @@ export default function SettingsPage() {
                     Connected to {PROVIDERS[me.provider]?.label ?? me.provider}
                     {me.model ? ` (${me.model})` : ""}
                   </span>
+                ) : me.orgAi ? (
+                  <span className="font-semibold text-up">Using your company&apos;s AI</span>
                 ) : me.freeAiAccess ? (
                   <span className="font-semibold text-up">Using free shared AI</span>
                 ) : (
