@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import Markdown from "./Markdown";
 import QueueHint from "./QueueHint";
+import Portal from "./Portal";
 
 type Phase = "loading" | "study" | "starting" | "answering" | "grading" | "result" | "error";
 type Verdict = "correct" | "partial" | "incorrect";
@@ -122,6 +123,7 @@ export default function ExamModal({
   const canStart = !!eligibility?.eligible;
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/30 p-4 backdrop-blur-sm sm:p-8"
       onClick={phase === "answering" || phase === "grading" ? undefined : onClose}
@@ -295,5 +297,6 @@ export default function ExamModal({
         )}
       </div>
     </div>
+    </Portal>
   );
 }

@@ -5,6 +5,7 @@ import ImpersonationBanner from "@/components/app/ImpersonationBanner";
 import { getAuthState } from "@/lib/auth";
 import { publicUser } from "@/lib/user";
 import { ensureWeeklyReportScheduler } from "@/lib/weeklyReport";
+import { ensureWorker } from "@/lib/worker";
 
 export const metadata: Metadata = {
   title: "Abrany — Train",
@@ -13,6 +14,9 @@ export const metadata: Metadata = {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   ensureWeeklyReportScheduler();
+  // resume any queued/orphaned generation after a restart — previously the worker only woke
+  // up when someone enqueued something new, so a deploy could strand half-built courses
+  ensureWorker();
   const { effective, impersonating } = await getAuthState();
   if (!effective) redirect("/login");
   // signed up by a company with a temporary password — must set their own before using the app

@@ -814,6 +814,196 @@ The results array MUST have exactly one entry per question, in order.`,
   };
 }
 
+/* ── Interactive practice: progressive problem sets, checking, variants, debrief ── */
+
+import type { Problem } from "./practice";
+
+const PROBLEM_KINDS = ["short", "code", "numeric", "explain"] as const;
+const DIFFS = ["warmup", "core", "stretch"] as const;
+
+function cleanProblem(raw: unknown): Problem | null {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  const prompt = typeof p.prompt === "string" ? p.prompt.trim() : "";
+  if (!prompt) return null;
+  const hints = (Array.isArray(p.hints) ? p.hints : [])
+    .filter((h): h is string => typeof h === "string" && h.trim().length > 0)
+    .slice(0, 3)
+    .map((h) => h.slice(0, 600));
+  while (hints.length < 3) hints.push(hints[hints.length - 1] ?? "Re-read the worked example in the lesson and match its steps to this problem.");
+  return {
+    prompt: prompt.slice(0, 4000),
+    kind: (PROBLEM_KINDS as readonly string[]).includes(p.kind as string) ? (p.kind as Problem["kind"]) : "short",
+    difficulty: (DIFFS as readonly string[]).includes(p.difficulty as string) ? (p.difficulty as Problem["difficulty"]) : "core",
+    starter: typeof p.starter === "string" ? p.starter.slice(0, 4000) : "",
+    hints,
+    solution: typeof p.solution === "string" ? p.solution.slice(0, 6000) : "",
+    rubric: typeof p.rubric === "string" ? p.rubric.slice(0, 1500) : "",
+    answerFormat: typeof p.answerFormat === "string" ? p.answerFormat.slice(0, 200) : "",
+  };
+}
+
+const PROBLEM_SHAPE = `{ "prompt": "the problem, in markdown (code in fences; math written plainly)", "kind": "short|code|numeric|explain", "difficulty": "warmup|core|stretch", "starter": "starter code or template the learner completes ('' if none)", "hints": ["rung 1: a nudge — where to look, what to notice", "rung 2: the rule/strategy to apply", "rung 3: the next concrete step or a partial solution"], "solution": "the full worked solution with reasoning (markdown)", "rubric": "what a correct answer MUST contain, for a grader", "answerFormat": "e.g. 'a number with units', 'a Python function', '2-3 sentences'" }`;
+
+/** A progressive problem set for one lesson: warm-up → core → stretch. */
+export async function generatePracticeSet(ctx: {
+  goalTitle: string;
+  lessonTitle: string;
+  lessonObjective: string;
+  kind: string;
+  content: string;
+  level?: "new" | "some" | "solid";
+  count?: number;
+}): Promise<Problem[]> {
+  const n = Math.max(4, Math.min(8, ctx.count ?? 6));
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+You are writing an INTERACTIVE PRACTICE SET for one lesson — problems the learner will actually solve one at a time inside the app, with a hint ladder and an AI check of each attempt. Ground every problem in THIS lesson's content and terminology; don't test things it never taught.
+
+Design a PROGRESSIVE ROUTE of exactly ${n} problems: about a third "warmup" (one idea each, quick wins), half "core" (the real skill, the lesson's worked example transferred to new numbers/inputs/situations), and 1-2 "stretch" (combine ideas, add a twist or a realistic edge case). Order easy → hard.
+
+Adapt the problem KIND to the subject:
+- programming → "code": a precise task with inputs → expected outputs (give an example), "starter" holds a function signature or template; the solution is complete, runnable code with the expected output.
+- math / engineering / anything quantitative → "numeric": clean statement with units; the solution shows every step.
+- languages, terminology, recall drills → "short": produce the word/sentence/fact.
+- ideas, analysis, reflection, safety/procedures → "explain": a scenario or question answered in 2-4 sentences, with a rubric of what must be mentioned.
+
+Each problem needs a 3-rung hint ladder that NEVER contains the answer (nudge → strategy → next concrete step), a complete worked solution, and a grading rubric. ${
+      ctx.level === "new" ? "The learner is a complete beginner — keep warm-ups very gentle and define terms in prompts." : ctx.level === "solid" ? "The learner is strong — make the core problems genuinely demanding." : ""
+    }
+
+Respond with ONLY JSON, no prose or fences: { "problems": [ ${PROBLEM_SHAPE} ] }`,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.6,
+    messages: [
+      {
+        role: "user",
+        content: `Course: ${ctx.goalTitle}\nLesson (${ctx.kind}): ${ctx.lessonTitle}\nObjective: ${ctx.lessonObjective}\n\nLESSON CONTENT:\n${ctx.content.slice(0, 14000)}\n\nWrite the ${n}-problem practice set.`,
+      },
+    ],
+  });
+  let parsed: { problems?: unknown };
+  try {
+    parsed = parseJson(raw);
+  } catch {
+    throw new Error("Coach returned an unparseable practice set");
+  }
+  const problems = (Array.isArray(parsed.problems) ? parsed.problems : []).map(cleanProblem).filter((p): p is Problem => !!p).slice(0, 8);
+  if (problems.length < 2) throw new Error("Coach returned too few problems");
+  return problems;
+}
+
+export type AttemptGrade = {
+  verdict: "correct" | "partial" | "incorrect";
+  feedback: string; // what's right / what's wrong, specifically
+  misconception: string; // the single gap this reveals ('' if none)
+  nextStep: string; // one concrete thing to do now
+};
+
+/** Check one attempt against the problem's solution + rubric. Coaches, doesn't just mark. */
+export async function gradePracticeAttempt(ctx: {
+  lessonTitle: string;
+  problem: Problem;
+  answer: string;
+  hintsUsed: number;
+  priorAttempts: string[];
+}): Promise<AttemptGrade> {
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+You are checking ONE attempt at a practice problem. Judge it against the reference solution and rubric — but grade the IDEA, not the wording: an equivalent method, a different but correct code approach, or a correct number expressed differently is still "correct". "partial" = the core idea is there but with an error, gap, or unfinished step. "incorrect" = wrong approach, wrong result, or blank. For code, mentally run it on the example inputs.
+
+Coach, don't just mark: name exactly what is right, then exactly what is wrong or missing and WHY (not just "incorrect"). If the answer is wrong, do NOT give the full solution — give the one correction or question that unblocks them, so they can try again. If it's correct, say what made it work and add one sharpening insight. Keep feedback to 2-5 sentences.
+
+Respond with ONLY JSON, no prose or fences:
+{ "verdict": "correct|partial|incorrect", "feedback": "...", "misconception": "the single underlying gap this reveals, or ''", "nextStep": "one concrete thing to do right now" }`,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.3,
+    messages: [
+      {
+        role: "user",
+        content: `Lesson: ${ctx.lessonTitle}\n\nPROBLEM:\n${ctx.problem.prompt}\n${ctx.problem.starter ? `\nSTARTER:\n${ctx.problem.starter}\n` : ""}\nREFERENCE SOLUTION:\n${ctx.problem.solution}\n\nRUBRIC: ${ctx.problem.rubric}\nExpected answer format: ${ctx.problem.answerFormat}\nHints the learner has used so far: ${ctx.hintsUsed} of 3${
+          ctx.priorAttempts.length ? `\nTheir earlier attempts on this problem: ${ctx.priorAttempts.map((a, i) => `(${i + 1}) ${a.slice(0, 400)}`).join(" | ")}` : ""
+        }\n\nLEARNER'S ANSWER:\n${ctx.answer || "(blank)"}\n\nCheck it.`,
+      },
+    ],
+  });
+  let parsed: Partial<AttemptGrade>;
+  try {
+    parsed = parseJson(raw);
+  } catch {
+    throw new Error("Coach returned an unparseable check");
+  }
+  const verdicts = new Set(["correct", "partial", "incorrect"]);
+  return {
+    verdict: (verdicts.has(parsed.verdict as string) ? parsed.verdict : "partial") as AttemptGrade["verdict"],
+    feedback: (parsed.feedback ?? "").toString().slice(0, 1500),
+    misconception: (parsed.misconception ?? "").toString().slice(0, 400),
+    nextStep: (parsed.nextStep ?? "").toString().slice(0, 400),
+  };
+}
+
+/** One more problem: an easier stepping-stone toward `problem`, or a harder follow-up. */
+export async function generateVariantProblem(ctx: {
+  lessonTitle: string;
+  content: string;
+  problem: Problem;
+  direction: "easier" | "harder";
+  struggle?: string;
+}): Promise<Problem> {
+  const raw = await complete({
+    system: `${COACH_SYSTEM}
+
+Write ONE new practice problem for this lesson, ${
+      ctx.direction === "easier"
+        ? "EASIER than the given one: isolate the single sub-skill the learner is stuck on (see their struggle), with smaller numbers / a simpler input / one fewer step — a stepping stone that, once solved, makes the original problem approachable. Difficulty 'warmup'."
+        : "HARDER than the given one: same skill with a twist, an edge case, or a second idea combined. Difficulty 'stretch'."
+    } Same kind as the original. Full hint ladder (no answers in hints), worked solution, rubric. Respond with ONLY JSON, no prose or fences: ${PROBLEM_SHAPE}`,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.6,
+    messages: [
+      {
+        role: "user",
+        content: `Lesson: ${ctx.lessonTitle}\n\nLESSON CONTENT (excerpt):\n${ctx.content.slice(0, 8000)}\n\nORIGINAL PROBLEM (${ctx.problem.difficulty}, ${ctx.problem.kind}):\n${ctx.problem.prompt}\n\nIts solution: ${ctx.problem.solution.slice(0, 2000)}${ctx.struggle ? `\n\nWhere the learner is struggling: ${ctx.struggle}` : ""}\n\nWrite the ${ctx.direction} problem.`,
+      },
+    ],
+  });
+  let parsed: unknown;
+  try {
+    parsed = parseJson(raw);
+  } catch {
+    throw new Error("Coach returned an unparseable problem");
+  }
+  const p = cleanProblem((parsed as { problem?: unknown })?.problem ?? parsed);
+  if (!p) throw new Error("Coach returned no problem");
+  p.difficulty = ctx.direction === "easier" ? "warmup" : "stretch";
+  return p;
+}
+
+/** The end-of-set debrief: patterns across attempts, the one thing to fix, what to do next. */
+export async function debriefPracticeSet(ctx: {
+  lessonTitle: string;
+  problems: Problem[];
+  results: { verdict: string | null; hintsUsed: number; misconception?: string }[];
+}): Promise<string> {
+  const lines = ctx.problems.map(
+    (p, i) => `${i + 1}. [${p.difficulty}] ${p.prompt.slice(0, 160).replace(/\n/g, " ")} → ${ctx.results[i]?.verdict ?? "skipped"} (hints: ${ctx.results[i]?.hintsUsed ?? 0})${ctx.results[i]?.misconception ? ` — gap: ${ctx.results[i]!.misconception}` : ""}`,
+  );
+  const out = await complete({
+    system: `${COACH_SYSTEM}
+
+Write a short DEBRIEF for a practice session the learner just finished — the kind a great coach gives after a set: honest, specific, encouraging. Markdown, no H1, under 220 words:
+- **What worked**: 1-2 specific strengths shown by the results.
+- **The one thing to fix**: the single most important pattern across the misses/hints (name the misconception plainly and how to think about it instead). If everything was correct, name what to push toward next.
+- **Do this next**: one concrete action (redo problem N without hints, re-read one section of the lesson, try the stretch problem, move on).
+No filler, no generic praise.`,
+    maxTokens: 4000,
+    temperature: 0.5,
+    messages: [{ role: "user", content: `Lesson: ${ctx.lessonTitle}\n\nRESULTS:\n${lines.join("\n")}\n\nWrite the debrief.` }],
+  });
+  return out.trim();
+}
+
 /* ── Study guides: a standalone, keepable revision document ── */
 
 export async function generateStudyGuide(ctx: {

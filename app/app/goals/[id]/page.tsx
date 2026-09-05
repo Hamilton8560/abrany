@@ -10,6 +10,7 @@ import MilestoneLessons from "@/components/app/MilestoneLessons";
 import ExamModal from "@/components/app/ExamModal";
 import QueueHint from "@/components/app/QueueHint";
 import DraftAssistant from "@/components/app/DraftAssistant";
+import Portal from "@/components/app/Portal";
 
 type FullPlan = Plan & { items: PlanItemWithProgress[] };
 type TrackChild = Goal & { hasPlan: boolean; milestones: number; sectionsTotal: number; sectionsDone: number };
@@ -788,6 +789,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       )}
 
       {confirmOpen && (
+        <Portal>
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-ink/30 p-4 backdrop-blur-sm"
           onClick={() => setConfirmOpen(false)}
@@ -835,6 +837,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

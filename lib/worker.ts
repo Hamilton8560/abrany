@@ -56,6 +56,8 @@ import { languageName } from "./languages";
  */
 
 const TICK_MS = 1200;
+/** How many milestones a course build writes up front (the rest are prefetched as the learner advances). */
+export const EAGER_MILESTONES = 2;
 const WORKER_MAX_INFLIGHT = 3; // how many jobs the worker holds at once (MiniMax cap still applies inside)
 const MAX_ATTEMPTS = 3;
 
@@ -135,7 +137,10 @@ async function processJob(job: Job): Promise<void> {
       createLessonStubs(item.id, stubs);
     }
     ensureExams(goal.id);
-    for (const item of plan.items) {
+    // Just-in-time content: write the first milestones now so the learner can start
+    // immediately; later milestones are prefetched as they advance (see prefetchNextMilestone).
+    // Queuing all 50+ sections of a course at once would monopolize the shared AI queue.
+    for (const item of plan.items.slice(0, EAGER_MILESTONES)) {
       for (const l of listLessons(item.id)) if (l.status === "stub" || l.status === "error") enqueueLesson(l.id, job.user_id ?? 0);
     }
     setGoalBuild(goal.id, "ready");
@@ -273,6 +278,30 @@ export function enqueueLesson(lessonId: number, userId: number): Job {
   const job = enqueueJobRow("generate_lesson", { lessonId }, userId, `lesson:${lessonId}`);
   ensureWorker();
   return job;
+}
+
+/**
+ * Prefetch: when the learner touches a section, make sure its milestone AND the next one
+ * are being written, so content is always one step ahead of them without generating a
+ * whole course nobody may finish.
+ */
+export function prefetchAround(planItemId: number, userId: number): number {
+  const ctx = planItemWithContext(planItemId);
+  if (!ctx) return 0;
+  const plan = getPlanForGoal(ctx.goal.id);
+  if (!plan) return 0;
+  const idx = plan.items.findIndex((it) => it.id === planItemId);
+  if (idx < 0) return 0;
+  let queued = 0;
+  for (const item of plan.items.slice(idx, idx + 2)) {
+    for (const l of listLessons(item.id)) {
+      if (l.status === "stub" || l.status === "error") {
+        enqueueLesson(l.id, userId);
+        queued++;
+      }
+    }
+  }
+  return queued;
 }
 
 /** Queue a whole-course build (plan + sections + exams + content) for a goal (idempotent). */

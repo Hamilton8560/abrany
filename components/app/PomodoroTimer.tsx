@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fmtClock, api } from "@/lib/client";
 import { PlayIcon, PauseIcon, ResetIcon, CheckIcon } from "@/components/icons";
+import Portal from "./Portal";
 import type { Goal, TimerState } from "@/lib/repo";
 
 type Mode = "focus" | "break";
@@ -382,6 +383,7 @@ function SessionRecorder({
   };
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-ink/25 p-4 backdrop-blur-sm"
       onClick={onClose}
@@ -460,5 +462,6 @@ function SessionRecorder({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

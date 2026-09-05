@@ -1075,12 +1075,18 @@ export function finalPassed(goalId: number): boolean {
   return !!r && r.passed === 1;
 }
 
+/** Models often repeat the lesson title as a leading H1 despite instructions; the viewer shows the title itself. */
+export function stripLeadingH1(markdown: string): string {
+  const m = markdown.match(/^\s*#\s+[^\n]*\n+/);
+  return m ? markdown.slice(m[0].length) : markdown;
+}
+
 export function setLessonContent(id: number, content: string, sources: object[] = []): void {
   getDb()
     .prepare(
       "UPDATE lessons SET content = ?, sources = ?, status = 'ready', error = '', updated_at = datetime('now') WHERE id = ?",
     )
-    .run(content, JSON.stringify(sources), id);
+    .run(stripLeadingH1(content), JSON.stringify(sources), id);
 }
 
 /* ── Study guides (first-class, generated on demand) ───────── */

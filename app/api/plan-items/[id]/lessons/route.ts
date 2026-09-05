@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { listLessons, createLessonStubs, planItemWithContext, userOwnsPlanItem } from "@/lib/repo";
 import { expandMilestone } from "@/lib/coach";
 import { getSessionUser, unauthorized, forbidden } from "@/lib/auth";
-import { llmContext, withLlm } from "@/lib/minimax";
+import { llmContext, withLlm, resolveUserLlm } from "@/lib/minimax";
+import { prefetchAround } from "@/lib/worker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,13 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/plan-items/[id]
   if (!user) return unauthorized();
   const { id } = await ctx.params;
   if (!userOwnsPlanItem(user.id, Number(id))) return forbidden();
-  return NextResponse.json({ lessons: listLessons(Number(id)) });
+  const lessons = listLessons(Number(id));
+  // a milestone the learner is looking at (and the next) should be written, if it isn't yet
+  if (lessons.some((l) => l.status === "stub") && resolveUserLlm(user).mode !== "nokey") {
+    prefetchAround(Number(id), user.id);
+    return NextResponse.json({ lessons: listLessons(Number(id)) });
+  }
+  return NextResponse.json({ lessons });
 }
 
 /** Expand a milestone into lesson stubs (idempotent — returns existing if already expanded). */

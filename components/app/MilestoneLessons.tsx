@@ -8,6 +8,11 @@ import Markdown from "./Markdown";
 import { useContentTranslation, TranslateButton } from "./TranslateControl";
 import ListenButton from "./ListenButton";
 import QueueHint from "./QueueHint";
+import PracticeSession from "./PracticeSession";
+import Portal from "./Portal";
+
+/** Stages where doing problems beats re-reading: they get an interactive practice session. */
+const PRACTICE_KINDS = new Set<string>(["practice", "apply", "check"]);
 import { ChevronDown, CheckIcon } from "@/components/icons";
 
 const KIND_LABEL: Record<Lesson["kind"], string> = {
@@ -42,6 +47,7 @@ export default function MilestoneLessons({
   const [expanding, setExpanding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Lesson | null>(null);
+  const [practicing, setPracticing] = useState<Lesson | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoOpened = useRef(false);
@@ -266,7 +272,12 @@ export default function MilestoneLessons({
                           </button>
                         </span>
                       ) : (
-                        <LessonAction lesson={l} onGenerate={() => generateOne(l)} onRead={() => setViewing(l)} />
+                        <LessonAction
+                          lesson={l}
+                          onGenerate={() => generateOne(l)}
+                          onRead={() => setViewing(l)}
+                          onPractice={PRACTICE_KINDS.has(l.kind) ? () => setPracticing(l) : undefined}
+                        />
                       )}
                     </li>
                   );
@@ -283,13 +294,28 @@ export default function MilestoneLessons({
           goalId={goalId}
           onClose={() => setViewing(null)}
           onSetDone={(done) => setDone(viewing, done)}
+          onPractice={PRACTICE_KINDS.has(viewing.kind) ? () => { setPracticing(viewing); setViewing(null); } : undefined}
+        />
+      )}
+
+      {practicing && (
+        <PracticeSession
+          lessonId={practicing.id}
+          lessonTitle={practicing.title}
+          onClose={() => setPracticing(null)}
+          onFinished={() => {
+            refresh().catch(() => {});
+            onProgress?.();
+          }}
         />
       )}
 
       {toast && (
-        <div className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-ink px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-lg">
-          {toast}
-        </div>
+        <Portal>
+          <div className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-ink px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-lg">
+            {toast}
+          </div>
+        </Portal>
       )}
     </div>
   );
@@ -299,19 +325,32 @@ function LessonAction({
   lesson,
   onGenerate,
   onRead,
+  onPractice,
 }: {
   lesson: Lesson;
   onGenerate: () => void;
   onRead: () => void;
+  onPractice?: () => void;
 }) {
   if (lesson.status === "ready")
     return (
-      <button
-        onClick={onRead}
-        className="glassx-dark shrink-0 rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-white"
-      >
-        Read
-      </button>
+      <span className="flex shrink-0 items-center gap-1.5">
+        {onPractice && (
+          <button
+            onClick={onPractice}
+            title="Work problems one at a time with hints, checking and a debrief"
+            className="glassx rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-ink"
+          >
+            Practice
+          </button>
+        )}
+        <button
+          onClick={onRead}
+          className="glassx-dark rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-white"
+        >
+          Read
+        </button>
+      </span>
     );
   if (lesson.status === "queued" || lesson.status === "generating")
     return (
@@ -358,11 +397,13 @@ function LessonViewer({
   goalId,
   onClose,
   onSetDone,
+  onPractice,
 }: {
   lesson: Lesson;
   goalId?: number;
   onClose: () => void;
   onSetDone: (done: boolean) => void;
+  onPractice?: () => void;
 }) {
   const [enrolled, setEnrolled] = useState(lesson.srs_due != null);
   const [busy, setBusy] = useState(false);
@@ -384,6 +425,7 @@ function LessonViewer({
   };
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-sm sm:p-8"
       onClick={onClose}
@@ -451,20 +493,35 @@ function LessonViewer({
 
         {lesson.content && (
           <div className="mt-6 flex flex-col items-center gap-2 border-t border-line/70 pt-6">
-            <button
-              onClick={() => onSetDone(!done)}
-              className={`rounded-full px-6 py-3 text-[14px] font-semibold transition-all ${
-                done ? "bg-up/15 text-up" : "glassx-dark text-white"
-              }`}
-            >
-              {done ? "✓ Section complete — tap to undo" : "Mark section complete"}
-            </button>
+            <div className="flex flex-wrap justify-center gap-2.5">
+              {onPractice && (
+                <button
+                  onClick={onPractice}
+                  className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white"
+                >
+                  Start a practice session
+                </button>
+              )}
+              <button
+                onClick={() => onSetDone(!done)}
+                className={`rounded-full px-6 py-3 text-[14px] font-semibold transition-all ${
+                  done ? "bg-up/15 text-up" : onPractice ? "glassx text-ink" : "glassx-dark text-white"
+                }`}
+              >
+                {done ? "✓ Section complete — tap to undo" : "Mark section complete"}
+              </button>
+            </div>
             <p className="text-[11.5px] text-muted">
-              {done ? "Counted toward your progress and transcript." : "Finished reading? Mark it done to track your progress."}
+              {done
+                ? "Counted toward your progress and transcript."
+                : onPractice
+                  ? "Work the problems with hints and a debrief — finishing marks the section complete with a grade."
+                  : "Finished reading? Mark it done to track your progress."}
             </p>
           </div>
         )}
       </div>
     </div>
+    </Portal>
   );
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getLesson, setLessonCompleted, updateLessonFields, deleteLesson, userOwnsLesson, autoEnrollLesson, goalIdOfLesson } from "@/lib/repo";
 import { goalIsLocked } from "@/lib/org";
+import { prefetchAround } from "@/lib/worker";
+import { resolveUserLlm } from "@/lib/minimax";
 
 const LOCKED = () =>
   NextResponse.json({ error: "This course was assigned by your company and its structure can't be edited." }, { status: 403 });
@@ -37,7 +39,11 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/lessons/[i
   if (body.done !== undefined) {
     const updated = setLessonCompleted(Number(id), !!body.done);
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (body.done === true) enrolled = autoEnrollLesson(Number(id)).enrolled;
+    if (body.done === true) {
+      enrolled = autoEnrollLesson(Number(id)).enrolled;
+      // keep the material one milestone ahead of the learner
+      if (resolveUserLlm(user).mode !== "nokey") prefetchAround(updated.plan_item_id, user.id);
+    }
     return NextResponse.json({ lesson: updated, enrolled });
   }
   const lesson = getLesson(Number(id));

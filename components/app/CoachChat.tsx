@@ -7,6 +7,7 @@ import type { PublicUser } from "@/lib/user";
 import { languageName } from "@/lib/languages";
 import { BrainGlyph, SendIcon } from "@/components/icons";
 import Markdown from "./Markdown";
+import Portal from "./Portal";
 
 type ToolCall = { name: string; detail: string };
 type ChatMsg = { role: "user" | "assistant"; content: string; thinking?: string; tools?: ToolCall[] };
@@ -313,6 +314,7 @@ export default function CoachChat({
       </form>
 
       {pending && (
+        <Portal>
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-ink/30 p-4 backdrop-blur-sm"
           onClick={() => setPending(null)}
@@ -357,6 +359,7 @@ export default function CoachChat({
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );
