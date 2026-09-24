@@ -381,6 +381,8 @@ function migrate(db: DatabaseSync) {
   addCol("threads", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   addCol("presentations", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   addCol("books", "user_id", "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+  // per-user date-range scans (partner session stats, dashboards) instead of a full table scan
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_user_started ON sessions(user_id, started_at)");
   // lesson completion: set when the user reads/marks a section done (null = not done)
   addCol("lessons", "completed_at", "completed_at TEXT");
   // spaced-repetition state (null due = not enrolled in reviews)

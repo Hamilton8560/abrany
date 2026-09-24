@@ -492,6 +492,41 @@ export function listAssignments(orgId: number): AssignmentProgress[] {
   return rows.map(progressFor);
 }
 
+export type OrgSessionDay = {
+  user_id: number;
+  email: string;
+  day: string; // YYYY-MM-DD (UTC), bucketed by the session's started_at
+  pomodoros: number; // completed focus sessions of 25+ minutes (>= 1500s)
+  focus_sec: number; // all focus seconds that day, including shorter sessions
+};
+
+/**
+ * Per-member, per-calendar-day focus-session aggregates for an org, from/to inclusive.
+ * Counts every logged focus session — including ad-hoc pomodoros with no goal/assignment —
+ * which is exactly what assignment progress totals miss. Breaks never count.
+ *
+ * The raw `started_at` bounds are a sargable prefilter served by idx_sessions_user_started;
+ * they are widened a day either side so any stored UTC offset still falls inside, and the
+ * exact `date()` comparison below does the real bucketing.
+ */
+export function listSessionDays(orgId: number, from: string, to: string): OrgSessionDay[] {
+  return getDb()
+    .prepare(
+      `SELECT s.user_id, u.email, date(s.started_at) AS day,
+              SUM(s.duration_sec >= 1500) AS pomodoros,
+              SUM(s.duration_sec) AS focus_sec
+       FROM sessions s
+       JOIN org_members m ON m.user_id = s.user_id AND m.org_id = ?
+       JOIN users u ON u.id = s.user_id
+       WHERE s.mode = 'focus'
+         AND s.started_at >= date(?, '-1 day') AND s.started_at < date(?, '+2 days')
+         AND date(s.started_at) BETWEEN ? AND ?
+       GROUP BY s.user_id, day
+       ORDER BY day, u.email`,
+    )
+    .all(orgId, from, to, from, to) as OrgSessionDay[];
+}
+
 /** The employee's view: what their company assigned them, with deadlines. */
 export function assignmentsForUser(userId: number): (AssignmentProgress & { org_name: string; org_logo: string })[] {
   const db = getDb();
