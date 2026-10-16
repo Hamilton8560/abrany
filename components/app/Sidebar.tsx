@@ -21,12 +21,13 @@ import {
   StoreIcon,
   ForumIcon,
   GuideIcon,
+  WrenchIcon,
   BrainGlyph,
 } from "@/components/icons";
 import type { ComponentType, SVGProps } from "react";
 import type { PublicUser } from "@/lib/user";
 
-type NavItem = { href: string; label: string; short?: string; Icon: ComponentType<SVGProps<SVGSVGElement>> };
+type NavItem = { href: string; label: string; short?: string; beta?: boolean; Icon: ComponentType<SVGProps<SVGSVGElement>> };
 type NavGroup = { title: string | null; items: NavItem[] };
 
 /**
@@ -71,6 +72,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/app/presentations", label: "Presentations", short: "Slides", Icon: SlidesIcon },
       { href: "/app/books", label: "Books", short: "Books", Icon: BookIcon },
+      { href: "/app/workshop", label: "Workshop", short: "Workshop", Icon: WrenchIcon, beta: true },
     ],
   },
   {
@@ -140,7 +142,7 @@ export default function Sidebar({ user }: { user: PublicUser }) {
                   {group.title}
                 </p>
               )}
-              {group.items.map(({ href, label, Icon }) => {
+              {group.items.map(({ href, label, Icon, beta }) => {
                 const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
                 return (
                   <Link
@@ -154,6 +156,15 @@ export default function Sidebar({ user }: { user: PublicUser }) {
                   >
                     <Icon className={`size-[18px] ${active ? "text-white" : "text-muted group-hover:text-ink"}`} />
                     <span className="flex-1">{label}</span>
+                    {beta && (
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                          active ? "bg-white/25 text-white" : "bg-accent/12 text-accent"
+                        }`}
+                      >
+                        Beta
+                      </span>
+                    )}
                     {href === "/app/review" && due > 0 && (
                       <span
                         className={`grid min-w-[20px] place-items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-bold ${

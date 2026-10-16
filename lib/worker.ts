@@ -41,8 +41,20 @@ import {
   generatePlanV2,
   expandMilestone,
   DEFAULT_INTAKE,
+  generateManual,
   type PlanIntake,
 } from "./coach";
+import {
+  getManual,
+  manualContent,
+  manualImages,
+  manualRequest,
+  setManualContent,
+  setManualImage,
+  setManualStatus,
+  figureSteps,
+} from "./workshop";
+import { generateIllustration, imageKeyFor, saveManualImage } from "./imageGen";
 import { braveSearch } from "./search";
 import { withLlm, resolveUserLlm } from "./minimax";
 import { readContent, saveTranslation, isContentKind } from "./translate";
@@ -60,11 +72,16 @@ const TICK_MS = 1200;
 export const EAGER_MILESTONES = 2;
 const WORKER_MAX_INFLIGHT = 3; // how many jobs the worker holds at once (MiniMax cap still applies inside)
 const MAX_ATTEMPTS = 3;
+/** Illustrations drawn per job run; the job re-queues itself for the rest so pictures never hog a worker slot. */
+const IMAGES_PER_RUN = 3;
 
 type Global = typeof globalThis & { __abranyWorker?: { inFlight: number; timer: ReturnType<typeof setInterval> } };
 const g = globalThis as Global;
 
-async function processJob(job: Job): Promise<void> {
+/** A job may hand back follow-up work, queued only once it is marked done (so dedup sees it finished). */
+type FollowUp = (() => void) | void;
+
+async function processJob(job: Job): Promise<FollowUp> {
   if (job.type === "generate_lesson") {
     const { lessonId } = JSON.parse(job.payload) as { lessonId: number };
     const lesson = getLesson(lessonId);
@@ -200,6 +217,42 @@ async function processJob(job: Job): Promise<void> {
     return;
   }
 
+  if (job.type === "generate_manual") {
+    const { manualId } = JSON.parse(job.payload) as { manualId: number };
+    const row = getManual(manualId);
+    if (!row) return;
+    setManualStatus(manualId, "generating");
+    const manual = await generateManual(row.kind, manualRequest(row));
+    setManualContent(manualId, manual);
+    enqueueManualImages(manualId, row.user_id);
+    return;
+  }
+
+  if (job.type === "generate_manual_images") {
+    const { manualId, only } = JSON.parse(job.payload) as { manualId: number; only?: string };
+    const row = getManual(manualId);
+    const manual = row && manualContent(row);
+    const user = row && getUser(row.user_id);
+    if (!row || !manual || !user) return;
+    const key = imageKeyFor(user);
+    if (!key) return; // no image access: the manual reads fine without pictures
+    const state = manualImages(row);
+    const todo = figureSteps(manual).filter((s) => (only ? s.key === only : state[s.key] !== "ready" && state[s.key] !== "error"));
+    for (const step of todo.slice(0, IMAGES_PER_RUN)) {
+      setManualImage(manualId, step.key, "pending");
+      try {
+        saveManualImage(manualId, step.key, await generateIllustration(step.figure, key));
+        setManualImage(manualId, step.key, "ready");
+      } catch (err) {
+        console.warn(`[workshop] illustration ${manualId}/${step.key} failed`, err);
+        setManualImage(manualId, step.key, "error");
+      }
+    }
+    // hand off the rest — after this job is finished, or dedup would just return this one
+    if (!only && todo.length > IMAGES_PER_RUN) return () => void enqueueManualImages(manualId, row.user_id);
+    return;
+  }
+
   if (job.type === "generate_translation") {
     const { kind, id, lang } = JSON.parse(job.payload) as { kind: string; id: number; lang: string };
     if (!isContentKind(kind)) return;
@@ -232,7 +285,10 @@ function tick() {
     // also inject the user's-language directive or the two would fight.
     const lang = job.type === "generate_translation" ? undefined : user?.language;
     withLlm(creds, () => processJob(job), lang, { priority: "background" })
-      .then(() => finishJob(job.id, "done"))
+      .then((followUp) => {
+        finishJob(job.id, "done");
+        followUp?.();
+      })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         const finalError = job.attempts >= MAX_ATTEMPTS;
@@ -245,12 +301,14 @@ function tick() {
             chapterId?: number;
             guideId?: number;
             goalId?: number;
+            manualId?: number;
           };
           if (p.lessonId) setLessonStatus(p.lessonId, finalError ? "error" : "queued", finalError ? msg : "");
           if (p.goalId && job.type === "build_course") setGoalBuild(p.goalId, finalError ? "error" : "queued", finalError ? msg : "");
           if (p.presentationId && finalError) setPresentationStatus(p.presentationId, "error", msg);
           if (p.chapterId) setChapterStatus(p.chapterId, finalError ? "error" : "queued", finalError ? msg : "");
           if (p.guideId && finalError) setStudyGuideStatus(p.guideId, "error", msg);
+          if (p.manualId && finalError && job.type === "generate_manual") setManualStatus(p.manualId, "error", msg);
         } catch {
           /* ignore */
         }
@@ -340,6 +398,27 @@ export function enqueueStudyGuide(guideId: number, userId: number): Job {
   if (existing) return existing;
   setStudyGuideStatus(guideId, "generating");
   const job = enqueueJobRow("generate_study_guide", { guideId }, userId, `guide:${guideId}`);
+  ensureWorker();
+  return job;
+}
+
+/** Queue a workshop manual for background generation (idempotent). */
+export function enqueueManual(manualId: number, userId: number): Job {
+  const existing = findActiveJob(`manual:${manualId}`);
+  if (existing) return existing;
+  setManualStatus(manualId, "generating");
+  const job = enqueueJobRow("generate_manual", { manualId }, userId, `manual:${manualId}`);
+  ensureWorker();
+  return job;
+}
+
+/** Queue step illustrations for a manual — all missing ones, or redraw just `only`. */
+export function enqueueManualImages(manualId: number, userId: number, only?: string): Job {
+  const key = only ? `manual-image:${manualId}:${only}` : `manual-images:${manualId}`;
+  const existing = findActiveJob(key);
+  if (existing) return existing;
+  if (only) setManualImage(manualId, only, "pending");
+  const job = enqueueJobRow("generate_manual_images", only ? { manualId, only } : { manualId }, userId, key);
   ensureWorker();
   return job;
 }

@@ -110,10 +110,14 @@ export default function ArchDiagram({ spec }: { spec: string }) {
   }, [spec]);
 
   if (!layout) {
+    // same graceful fallback as a mermaid block: never a wall of raw spec on the page
     return (
-      <pre className="mb-2.5 overflow-x-auto rounded-[10px] bg-ink/90 p-3 font-mono text-[12px] text-white">
-        {spec}
-      </pre>
+      <details className="mb-2.5 rounded-[12px] border border-line bg-white/50 px-4 py-3">
+        <summary className="cursor-pointer text-[12.5px] font-medium text-muted">
+          Diagram couldn&apos;t render — view source
+        </summary>
+        <pre className="mt-2 overflow-x-auto rounded-[10px] bg-ink/90 p-3 font-mono text-[11.5px] text-white">{spec}</pre>
+      </details>
     );
   }
 

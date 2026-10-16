@@ -44,19 +44,26 @@ const components: Components = {
   ),
   code: ({ children, className }) => {
     const raw = String(children);
-    const hasLang = /language-(\w+)/.exec(className ?? "");
+    const hasLang = /language-([\w-]+)/.exec(className ?? "");
+    const lang = hasLang?.[1].toLowerCase();
     const multiline = raw.includes("\n");
     // Architecture diagram: ```arch (TOON node/edge spec) → dagre-laid-out SVG.
     const isArch =
-      hasLang?.[1] === "arch" || /^\s*nodes\[\d+\]\{[^}]*\}:/.test(raw);
+      lang === "arch" || /^\s*nodes\s*(?:\[\d*\])?\s*\{[^}]*\}\s*:?\s*$/.test(raw.split("\n")[0] ?? "");
     if (isArch) return <ArchDiagram spec={raw} />;
     // Detect Mermaid by language tag OR by content — MiniMax often omits the
     // ```mermaid tag and just starts with `flowchart TD` / `sequenceDiagram` / etc.
+    // (possibly after YAML frontmatter or an %%{init}%% directive).
+    const body = raw.replace(/^\s*---\n[\s\S]*?\n---\s*\n/, "").replace(/^(\s*%%.*\n)+/, "");
     const isMermaid =
-      hasLang?.[1] === "mermaid" ||
-      /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart)\b/.test(
-        raw,
-      );
+      lang === "mermaid" ||
+      lang === "mmd" ||
+      // content sniffing only for untagged multi-line blocks: an inline `graph` or a
+      // ```python block that opens with `graph = …` is not a diagram
+      (multiline && (!lang || ["text", "plaintext", "diagram", "flowchart", "graph"].includes(lang))) &&
+        /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|xychart-beta|requirementDiagram|block-beta|sankey-beta|packet-beta|architecture-beta)\b/.test(
+          body,
+        );
     if (isMermaid) return <MermaidBlock code={raw.replace(/\n$/, "")} />;
 
     const inline = !hasLang && !multiline;

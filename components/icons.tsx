@@ -355,3 +355,12 @@ export function GuideIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function WrenchIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path d="M14.7 6.3a4 4 0 0 0 5.2 5.2l-8.6 8.6a2.1 2.1 0 0 1-3-3l8.6-8.6a4 4 0 0 0-2.2-2.2Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M14.7 6.3a4 4 0 0 1 4.6-2.6l-2.4 2.4.5 2.5 2.5.5 2.4-2.4a4 4 0 0 1-2.6 4.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

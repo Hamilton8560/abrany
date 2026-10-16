@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Markdown from "./Markdown";
 import { ArrowRight, BrainGlyph } from "@/components/icons";
+import { splitSlides } from "@/lib/deck";
 
 /**
  * Renders a markdown deck (slides separated by a `---` line) as a navigable,
@@ -15,14 +16,7 @@ import { ArrowRight, BrainGlyph } from "@/components/icons";
  * the frame; keyboard nav, touch swipe, fullscreen present mode, print-to-PDF.
  */
 export default function SlideDeck({ content }: { content: string }) {
-  const slides = useMemo(
-    () =>
-      content
-        .split(/\n[ \t]*---[ \t]*\n/)
-        .map((s) => s.trim())
-        .filter(Boolean),
-    [content],
-  );
+  const slides = useMemo(() => splitSlides(content), [content]);
   const [i, setI] = useState(0);
   const [fs, setFs] = useState(false);
   const [mounted, setMounted] = useState(false);

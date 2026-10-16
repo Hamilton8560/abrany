@@ -74,6 +74,23 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Overlays rendered via Portal (modals opened off-screen inside backdrop-filter cards)
 - [x] AI queue priority lanes: interactive requests never wait behind background generation
 - [x] Worker wakes on app render / health probe (restarts no longer strand queued jobs)
+- [x] Diagram repair pass (`lib/mermaidRepair.ts`): generated mermaid that *almost* parses now renders instead of collapsing into "couldn't render" — same fix serves presentations, books and goals
+- [x] Mermaid module/chunk load failures retry once instead of caching a rejected import forever (one network flake used to kill every diagram until a hard reload)
+- [x] Deck slides split fence-aware: a mermaid block's YAML frontmatter no longer shatters a presentation into extra slides
 - [ ] Localized transactional emails (spec Part B) — not built
 - [ ] Program monitor dashboard + partner `/api/v1/programs` — still open from the programs spec
 - [ ] Require a passed practice set before "complete" on company assignments? (David's call, see ADR-0021)
+
+## Workshop beta + diagram reliability (2026-10-16)
+
+- [x] Workshop (ADR-0022): build & repair manuals in a LEGO-booklet layout — inventory, safety / call-a-pro, numbered step cards with parts callouts, checks and cautions, progress ticks, print to PDF
+- [x] Repair manuals: yes/no troubleshooting wizard that lands on the fix procedure; full flowchart generated from the tree (always parses)
+- [x] Step illustrations via MiniMax image-01 in a self-requeueing background job (3 per run), redraw per step
+- [x] Diagrams: streaming coach replies no longer latch "couldn't render" (failure reset per source + debounce)
+- [x] Diagrams: ```arch parser tolerates wrong row counts, header variants, quoted commas, label references; graceful fallback
+- [x] Diagrams: whole-document fence unwrap no longer eats a trailing diagram's closing fence; mermaid detection case-insensitive, frontmatter-aware, never on inline code / other languages
+- [x] Print rule for decks scoped so printing any other page isn't blank
+- [ ] Photo upload for diagnosis (vision model path)
+- [ ] Expand one build phase into its own detailed manual
+- [ ] "Ask about this step" → tutor grounded in the manual
+

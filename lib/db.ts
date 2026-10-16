@@ -12,6 +12,9 @@ import { join } from "node:path";
 const DB_DIR = process.env.DATA_DIR || join(process.cwd(), ".data");
 const DB_PATH = join(DB_DIR, "abrany.db");
 
+/** Where the app keeps its files (the SQLite db, generated images) — the persistent volume in prod. */
+export const dataDir = (): string => DB_DIR;
+
 type Global = typeof globalThis & { __abranyDb?: DatabaseSync };
 const g = globalThis as Global;
 
@@ -510,6 +513,27 @@ function migrate(db: DatabaseSync) {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_practice_attempt_set ON practice_attempts(set_id);
+  `);
+
+  // workshop (beta): AI build & repair manuals. Content, per-step illustration state and
+  // ticked-off steps are separate JSON columns so the image job and the reader's progress
+  // clicks never overwrite each other.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS manuals (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL DEFAULT 'repair',      -- build|repair
+      title      TEXT NOT NULL DEFAULT '',
+      request    TEXT NOT NULL DEFAULT '{}',          -- JSON: what the user asked for
+      content    TEXT NOT NULL DEFAULT '',            -- JSON Manual (lib/workshop.ts)
+      images     TEXT NOT NULL DEFAULT '{}',          -- JSON: {stepKey: pending|ready|error}
+      progress   TEXT NOT NULL DEFAULT '[]',          -- JSON: stepKeys ticked done
+      status     TEXT NOT NULL DEFAULT 'generating',  -- generating|ready|error
+      error      TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_manuals_user ON manuals(user_id);
   `);
 
   // one row per graded recall attempt (the learner's own words + the rating it earned).

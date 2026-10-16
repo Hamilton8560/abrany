@@ -346,8 +346,10 @@ body {
 @media print {
   @page { size: A4 landscape; margin: 12mm; }
   html, body { background: #fff !important; }
-  /* hide every top-level app node, reveal only the deck */
-  body > *:not(.deck-print-root) { display: none !important; }
+  /* hide every top-level app node, reveal only the deck — scoped to pages that
+     actually have a deck, or printing any other page (a manual, a certificate)
+     comes out blank */
+  body:has(.deck-print-root) > *:not(.deck-print-root) { display: none !important; }
   .deck-print-root { display: block !important; }
 
   .deck-print-slide {
@@ -378,4 +380,14 @@ body {
   .deck-print-slide table { width: 100%; border-collapse: collapse; font-size: 11pt; }
   .deck-print-slide th, .deck-print-slide td { border: 1px solid #9fb0c6; padding: 4pt 6pt; text-align: left; }
   .deck-print-slide details { display: none; } /* never print a "couldn't render" fallback */
+}
+
+/* ── Print-to-PDF for workshop manuals: portrait pages, flat cards, no app chrome ── */
+@page manual { size: A4 portrait; margin: 12mm; }
+@media print {
+  .manual-root { page: manual; max-width: none !important; }
+  .manual-root .glass { background: #fff !important; backdrop-filter: none !important; box-shadow: none !important; border: 1px solid #c1cddd; }
+  .manual-root, .manual-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .manual-root li, .manual-root figure { break-inside: avoid; }
+  .manual-root details { display: none; }
 }

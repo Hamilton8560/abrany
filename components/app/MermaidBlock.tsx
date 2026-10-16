@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { repairMermaid } from "@/lib/mermaidRepair";
 
 /**
  * Renders a ```mermaid code block as a diagram — free, client-side (the LLM that
@@ -13,6 +14,10 @@ let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 
 async function getMermaid() {
   if (!mermaidPromise) {
+    // A rejected promise must NOT stay cached: mermaid is a runtime dynamic
+    // import, so one transient chunk fetch failure (a flaky network, or a tab
+    // left open across a deploy) would otherwise kill every diagram in the app
+    // until a hard reload. Drop the memo on failure so the next block retries.
     mermaidPromise = import("mermaid").then((m) => {
       m.default.initialize({
         startOnLoad: false,
@@ -73,30 +78,27 @@ async function getMermaid() {
       });
       return m.default;
     });
+    mermaidPromise.catch(() => {
+      mermaidPromise = null;
+    });
   }
   return mermaidPromise;
 }
 
-let counter = 0;
-
 /**
- * Auto-repair the mermaid the LLM most often gets slightly wrong, so a diagram
- * renders instead of falling back to raw code: smart quotes, unquoted labels
- * containing parentheses/commas (classic parse breakers), and stray fences.
+ * True for "this diagram is wrong", false for "mermaid itself failed to load".
+ * Only the latter is worth a retry.
  */
-function sanitizeMermaid(code: string): string {
-  let c = code
-    .replace(/^```(?:mermaid)?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'");
-  // quote flowchart node labels that contain ()/, but aren't quoted: A[Label (x)] → A["Label (x)"]
-  c = c.replace(/([A-Za-z0-9_]+)([[({]{1,2})(?!")([^\]})"\n]*[(),][^\]})"\n]*)([\]})]{1,2})/g, (m, id, open, label, close) => {
-    if (open === "((" || open === "{{") return m; // leave special shapes alone
-    return `${id}${open}"${label.trim()}"${close}`;
-  });
-  return c.trim();
+function isSyntaxError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /parse error|syntax error|no diagram type detected|unknown diagram|lexical error/i.test(
+    message,
+  );
 }
+
+let counter = 0;
+/** Quiet period before rendering, so a streaming reply isn't re-parsed on every token. */
+const RENDER_DEBOUNCE_MS = 250;
 
 export default function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState("");
@@ -106,28 +108,69 @@ export default function MermaidBlock({ code }: { code: string }) {
   useEffect(() => {
     let alive = true;
     const rid = idRef.current;
-    (async () => {
-      try {
+    // Debounced, and every outcome is re-decided per `code`: a coach reply streams
+    // in token by token, so this block first sees half a diagram. That fails to
+    // parse — and `failed` used to latch, so the finished diagram that arrived a
+    // second later was never drawn. Waiting for the source to settle skips most
+    // of the half-written renders; resetting the state on success fixes the rest.
+    const timer = setTimeout(() => void (async () => {
+      // Gate rendering on a successful parse. parse() validates the grammar with
+      // NO DOM side-effect; render() on invalid syntax appends its own "Syntax
+      // error in text" SVG to <body> and then throws *before* cleaning it up, so
+      // the orphaned error graphic would show on the slide even though we catch
+      // the throw below. Parsing first means render() only ever runs on valid
+      // input, so that error diagram is never drawn.
+      const attempt = async () => {
         const mermaid = await getMermaid();
-        // Gate rendering on a successful parse. parse() validates the grammar with
-        // NO DOM side-effect; render() on invalid syntax appends its own "Syntax
-        // error in text" SVG to <body> and then throws *before* cleaning it up, so
-        // the orphaned error graphic would show on the slide even though we catch
-        // the throw below. Parsing first means render() only ever runs on valid
-        // input, so that error diagram is never drawn.
         const renderIfValid = async (src: string, suffix: string) => {
-          const ok = await mermaid.parse(src, { suppressErrors: true });
-          if (!ok) return false;
+          // parse() is called WITHOUT suppressErrors on purpose. Suppressing
+          // flattens two very different failures into the same `false`: a real
+          // syntax error (deterministic — retrying is pointless) and a failed
+          // lazy import of mermaid's per-diagram-type chunk (a network flake —
+          // retrying is the whole fix). Catch and tell them apart instead.
+          try {
+            await mermaid.parse(src);
+          } catch (err) {
+            if (isSyntaxError(err)) {
+              console.warn("[mermaid] source did not parse", err);
+              return false;
+            }
+            throw err;
+          }
           const { svg } = await mermaid.render(`${rid}-${suffix}`, src);
-          if (alive) setSvg(svg);
+          if (alive) {
+            setSvg(svg);
+            setFailed(false);
+          }
           return true;
         };
-        if (await renderIfValid(code.trim(), "a")) return;
-        // second chance: auto-repaired source
-        if (await renderIfValid(sanitizeMermaid(code), "b")) return;
-        if (alive) setFailed(true);
-      } catch {
-        if (alive) setFailed(true);
+        // as written, then auto-repaired (models get mermaid slightly wrong often)
+        if (await renderIfValid(code.trim(), "a")) return true;
+        return renderIfValid(repairMermaid(code), "b");
+      };
+      try {
+        try {
+          if (await attempt()) return;
+        } catch (err) {
+          // A throw here is infrastructure, not syntax — mermaid's own module or
+          // one of its per-diagram-type chunks failed to load. Those are network
+          // flakes, so give it exactly one more go before giving up.
+          if (!alive) return;
+          console.warn("[mermaid] render failed, retrying once", err);
+          if (await attempt()) return;
+        }
+        if (alive) {
+          setSvg("");
+          setFailed(true);
+        }
+      } catch (err) {
+        // Surface the reason: without this, a chunk-load failure and a genuine
+        // syntax error are indistinguishable from the outside.
+        console.warn("[mermaid] giving up on diagram", err);
+        if (alive) {
+          setSvg("");
+          setFailed(true);
+        }
       } finally {
         // Defense in depth: should a render ever throw *after* a clean parse,
         // mermaid can still leave its temp <div id="d{id}"> (and the #{id} svg)
@@ -137,9 +180,10 @@ export default function MermaidBlock({ code }: { code: string }) {
           document.getElementById(`${rid}-${suffix}`)?.remove();
         }
       }
-    })();
+    })(), RENDER_DEBOUNCE_MS);
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, [code]);
 

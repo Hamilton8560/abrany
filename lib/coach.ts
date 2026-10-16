@@ -1,6 +1,7 @@
 import { jsonrepair } from "jsonrepair";
 import { complete, type ChatMessage } from "./minimax";
 import { chunkMarkdown } from "./translate";
+import { normalizeManual, type Manual, type ManualKind, type ManualRequest } from "./workshop";
 
 /**
  * The Abrany coach persona + structured plan generation.
@@ -103,6 +104,22 @@ export type GeneratedPlan = {
   summary: string;
   items: { title: string; detail: string; estimate: string }[];
 };
+
+/**
+ * Strip the ```markdown fence a model sometimes wraps a whole document in — but
+ * ONLY that wrapper. The old one-liner stripped any leading ``` and any trailing
+ * ```, so a document that ended with a diagram lost the diagram's closing fence,
+ * and one that opened with a diagram became "mermaid\nflowchart…" prose.
+ */
+export function unwrapMarkdownFence(text: string): string {
+  const t = text.trim();
+  const m = /^```(?:markdown|md)?[ \t]*\n([\s\S]*)\n```$/i.exec(t);
+  if (!m) return t;
+  // the wrapper is real only if what's inside has balanced fences of its own
+  const inner = m[1];
+  const fences = inner.split("\n").filter((l) => /^\s*```/.test(l)).length;
+  return fences % 2 === 0 ? inner.trim() : t;
+}
 
 function extractJson(text: string): string {
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -1039,8 +1056,7 @@ Adapt depth and tone to the subject.${grounded}`,
       },
     ],
   });
-  const clean = content.replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-  return { title: ctx.title.slice(0, 160), content: clean };
+  return { title: ctx.title.slice(0, 160), content: unwrapMarkdownFence(content) };
 }
 
 /* ── Presentations: generate a markdown slide deck ─────────── */
@@ -1084,7 +1100,7 @@ Adapt depth and tone to the topic. Do not wrap the whole output in a code fence.
     ],
   });
 
-  const clean = content.replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  const clean = unwrapMarkdownFence(content);
   const h1 = clean.match(/^#\s+(.+)$/m);
   const title = (h1 ? h1[1] : ctx.topic).trim().slice(0, 140);
   return { title, content: clean };
@@ -1149,6 +1165,87 @@ You are writing ONE chapter of a book — the real prose a reader reads, not an 
       },
     ],
   });
+}
+
+/* ── Workshop: build & repair manuals (LEGO-booklet style) ── */
+
+export async function generateManual(kind: ManualKind, req: ManualRequest): Promise<Manual> {
+  const repairShape = `"troubleshoot": {
+    "start": "c1",
+    "checks": [
+      { "id": "c1", "question": "a yes/no question the person can answer by looking, listening or measuring", "how": "exactly how to check it: what to look at, which meter setting, what reading means what", "tool": "multimeter | none | …", "yes": "c2 | fix:ID | pro | done", "no": "c3 | fix:ID | pro | done" }
+    ]
+  },`;
+  const system = `${COACH_SYSTEM}
+
+You are now a master tradesperson — licensed electrician, mechanic, appliance technician and builder in one — writing a HANDS-ON INSTRUCTION MANUAL in the style of a LEGO or IKEA booklet: an inventory of tools and parts up front, then small numbered steps, each one physical action a person can do with their hands, each with its own picture.
+
+Respond with ONLY JSON (no prose, no fences) in this shape:
+{
+  "kind": "${kind}",
+  "title": "short and specific, e.g. 'Fix a slipping treadmill belt'",
+  "summary": "2-3 sentences: what this covers, the likely outcome, and the honest catch",
+  "difficulty": "easy | moderate | hard | pro",
+  "time": "realistic, e.g. '45-90 min' or '6-10 weeks with a crew of 3'",
+  "cost": "realistic parts/materials cost range in the local currency",
+  "safety": ["specific hazards and the exact precaution for each — never generic"],
+  "stopIf": ["conditions where the person must stop and call a licensed professional"],
+  "tools": [ { "name": "Phillips #2 screwdriver", "qty": "1", "note": "why / spec" } ],
+  "parts": [ { "name": "Treadmill belt lubricant (100% silicone)", "qty": "1 tube", "note": "spec to buy" } ],
+  ${kind === "repair" ? repairShape : ""}
+  "procedures": [
+    {
+      "id": "${kind === "repair" ? "belt" : "p1"}",
+      "title": "${kind === "repair" ? "Fix: re-tension and align the belt" : "Phase 1: Site prep and layout"}",
+      "when": "${kind === "repair" ? "which fault this procedure fixes" : "what this phase achieves"}",
+      "steps": [
+        {
+          "title": "imperative, ≤ 8 words",
+          "actions": ["1-4 short, concrete actions with real numbers: sizes, torques, distances, mix ratios, wire gauges, meter readings"],
+          "parts": [ { "name": "M8 bolt", "qty": "2" } ],
+          "tools": ["6 mm Allen key"],
+          "check": "how you know this step is right before moving on",
+          "caution": "step-specific danger or common mistake ('' if none)",
+          "figure": "what the illustration shows: the objects, their arrangement, hands doing the action, arrows for motion — concrete and visual, NO text or labels in it"
+        }
+      ]
+    }
+  ],
+  "aftercare": {
+    "test": ["how to confirm it works / the build is sound"],
+    "maintenance": [ { "every": "3 months", "task": "what to do" } ]
+  }
+}
+
+RULES
+- Safety is non-negotiable and goes first. Electrical: isolate and lock out power, then PROVE dead with a tester before touching; capacitors in motor controllers, inverters and microwaves hold a lethal charge after unplugging — say how long to wait and how to verify discharge. Mechanical: unload springs, chains and lifted loads; support before working under. Structural: never compromise load paths. Gas, mains panel work, roof work at height and structural engineering sign-off go in "stopIf" where the law or the risk demands a pro.
+- Be SPECIFIC to the exact thing and place. Use the make/model and location if given. For a location, use its real climate, seismic and soil conditions, locally available materials and methods (and their local names in parentheses), local building rules where you know them, and prices in its currency. Never pretend to certainty you don't have — e.g. error codes differ between brands, so say what the code USUALLY means and how to confirm it.
+- Steps are SMALL — one physical action each, like a LEGO step. Prefer 4-10 steps per procedure. ${kind === "build" ? "Use 3-8 phases in build order (site prep → foundation → structure → envelope → systems → finishes, or whatever the project's real order is). A big project like a house should cover the whole job at a phase level a capable owner-builder can follow, with the critical details (foundation, reinforcement, structural ties) spelled out in full." : "Order the troubleshooting checks cheapest and safest first (power, settings, visible damage) before opening anything up. Every answer must lead somewhere: another check id, \"fix:<procedure id>\", \"pro\", or \"done\". Write one procedure for each fix the tree can reach (2-6 procedures). The procedure ids must match the fix: targets exactly."}
+- Every step has a "figure". Describe a single clear scene, isometric, with hands and tools where useful. Never ask for text, numbers or labels inside the picture.
+- Match depth to the person's experience: a beginner gets every tool named and every technique explained; a pro gets the specs and gotchas.`;
+
+  const details = [
+    `Request: ${req.description}`,
+    req.item ? `The thing: ${req.item}` : "",
+    req.location ? `Location: ${req.location}` : "",
+    `Experience: ${req.experience}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await complete({
+    system,
+    maxTokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.4,
+    messages: [{ role: "user", content: `${details}\n\nWrite the ${kind === "repair" ? "troubleshooting and repair" : "build"} manual now.` }],
+  });
+  let parsed: unknown;
+  try {
+    parsed = parseJson(raw);
+  } catch {
+    throw new Error("The coach returned an unreadable manual");
+  }
+  return normalizeManual(parsed, kind);
 }
 
 export { type ChatMessage };

@@ -1,6 +1,6 @@
 # Initial snapshot seeded from the real project. From here on, cockpit.html
 # regenerates this file when you hit "Sync for Claude".
-decisions[21]{id,title,status,owner}:
+decisions[22]{id,title,status,owner}:
   0001,Local SQLite via node:sqlite,approved,david
   0002,MiniMax M3 via Anthropic-compatible endpoint,proposed,claude
   0003,Global FIFO MiniMax queue (cap 2),approved,david
@@ -22,7 +22,8 @@ decisions[21]{id,title,status,owner}:
   0019,Auto-enroll recall reviews,proposed,claude
   0020,Draft with AI co-pilot,proposed,claude
   0021,Interactive practice engine (hints · check · debrief),proposed,claude
-plan.tasks[26]{n,task,status}:
+  0022,Workshop beta — LEGO-style build & repair manuals,proposed,claude
+plan.tasks[30]{n,task,status}:
   1,App shell + brand reuse,done
   2,Pomodoro timer + session logging,done
   3,Goals + AI plans,done
@@ -49,3 +50,7 @@ plan.tasks[26]{n,task,status}:
   24,Lesson-grounded tutor + hint-ladder teaching,done
   25,Interactive practice engine,done
   26,Localized transactional emails,todo
+  27,Mermaid repair pass + import retry,done
+  28,Fence-aware deck slide splitting,done
+  29,Workshop beta (build & repair manuals + illustrations),done
+  30,Diagram reliability pass 2 (streaming · arch · fences),done
