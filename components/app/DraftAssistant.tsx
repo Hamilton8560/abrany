@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SURFACES } from "@/lib/draftSurfaces";
+import { useT } from "@/lib/i18n/client";
 
 /** One turn of the drafting chat. */
 type Turn = { role: "user" | "assistant"; content: string };
@@ -32,7 +33,7 @@ export default function DraftAssistant({
   context,
   seed,
   onApply,
-  triggerLabel = "Draft with AI",
+  triggerLabel,
   className = "",
 }: {
   surfaceId: string;
@@ -43,6 +44,7 @@ export default function DraftAssistant({
   triggerLabel?: string;
   className?: string;
 }) {
+  const t = useT();
   const surface = SURFACES[surfaceId];
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -66,7 +68,7 @@ export default function DraftAssistant({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error ?? "The assistant is unavailable — fill the form by hand.");
+        setError(data.error ?? t("The assistant is unavailable — fill the form by hand."));
         return;
       }
       const result = data as DraftResult;
@@ -75,7 +77,7 @@ export default function DraftAssistant({
       setPending(result);
       if (result.mode === "draft") setEdits(result.fields);
     } catch {
-      setError("Network error — try again.");
+      setError(t("Network error — try again."));
     } finally {
       setBusy(false);
     }
@@ -95,9 +97,9 @@ export default function DraftAssistant({
   };
 
   const send = (text: string) => {
-    const t = text.trim();
-    if (!t || busy) return;
-    const nt: Turn[] = [...turns, { role: "user", content: t }];
+    const msg = text.trim();
+    if (!msg || busy) return;
+    const nt: Turn[] = [...turns, { role: "user", content: msg }];
     setTurns(nt);
     setInput("");
     runTurn(nt);
@@ -124,7 +126,7 @@ export default function DraftAssistant({
         onClick={openPanel}
         className={`inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/5 px-3.5 py-2 text-[12px] font-semibold text-accent transition hover:bg-accent/10 ${className}`}
       >
-        <Sparkle /> {triggerLabel}
+        <Sparkle /> {triggerLabel ?? t("Draft with AI")}
       </button>
     );
   }
@@ -133,32 +135,32 @@ export default function DraftAssistant({
     <div className={`flex flex-col gap-3 rounded-[16px] border border-accent/25 bg-white/70 p-4 ${className}`}>
       <div className="flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
-          <Sparkle className="size-4 text-accent" /> Drafting your {surface.noun}
+          <Sparkle className="size-4 text-accent" /> {t("Drafting your {noun}", { noun: t(surface.noun) })}
         </p>
         <button type="button" onClick={reset} className="text-[11px] text-muted hover:text-ink">
-          Close
+          {t("Close")}
         </button>
       </div>
 
       {/* conversation so far (skip the seed's echo of raw user input) */}
       {turns.length > 0 && (
         <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
-          {turns.map((t, i) => (
+          {turns.map((turn, i) => (
             <div
               key={i}
               className={
-                t.role === "assistant"
+                turn.role === "assistant"
                   ? "self-start rounded-[12px] bg-white px-3 py-2 text-[12.5px] text-ink"
                   : "self-end rounded-[12px] bg-ink/90 px-3 py-2 text-[12.5px] text-white"
               }
             >
-              {t.content}
+              {turn.content}
             </div>
           ))}
         </div>
       )}
 
-      {busy && <p className="text-[12px] text-muted">Thinking…</p>}
+      {busy && <p className="text-[12px] text-muted">{t("Thinking…")}</p>}
       {error && (
         <div className="flex items-center justify-between gap-2">
           <p className="text-[12px] text-accent">{error}</p>
@@ -167,7 +169,7 @@ export default function DraftAssistant({
             onClick={() => runTurn(turns)}
             className="rounded-full border border-line px-3 py-1 text-[11px] font-semibold text-ink"
           >
-            Retry
+            {t("Retry")}
           </button>
         </div>
       )}
@@ -200,7 +202,7 @@ export default function DraftAssistant({
                 }
               }}
               rows={1}
-              placeholder="Type your answer…"
+              placeholder={t("Type your answer…")}
               className="min-h-[40px] flex-1 resize-none rounded-[14px] border border-line bg-white px-3.5 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
             />
             <button
@@ -209,7 +211,7 @@ export default function DraftAssistant({
               disabled={!input.trim()}
               className="glassx-dark rounded-full px-4 py-2.5 text-[12.5px] font-semibold text-white disabled:opacity-50"
             >
-              Send
+              {t("Send")}
             </button>
           </div>
           <button
@@ -217,7 +219,7 @@ export default function DraftAssistant({
             onClick={() => runTurn(turns, true)}
             className="self-start text-[11px] text-muted underline hover:text-ink"
           >
-            Skip questions — just draft it
+            {t("Skip questions — just draft it")}
           </button>
         </div>
       )}
@@ -228,7 +230,7 @@ export default function DraftAssistant({
           <div className="flex flex-col gap-2 rounded-[12px] bg-white p-3">
             {surface.fields.map((f) => (
               <label key={f.key} className="flex flex-col gap-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">{f.label}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">{t(f.label)}</span>
                 {f.kind === "textarea" ? (
                   <textarea
                     value={edits[f.key] ?? ""}
@@ -250,17 +252,17 @@ export default function DraftAssistant({
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={() => setPending({ mode: "ask", question: "What should I change?" })}
+              onClick={() => setPending({ mode: "ask", question: t("What should I change?") })}
               className="text-[11.5px] text-muted underline hover:text-ink"
             >
-              Keep refining
+              {t("Keep refining")}
             </button>
             <button
               type="button"
               onClick={apply}
               className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
             >
-              Use this
+              {t("Use this")}
             </button>
           </div>
         </div>

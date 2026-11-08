@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import type { TFn } from "@/lib/i18n";
+import { useT } from "@/lib/i18n/client";
 
 type Model = { id: string; name: string; context: number; promptPerM: number; completionPerM: number };
 
-const price = (n: number) => (n === 0 ? "free" : n < 1 ? `$${n.toFixed(3)}` : `$${n.toFixed(2)}`);
-const priceLabel = (m: Model) =>
+const price = (t: TFn, n: number) => (n === 0 ? t("free") : n < 1 ? `$${n.toFixed(3)}` : `$${n.toFixed(2)}`);
+const priceLabel = (t: TFn, m: Model) =>
   m.promptPerM === 0 && m.completionPerM === 0
-    ? "Free"
-    : `${price(m.promptPerM)}/M in · ${price(m.completionPerM)}/M out`;
+    ? t("Free")
+    : t("{in}/M in · {out}/M out", { in: price(t, m.promptPerM), out: price(t, m.completionPerM) });
 
 /** Searchable OpenRouter model dropdown with live per-model pricing. */
 export default function OpenRouterModelPicker({
@@ -23,6 +25,7 @@ export default function OpenRouterModelPicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   useEffect(() => {
     api<{ models: Model[] }>("/api/openrouter/models")
@@ -55,10 +58,10 @@ export default function OpenRouterModelPicker({
         className="flex w-full items-center justify-between gap-2 rounded-[14px] border border-line bg-white/70 px-4 py-3 text-left text-[14px] text-ink outline-none focus:border-accent/50"
       >
         <span className="min-w-0 truncate">
-          {selected ? selected.name : value || "Search models…"}
+          {selected ? selected.name : value || t("Search models…")}
         </span>
         <span className="shrink-0 text-[11px] font-medium text-muted">
-          {selected ? priceLabel(selected) : models === null ? "loading…" : ""}
+          {selected ? priceLabel(t, selected) : models === null ? t("loading…") : ""}
         </span>
       </button>
 
@@ -68,13 +71,13 @@ export default function OpenRouterModelPicker({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search 300+ models…"
+            placeholder={t("Search 300+ models…")}
             className="w-full border-b border-line bg-transparent px-4 py-2.5 text-[13.5px] text-ink outline-none placeholder:text-muted/60"
           />
           <ul className="max-h-[300px] overflow-y-auto">
-            {models === null && <li className="px-4 py-3 text-[13px] text-muted">Loading models…</li>}
+            {models === null && <li className="px-4 py-3 text-[13px] text-muted">{t("Loading models…")}</li>}
             {models !== null && filtered.length === 0 && (
-              <li className="px-4 py-3 text-[13px] text-muted">No models match “{query}”.</li>
+              <li className="px-4 py-3 text-[13px] text-muted">{t("No models match “{query}”.", { query })}</li>
             )}
             {filtered.map((m) => (
               <li key={m.id}>
@@ -94,8 +97,8 @@ export default function OpenRouterModelPicker({
                     <span className="block truncate text-[11px] text-muted">{m.id}</span>
                   </span>
                   <span className="shrink-0 text-right text-[11px] font-medium text-muted">
-                    {priceLabel(m)}
-                    {m.context ? <span className="block text-[10px] opacity-70">{Math.round(m.context / 1000)}k ctx</span> : null}
+                    {priceLabel(t, m)}
+                    {m.context ? <span className="block text-[10px] opacity-70">{t("{n}k ctx", { n: Math.round(m.context / 1000) })}</span> : null}
                   </span>
                 </button>
               </li>

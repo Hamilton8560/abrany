@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import QueueBadge from "@/components/app/QueueBadge";
 import InstructorPanel from "@/components/app/InstructorPanel";
 import OpenRouterModelPicker from "@/components/app/OpenRouterModelPicker";
 import { LANGUAGES } from "@/lib/languages";
+import { useT } from "@/lib/i18n/client";
 import type { PublicUser } from "@/lib/user";
 
 type Meta = { label: string; keyUrl: string; modelHint: string; models?: string[] };
@@ -36,6 +38,8 @@ const PROVIDERS: Record<string, Meta> = {
 };
 
 export default function SettingsPage() {
+  const t = useT();
+  const router = useRouter();
   const [me, setMe] = useState<PublicUser | null>(null);
   const [provider, setProvider] = useState("anthropic");
   const [key, setKey] = useState("");
@@ -81,6 +85,8 @@ export default function SettingsPage() {
     setLangBusy(true);
     try {
       await api("/api/settings/language", { method: "POST", body: JSON.stringify({ language: code }) });
+      // the account language drives the interface too — re-render the server tree in it now
+      router.refresh();
     } catch {
       setLanguage(prev);
     } finally {
@@ -128,10 +134,10 @@ export default function SettingsPage() {
     try {
       await api("/api/settings/ai", { method: "POST", body: JSON.stringify({ provider, key, model }) });
       setKey("");
-      setMsg({ ok: true, text: "Connected — your AI is ready." });
+      setMsg({ ok: true, text: t("Connected — your AI is ready.") });
       await load();
     } catch (err) {
-      setMsg({ ok: false, text: err instanceof Error ? err.message : "Could not save" });
+      setMsg({ ok: false, text: err instanceof Error ? err.message : t("Could not save") });
     } finally {
       setBusy(false);
     }
@@ -151,21 +157,22 @@ export default function SettingsPage() {
         <div className="flex items-center gap-3">
           <span className="h-[2px] w-[26px] bg-accent" />
           <span className="text-[12px] font-medium text-accent" style={{ letterSpacing: "1.68px" }}>
-            AI & SETTINGS
+            {t("AI & Settings").toUpperCase()}
           </span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(28px,4vw,40px)] font-extrabold uppercase leading-[0.98] text-ink">
-          Your AI connection
+          {t("Your AI connection")}
         </h1>
       </header>
 
       <section className="glass rounded-[var(--radius-card-lg)] p-6">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="name" className="text-[15px] font-semibold text-ink">
-            Your name
+            {t("Your name")}
           </label>
           <p className="text-[13.5px] text-muted">
-            Shown on your certificates. {me ? <span className="text-ink">Currently: {me.displayName}</span> : null}
+            {t("Shown on your certificates.")}{" "}
+            {me ? <span className="text-ink">{t("Currently: {name}", { name: me.displayName })}</span> : null}
           </p>
         </div>
         <div className="mt-3 flex items-center gap-3">
@@ -174,24 +181,23 @@ export default function SettingsPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={saveName}
-            placeholder="e.g. David Hamilton"
+            placeholder={t("e.g. David Hamilton")}
             className="w-full max-w-[320px] rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
           />
-          {nameSaved && <span className="text-[12px] font-medium text-up">Saved ✓</span>}
+          {nameSaved && <span className="text-[12px] font-medium text-up">{t("Saved ✓")}</span>}
         </div>
       </section>
 
       <section className="glass rounded-[var(--radius-card-lg)] p-6">
-        <p className="text-[15px] font-semibold text-ink">Email notifications</p>
+        <p className="text-[15px] font-semibold text-ink">{t("Email notifications")}</p>
         <p className="mt-1.5 text-[13.5px] text-muted">
-          Sent from Abrany via summit-labs.io. Team sign-up emails (your temporary password) always send —
-          everything below is optional.
+          {t("Sent from Abrany via summit-labs.io. Team sign-up emails (your temporary password) always send — everything below is optional.")}
         </p>
         <div className="mt-4 flex flex-col gap-3">
           {(
             [
-              { key: "certificates" as const, checked: notifyCerts, label: "Certificate earned", desc: "When you pass a final exam and a certificate is issued." },
-              { key: "weeklyReport" as const, checked: notifyWeekly, label: "Weekly progress report", desc: "A Monday-ish digest of focus time, sections completed, and certificates." },
+              { key: "certificates" as const, checked: notifyCerts, label: t("Certificate earned"), desc: t("When you pass a final exam and a certificate is issued.") },
+              { key: "weeklyReport" as const, checked: notifyWeekly, label: t("Weekly progress report"), desc: t("A Monday-ish digest of focus time, sections completed, and certificates.") },
             ]
           ).map((n) => (
             <div key={n.key} className="flex items-center justify-between gap-4 rounded-[14px] bg-white/50 px-4 py-3">
@@ -223,11 +229,10 @@ export default function SettingsPage() {
       <section className="glass rounded-[var(--radius-card-lg)] p-6">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="language" className="text-[15px] font-semibold text-ink">
-            Language
+            {t("Language")}
           </label>
           <p className="text-[13.5px] text-muted">
-            Everything the AI writes for you — lessons, plans, coach replies, books — comes out in this
-            language. If you write to the coach in another language, it&apos;ll offer to switch.
+            {t("The app, your lessons and your emails use this language — menus and buttons, plus everything the AI writes for you: lessons, plans, coach replies and books. If you write to the coach in another language, it'll offer to switch.")}
           </p>
         </div>
         <div className="mt-3 flex items-center gap-3">
@@ -240,33 +245,29 @@ export default function SettingsPage() {
           >
             {LANGUAGES.map((l) => (
               <option key={l.code} value={l.code}>
-                {l.name} — {l.native}
+                {l.native === l.name ? l.native : `${l.native} — ${l.name}`}
               </option>
             ))}
           </select>
-          {langBusy && <span className="text-[12px] text-muted">Saving…</span>}
+          {langBusy && <span className="text-[12px] text-muted">{t("Saving…")}</span>}
         </div>
       </section>
 
       {me?.isOwner ? (
         <>
           <section className="glass rounded-[var(--radius-card-lg)] p-6">
-            <p className="text-[15px] font-semibold text-ink">You&apos;re the owner.</p>
+            <p className="text-[15px] font-semibold text-ink">{t("You're the owner.")}</p>
             <p className="mt-1.5 text-[14px] text-muted">
-              You use the app&apos;s built-in AI — nothing to set up. Everyone else brings their own key
-              below, unless you open up free access.
+              {t("You use the app's built-in AI — nothing to set up. Everyone else brings their own key below, unless you open up free access.")}
             </p>
           </section>
 
           <section className="glass rounded-[var(--radius-card-lg)] p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[15px] font-semibold text-ink">Free AI access for everyone</p>
+                <p className="text-[15px] font-semibold text-ink">{t("Free AI access for everyone")}</p>
                 <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">
-                  Let signed-in users generate with your built-in AI — no key required. Everyone shares
-                  one fair concurrency queue, so it keeps working continuously instead of getting
-                  overrun by too many requests at once. Users can still add their own key to skip the
-                  line.
+                  {t("Let signed-in users generate with your built-in AI — no key required. Everyone shares one fair concurrency queue, so it keeps working continuously instead of getting overrun by too many requests at once. Users can still add their own key to skip the line.")}
                 </p>
               </div>
               <button
@@ -289,7 +290,7 @@ export default function SettingsPage() {
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <QueueBadge />
               <span className="text-[12.5px] font-medium text-muted">
-                {freeAi ? "Free access is ON — everyone can use the built-in AI." : "Free access is off — only you use the built-in AI."}
+                {freeAi ? t("Free access is ON — everyone can use the built-in AI.") : t("Free access is off — only you use the built-in AI.")}
               </span>
             </div>
           </section>
@@ -301,20 +302,17 @@ export default function SettingsPage() {
           <section className="glass rounded-[var(--radius-card-lg)] p-6">
             {me?.orgAi && !me.hasKey && (
               <div className="mb-4 rounded-[14px] border border-up/30 bg-up/10 p-4">
-                <p className="text-[13.5px] font-semibold text-ink">Your company&apos;s AI is connected ✓</p>
+                <p className="text-[13.5px] font-semibold text-ink">{t("Your company's AI is connected ✓")}</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-muted">
-                  You were signed up by your employer, so everything you generate — courses, the tutor, exams — runs
-                  on their AI. No key needed. You can still add a personal key below to use your own.
+                  {t("You were signed up by your employer, so everything you generate — courses, the tutor, exams — runs on their AI. No key needed. You can still add a personal key below to use your own.")}
                 </p>
               </div>
             )}
             {me?.freeAiAccess && !me.orgAi && (
               <div className="mb-4 rounded-[14px] border border-up/30 bg-up/10 p-4">
-                <p className="text-[13.5px] font-semibold text-ink">Free shared AI is available 🎉</p>
+                <p className="text-[13.5px] font-semibold text-ink">{t("Free shared AI is available 🎉")}</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-muted">
-                  You can generate right now with the built-in AI — no key needed. It&apos;s a shared
-                  queue, so during busy times your request waits its turn. Add your own key below to skip
-                  the line.
+                  {t("You can generate right now with the built-in AI — no key needed. It's a shared queue, so during busy times your request waits its turn. Add your own key below to skip the line.")}
                 </p>
                 <div className="mt-3">
                   <QueueBadge />
@@ -323,23 +321,23 @@ export default function SettingsPage() {
             )}
             <p className="text-[14px] text-muted">
               {me?.freeAiAccess || me?.orgAi
-                ? "Prefer your own AI? Pick a provider and paste your key — DeepSeek and OpenRouter are the cheapest to start with."
-                : "Abrany is free — you just connect your own AI. Pick a provider, paste your API key, and you're set. DeepSeek and OpenRouter are the cheapest to start with."}
+                ? t("Prefer your own AI? Pick a provider and paste your key — DeepSeek and OpenRouter are the cheapest to start with.")
+                : t("Abrany is free — you just connect your own AI. Pick a provider, paste your API key, and you're set. DeepSeek and OpenRouter are the cheapest to start with.")}
             </p>
             {me && (
               <p className="mt-3 text-[13px]">
-                Status:{" "}
+                {t("Status:")}{" "}
                 {me.hasKey ? (
                   <span className="font-semibold text-up">
-                    Connected to {PROVIDERS[me.provider]?.label ?? me.provider}
+                    {t("Connected to {provider}", { provider: PROVIDERS[me.provider]?.label ?? me.provider })}
                     {me.model ? ` (${me.model})` : ""}
                   </span>
                 ) : me.orgAi ? (
-                  <span className="font-semibold text-up">Using your company&apos;s AI</span>
+                  <span className="font-semibold text-up">{t("Using your company's AI")}</span>
                 ) : me.freeAiAccess ? (
-                  <span className="font-semibold text-up">Using free shared AI</span>
+                  <span className="font-semibold text-up">{t("Using free shared AI")}</span>
                 ) : (
-                  <span className="font-semibold text-accent">No key yet — add one below</span>
+                  <span className="font-semibold text-accent">{t("No key yet — add one below")}</span>
                 )}
               </p>
             )}
@@ -347,7 +345,7 @@ export default function SettingsPage() {
 
           <form onSubmit={save} className="glass flex flex-col gap-4 rounded-[var(--radius-card-lg)] p-6">
             <div>
-              <label className="text-[12px] font-semibold uppercase tracking-wider text-muted">Provider</label>
+              <label className="text-[12px] font-semibold uppercase tracking-wider text-muted">{t("Provider")}</label>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {Object.entries(PROVIDERS).map(([id, m]) => (
                   <button
@@ -368,23 +366,23 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <label className="text-[12px] font-semibold uppercase tracking-wider text-muted">API key</label>
+              <label className="text-[12px] font-semibold uppercase tracking-wider text-muted">{t("API key")}</label>
               <input
                 type="password"
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder="Paste your key"
+                placeholder={t("Paste your key")}
                 autoComplete="off"
                 className="mt-2 w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
               />
               <a href={meta.keyUrl} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-[12px] font-medium text-accent">
-                Get a {meta.label} key →
+                {t("Get a {provider} key →", { provider: meta.label })}
               </a>
             </div>
 
             <div>
               <label className="text-[12px] font-semibold uppercase tracking-wider text-muted">
-                Model {provider === "openrouter" ? "(searchable · live pricing)" : "(optional)"}
+                {t("Model")} {provider === "openrouter" ? t("(searchable · live pricing)") : t("(optional)")}
               </label>
               {provider === "openrouter" ? (
                 <div className="mt-2">
@@ -417,7 +415,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between gap-3">
               {me?.hasKey ? (
                 <button type="button" onClick={disconnect} className="text-[12.5px] font-semibold text-muted hover:text-accent">
-                  Disconnect
+                  {t("Disconnect")}
                 </button>
               ) : (
                 <span />
@@ -427,7 +425,7 @@ export default function SettingsPage() {
                 disabled={busy || !key}
                 className="glassx-dark rounded-full px-6 py-3 text-[13px] font-semibold text-white disabled:opacity-50"
               >
-                {busy ? "Checking key…" : "Connect"}
+                {busy ? t("Checking key…") : t("Connect")}
               </button>
             </div>
           </form>

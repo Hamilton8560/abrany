@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Markdown from "./Markdown";
 import { ArrowRight, BrainGlyph } from "@/components/icons";
 import { splitSlides } from "@/lib/deck";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Renders a markdown deck (slides separated by a `---` line) as a navigable,
@@ -16,6 +17,7 @@ import { splitSlides } from "@/lib/deck";
  * the frame; keyboard nav, touch swipe, fullscreen present mode, print-to-PDF.
  */
 export default function SlideDeck({ content }: { content: string }) {
+  const t = useT();
   const slides = useMemo(() => splitSlides(content), [content]);
   const [i, setI] = useState(0);
   const [fs, setFs] = useState(false);
@@ -59,7 +61,7 @@ export default function SlideDeck({ content }: { content: string }) {
     else wrapRef.current?.requestFullscreen?.();
   };
 
-  if (!slides.length) return <p className="text-[14px] text-muted">This deck is empty.</p>;
+  if (!slides.length) return <p className="text-[14px] text-muted">{t("This deck is empty.")}</p>;
 
   const isTitle = /^#\s/.test(slides[i]);
   const isLast = i === slides.length - 1;
@@ -127,7 +129,7 @@ export default function SlideDeck({ content }: { content: string }) {
           onClick={() => go(-1)}
           disabled={i === 0}
           className="glassx grid size-11 place-items-center rounded-full text-ink transition disabled:opacity-40"
-          aria-label="Previous slide"
+          aria-label={t("Previous slide")}
         >
           <ArrowRight className="size-4 rotate-180" />
         </button>
@@ -139,7 +141,7 @@ export default function SlideDeck({ content }: { content: string }) {
                 <button
                   key={k}
                   onClick={() => setI(k)}
-                  aria-label={`Slide ${k + 1}`}
+                  aria-label={t("Slide {n}", { n: k + 1 })}
                   className={`h-2 rounded-full transition-all ${
                     k === i ? "w-6 bg-accent" : "w-2 bg-line hover:bg-muted"
                   }`}
@@ -163,13 +165,13 @@ export default function SlideDeck({ content }: { content: string }) {
             onClick={toggleFs}
             className="glassx rounded-full px-3.5 py-2 text-[12.5px] font-semibold text-ink"
           >
-            {fs ? "Exit" : "Present"}
+            {fs ? t("Exit") : t("Present")}
           </button>
           <button
             onClick={() => go(1)}
             disabled={i === slides.length - 1}
             className="glassx-dark grid size-11 place-items-center rounded-full text-white transition disabled:opacity-40"
-            aria-label="Next slide"
+            aria-label={t("Next slide")}
           >
             <ArrowRight className="size-4" />
           </button>

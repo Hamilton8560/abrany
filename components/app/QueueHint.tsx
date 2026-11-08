@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useT } from "@/lib/i18n/client";
 
 type State = { active: number; queued: number; max: number; pending?: number; running?: number; ahead?: number };
 
@@ -11,6 +12,7 @@ type State = { active: number; queued: number; max: number; pending?: number; ru
  */
 export default function QueueHint({ background = false }: { background?: boolean }) {
   const [s, setS] = useState<State | null>(null);
+  const t = useT();
 
   useEffect(() => {
     let alive = true;
@@ -33,18 +35,20 @@ export default function QueueHint({ background = false }: { background?: boolean
   const pending = s?.pending ?? s?.queued ?? 0;
   const ahead = s?.ahead ?? 0;
   const busy = running > 0 || pending > 0;
-  const aheadPhrase = ahead > 0 ? ` · ${ahead} ahead of you` : "";
+  const aheadPhrase = ahead > 0 ? t(" · {n} ahead of you", { n: ahead }) : "";
 
   return (
     <p className="text-[11.5px] leading-relaxed text-muted">
       {s
         ? busy
-          ? `AI queue: ${running} generating${pending ? `, ${pending} waiting` : ""}${aheadPhrase} — usually under a minute each. `
-          : "AI is free right now — should be quick. "
+          ? pending
+            ? t("AI queue: {running} generating, {pending} waiting{ahead} — usually under a minute each. ", { running, pending, ahead: aheadPhrase })
+            : t("AI queue: {running} generating{ahead} — usually under a minute each. ", { running, ahead: aheadPhrase })
+          : t("AI is free right now — should be quick. ")
         : ""}
       {background
-        ? "This keeps generating in the background, so you can leave this page and come back — it'll be ready when you return."
-        : "Please keep this page open until it finishes."}
+        ? t("This keeps generating in the background, so you can leave this page and come back — it'll be ready when you return.")
+        : t("Please keep this page open until it finishes.")}
     </p>
   );
 }

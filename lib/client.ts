@@ -1,5 +1,10 @@
 /** Client-safe helpers (no node deps). Shared by app components. */
 
+import { translate } from "./i18n/index";
+
+/** Current UI locale (the root layout writes it to <html lang>). */
+const uiLocale = () => (typeof document !== "undefined" ? document.documentElement.lang : "en");
+
 export function fmtClock(totalSec: number): string {
   const s = Math.max(0, Math.floor(totalSec));
   const m = Math.floor(s / 60);
@@ -20,7 +25,7 @@ export function fmtWhen(iso: string): string {
   // sqlite stores UTC "YYYY-MM-DD HH:MM:SS"
   const d = new Date(iso.replace(" ", "T") + "Z");
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(uiLocale() === "es" ? "es-419" : undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -39,6 +44,10 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
     // sprinkling "Unauthorized" errors across every panel
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
   }
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
+  // server errors are English source strings; show them in the user's language
+  if (!res.ok) {
+    const raw = (data as { error?: string }).error;
+    throw new Error(raw ? translate(uiLocale(), raw) : translate(uiLocale(), "Request failed ({status})", { status: res.status }));
+  }
   return data as T;
 }

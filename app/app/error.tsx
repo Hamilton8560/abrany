@@ -1,6 +1,7 @@
 "use client"; // Error boundaries must be Client Components
 
 import { useEffect } from "react";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Segment boundary for the authenticated app. Catches a crash in any page/panel
@@ -14,6 +15,7 @@ export default function AppError({
   error: Error & { digest?: string };
   unstable_retry: () => void;
 }) {
+  const t = useT();
   useEffect(() => {
     console.error("[app] boundary caught:", error);
   }, [error]);
@@ -22,19 +24,18 @@ export default function AppError({
     <div className="flex min-h-[60dvh] items-center justify-center px-6">
       <div className="max-w-[400px] text-center">
         <h2 className="mb-2 font-display text-[20px] font-extrabold text-ink">
-          This view hit a snag
+          {t("This view hit a snag")}
         </h2>
         <p className="mb-5 text-[13.5px] leading-relaxed text-muted">
-          Nothing was lost. If you just switched on a page translation, that can interrupt a live
-          view — try again to reload it.
+          {t("Nothing was lost. If you just switched on a page translation, that can interrupt a live view — try again to reload it.")}
         </p>
         <button
           onClick={() => unstable_retry()}
           className="rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-bold text-white"
         >
-          Try again
+          {t("Try again")}
         </button>
-        {error?.digest && <p className="mt-4 text-[11px] text-muted/70">ref {error.digest}</p>}
+        {error?.digest && <p className="mt-4 text-[11px] text-muted/70">{t("ref {digest}", { digest: error.digest })}</p>}
       </div>
     </div>
   );

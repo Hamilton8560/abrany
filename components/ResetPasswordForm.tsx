@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Logo } from "@/components/Nav";
 import { BrainGlyph } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
 
 export default function ResetPasswordForm({ required }: { required: boolean }) {
+  const t = useT();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -13,8 +15,8 @@ export default function ResetPasswordForm({ required }: { required: boolean }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) return setError("Password must be at least 8 characters");
-    if (password !== confirm) return setError("Passwords don't match");
+    if (password.length < 8) return setError(t("Password must be at least 8 characters"));
+    if (password !== confirm) return setError(t("Passwords don't match"));
     setBusy(true);
     try {
       const res = await fetch("/api/auth/reset-password", {
@@ -24,13 +26,13 @@ export default function ResetPasswordForm({ required }: { required: boolean }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong");
+        setError(data.error ? t(data.error) : t("Something went wrong"));
         setBusy(false);
         return;
       }
       window.location.href = "/app";
     } catch {
-      setError("Network error — try again");
+      setError(t("Network error — try again"));
       setBusy(false);
     }
   };
@@ -48,12 +50,12 @@ export default function ResetPasswordForm({ required }: { required: boolean }) {
             </span>
             <div>
               <h1 className="font-display text-[24px] font-extrabold uppercase text-ink">
-                Set your password
+                {t("Set your password")}
               </h1>
               <p className="mt-1 text-[13px] text-muted">
                 {required
-                  ? "You logged in with a temporary password — choose your own to continue."
-                  : "Choose a new password for your account."}
+                  ? t("You logged in with a temporary password — choose your own to continue.")
+                  : t("Choose a new password for your account.")}
               </p>
             </div>
           </div>
@@ -63,7 +65,7 @@ export default function ResetPasswordForm({ required }: { required: boolean }) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="New password (8+ characters)"
+              placeholder={t("New password (8+ characters)")}
               autoComplete="new-password"
               autoFocus
               className="w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
@@ -72,7 +74,7 @@ export default function ResetPasswordForm({ required }: { required: boolean }) {
               type="password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              placeholder="Confirm new password"
+              placeholder={t("Confirm new password")}
               autoComplete="new-password"
               className="w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
             />
@@ -82,7 +84,7 @@ export default function ResetPasswordForm({ required }: { required: boolean }) {
               disabled={busy || !password || !confirm}
               className="glassx-dark mt-1 rounded-full px-5 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
             >
-              {busy ? "Saving…" : "Set password & continue"}
+              {busy ? t("Saving…") : t("Set password & continue")}
             </button>
           </form>
         </div>

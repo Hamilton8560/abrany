@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import dagre from "@dagrejs/dagre";
 import { parseArchSpec } from "@/lib/toon";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Architecture / system diagrams from a compact TOON node+edge spec.
@@ -67,6 +68,7 @@ const nodeSize = (lines: string[]) => {
 };
 
 export default function ArchDiagram({ spec }: { spec: string }) {
+  const t = useT();
   const layout = useMemo(() => {
     try {
       const { nodes, edges } = parseArchSpec(spec);
@@ -114,7 +116,7 @@ export default function ArchDiagram({ spec }: { spec: string }) {
     return (
       <details className="mb-2.5 rounded-[12px] border border-line bg-white/50 px-4 py-3">
         <summary className="cursor-pointer text-[12.5px] font-medium text-muted">
-          Diagram couldn&apos;t render — view source
+          {t("Diagram couldn't render — view source")}
         </summary>
         <pre className="mt-2 overflow-x-auto rounded-[10px] bg-ink/90 p-3 font-mono text-[11.5px] text-white">{spec}</pre>
       </details>

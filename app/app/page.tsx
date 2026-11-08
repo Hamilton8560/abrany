@@ -6,10 +6,13 @@ import PomodoroTimer from "@/components/app/PomodoroTimer";
 import { api, fmtDuration, fmtWhen } from "@/lib/client";
 import type { GoalListItem as Goal, Session, SessionStats } from "@/lib/repo";
 import { ArrowRight, TargetIcon, BuildingIcon } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
+import { plural } from "@/lib/i18n";
 
 type SessionsResp = { sessions: (Session & { goal_title: string | null })[]; stats: SessionStats };
 
 export default function Dashboard() {
+  const t = useT();
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [sessions, setSessions] = useState<(Session & { goal_title: string | null })[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -38,17 +41,17 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <span className="h-[2px] w-[26px] bg-accent" />
             <span className="text-[12px] font-medium text-accent" style={{ letterSpacing: "1.68px" }}>
-              YOUR TRAINING
+              {t("YOUR TRAINING")}
             </span>
           </div>
           <h1 className="mt-3 font-display text-[clamp(30px,4vw,42px)] font-extrabold uppercase leading-[0.98] text-ink">
-            Train by recording
+            {t("Train by recording")}
           </h1>
         </div>
         <div className="flex gap-3">
-          <StatTile label="Today" value={stats ? fmtDuration(stats.todayFocusSec) : "—"} />
-          <StatTile label="Sessions" value={stats ? String(stats.sessionCount) : "—"} />
-          <StatTile label="Total focus" value={stats ? fmtDuration(stats.totalFocusSec) : "—"} accent />
+          <StatTile label={t("Today")} value={stats ? fmtDuration(stats.todayFocusSec) : "—"} />
+          <StatTile label={t("Sessions")} value={stats ? String(stats.sessionCount) : "—"} />
+          <StatTile label={t("Total focus")} value={stats ? fmtDuration(stats.totalFocusSec) : "—"} accent />
         </div>
       </header>
 
@@ -57,10 +60,10 @@ export default function Dashboard() {
         <section className="glass rounded-[var(--radius-card-lg)] p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-ink">
-              <BuildingIcon className="size-4 text-accent" /> Assigned to you
+              <BuildingIcon className="size-4 text-accent" /> {t("Assigned to you")}
             </h2>
             <Link href="/app/org" className="text-[12px] font-medium text-accent hover:underline">
-              My company
+              {t("My company")}
             </Link>
           </div>
           <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
@@ -82,7 +85,7 @@ export default function Dashboard() {
                           passed ? "bg-up/15 text-up" : g.assignment_status === "failed" ? "bg-accent/15 text-accent" : "bg-ink/8 text-muted"
                         }`}
                       >
-                        {passed ? "Passed" : g.assignment_status === "failed" ? "Past due" : building ? "Building" : g.assignment_status === "in_progress" ? "In progress" : "New"}
+                        {passed ? t("Passed") : g.assignment_status === "failed" ? t("Past due") : building ? t("Building") : g.assignment_status === "in_progress" ? t("In progress") : t("New")}
                       </span>
                     </div>
                     <p className="text-[12px] text-muted">
@@ -90,7 +93,7 @@ export default function Dashboard() {
                       {g.assignment_due && !passed && (
                         <span className={dl !== null && dl < 3 ? " font-semibold text-accent" : ""}>
                           {" · "}
-                          {dl !== null && dl >= 0 ? `${dl} day${dl === 1 ? "" : "s"} left` : "overdue"}
+                          {dl !== null && dl >= 0 ? plural(t, dl, "{n} day left", "{n} days left") : t("overdue")}
                         </span>
                       )}
                     </p>
@@ -99,11 +102,11 @@ export default function Dashboard() {
                         <span className="block h-full rounded-full bg-up transition-all" style={{ width: `${pct}%` }} />
                       </span>
                       <span className="text-[11px] text-muted">
-                        {building ? "preparing…" : g.sections_total > 0 ? `${g.sections_done}/${g.sections_total}` : "—"}
+                        {building ? t("preparing…") : g.sections_total > 0 ? `${g.sections_done}/${g.sections_total}` : "—"}
                       </span>
                     </div>
                     <span className="text-[12px] font-semibold text-accent">
-                      {passed ? "View certificate" : g.sections_done > 0 ? "Continue" : "Start"} →
+                      {passed ? t("View certificate") : g.sections_done > 0 ? t("Continue") : t("Start")} →
                     </span>
                   </Link>
                 </li>
@@ -124,10 +127,10 @@ export default function Dashboard() {
           <section className="glass rounded-[var(--radius-card-lg)] p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
-                Active goals
+                {t("Active goals")}
               </h2>
               <Link href="/app/goals" className="text-[12px] font-medium text-accent hover:underline">
-                All
+                {t("All")}
               </Link>
             </div>
             <div className="mt-4 flex flex-col gap-2.5">
@@ -136,7 +139,7 @@ export default function Dashboard() {
                   href="/app/goals"
                   className="flex items-center gap-2 rounded-[13px] border border-dashed border-line px-3.5 py-4 text-[13px] text-muted hover:border-accent/50 hover:text-ink"
                 >
-                  <TargetIcon className="size-[18px]" /> Set your first goal →
+                  <TargetIcon className="size-[18px]" /> {t("Set your first goal →")}
                 </Link>
               )}
               {own.map((g) => (
@@ -155,21 +158,21 @@ export default function Dashboard() {
           <section className="glass rounded-[var(--radius-card-lg)] p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
-                Recent sessions
+                {t("Recent sessions")}
               </h2>
               <Link href="/app/log" className="text-[12px] font-medium text-accent hover:underline">
-                Log
+                {t("Log")}
               </Link>
             </div>
             <div className="mt-4 flex flex-col gap-3">
               {sessions.length === 0 && (
-                <p className="text-[13px] text-muted">No sessions yet — run a focus block above.</p>
+                <p className="text-[13px] text-muted">{t("No sessions yet — run a focus block above.")}</p>
               )}
               {sessions.map((s) => (
                 <div key={s.id} className="flex flex-col gap-0.5 border-b border-line/70 pb-3 last:border-0 last:pb-0">
                   <div className="flex items-center justify-between">
                     <span className="text-[12.5px] font-semibold text-ink">
-                      {fmtDuration(s.duration_sec)} focus
+                      {t("{duration} focus", { duration: fmtDuration(s.duration_sec) })}
                     </span>
                     <span className="text-[11px] text-muted">{fmtWhen(s.created_at)}</span>
                   </div>

@@ -3,22 +3,26 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/client";
-import { schedule, dueLabel, type Rating } from "@/lib/srs";
+import { schedule, type Rating } from "@/lib/srs";
 import type { DueLesson, SrsUpcoming, UpcomingReview, EnrolledLesson } from "@/lib/repo";
 import Markdown from "@/components/app/Markdown";
 import ReviewQuiz from "@/components/app/ReviewQuiz";
 import { ReviewIcon } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
+import { msg, type TFn } from "@/lib/i18n";
 
 type Resp = { due: DueLesson[]; summary: SrsUpcoming; upcoming: UpcomingReview[]; rotation: EnrolledLesson[] };
 
 const RATINGS: { key: Rating; label: string; tone: string }[] = [
-  { key: "again", label: "Again", tone: "bg-accent/12 text-accent hover:bg-accent/20" },
-  { key: "hard", label: "Hard", tone: "bg-white/70 text-ink hover:bg-white" },
-  { key: "good", label: "Good", tone: "bg-white/70 text-ink hover:bg-white" },
-  { key: "easy", label: "Easy", tone: "bg-up/15 text-up hover:bg-up/25" },
+  { key: "again", label: msg("Again"), tone: "bg-accent/12 text-accent hover:bg-accent/20" },
+  { key: "hard", label: msg("Hard"), tone: "bg-white/70 text-ink hover:bg-white" },
+  { key: "good", label: msg("Good"), tone: "bg-white/70 text-ink hover:bg-white" },
+  { key: "easy", label: msg("Easy"), tone: "bg-up/15 text-up hover:bg-up/25" },
 ];
 
 export default function ReviewPage() {
+  const t = useT();
+  const dueLabel = (days: number) => localDueLabel(t, days);
   const [queue, setQueue] = useState<DueLesson[] | null>(null);
   const [summary, setSummary] = useState<SrsUpcoming | null>(null);
   const [i, setI] = useState(0);
@@ -81,22 +85,22 @@ export default function ReviewPage() {
         <div className="flex items-center gap-3">
           <span className="h-[2px] w-[26px] bg-accent" />
           <span className="text-[12px] font-medium text-accent" style={{ letterSpacing: "1.68px" }}>
-            REVIEW · SPACED FOLLOW-UPS
+            {t("REVIEW · SPACED FOLLOW-UPS")}
           </span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(30px,4vw,42px)] font-extrabold uppercase leading-[0.98] text-ink">
-          Make it stick
+          {t("Make it stick")}
         </h1>
         {summary && (
           <p className="mt-2 text-[14px] text-muted">
             {summary.dueToday > 0
-              ? `${summary.dueToday} due today · ${summary.learning} still learning · ${summary.mastered} mastered · ${summary.enrolled} in rotation.`
-              : `${summary.enrolled} in rotation · ${summary.learning} still learning · ${summary.mastered} mastered. Nothing due right now.`}
+              ? t("{due} due today · {learning} still learning · {mastered} mastered · {enrolled} in rotation.", { due: summary.dueToday, learning: summary.learning, mastered: summary.mastered, enrolled: summary.enrolled })
+              : t("{enrolled} in rotation · {learning} still learning · {mastered} mastered. Nothing due right now.", { enrolled: summary.enrolled, learning: summary.learning, mastered: summary.mastered })}
           </p>
         )}
       </header>
 
-      {queue === null && <p className="text-[14px] text-muted">Loading…</p>}
+      {queue === null && <p className="text-[14px] text-muted">{t("Loading…")}</p>}
 
       {queue && !current && (
         <section className="glass flex flex-col items-center gap-4 rounded-[var(--radius-card-lg)] px-6 py-14 text-center">
@@ -104,18 +108,18 @@ export default function ReviewPage() {
             <ReviewIcon className="size-7" />
           </span>
           <div>
-            <h2 className="font-display text-[22px] font-extrabold uppercase text-ink">All caught up</h2>
+            <h2 className="font-display text-[22px] font-extrabold uppercase text-ink">{t("All caught up")}</h2>
             <p className="mt-1.5 max-w-[400px] text-[14px] text-muted">
               {summary?.enrolled
-                ? "Nothing due right now — come back when your coach follows up. Add more lessons to your rotation from any goal."
-                : "Nothing in your review rotation yet. Open a lesson and tap “Add to reviews” to have your coach follow up over time."}
+                ? t("Nothing due right now — come back when your coach follows up. Add more lessons to your rotation from any goal.")
+                : t("Nothing in your review rotation yet. Open a lesson and tap “Add to reviews” to have your coach follow up over time.")}
             </p>
           </div>
           <Link
             href="/app/goals"
             className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
           >
-            Go to goals
+            {t("Go to goals")}
           </Link>
         </section>
       )}
@@ -140,17 +144,17 @@ export default function ReviewPage() {
 
           <div className="mt-4 rounded-[14px] bg-white/55 px-4 py-4">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-              From memory — no peeking
+              {t("From memory — no peeking")}
             </p>
             <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink">
-              {current.objective || "Explain what you learned in this lesson, in your own words."}
+              {current.objective || t("Explain what you learned in this lesson, in your own words.")}
             </p>
             <textarea
               value={recall}
               onChange={(e) => setRecall(e.target.value)}
               disabled={quizzing}
               rows={4}
-              placeholder="Write what you remember…"
+              placeholder={t("Write what you remember…")}
               className="mt-3 w-full resize-none rounded-[12px] border border-line bg-white/70 px-3 py-2 text-[13.5px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50 disabled:opacity-70"
             />
           </div>
@@ -160,16 +164,16 @@ export default function ReviewPage() {
               onClick={() => setRevealed((v) => !v)}
               className="glassx rounded-full px-4 py-2 text-[13px] font-semibold text-ink"
             >
-              {revealed ? "Hide lesson" : "Reveal & self-rate"}
+              {revealed ? t("Hide lesson") : t("Reveal & self-rate")}
             </button>
             {!quizzing && (
               <button
                 onClick={() => setQuizzing(true)}
                 disabled={!recall.trim()}
-                title={recall.trim() ? "Have your coach grade your recall" : "Write your recall first"}
+                title={recall.trim() ? t("Have your coach grade your recall") : t("Write your recall first")}
                 className="glassx-dark rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
               >
-                Grade my recall
+                {t("Grade my recall")}
               </button>
             )}
           </div>
@@ -194,7 +198,7 @@ export default function ReviewPage() {
           {/* grade buttons — the coach's suggested rating (after a quiz) is highlighted */}
           <div className="mt-6 border-t border-line/70 pt-5">
             <p className="mb-3 text-[12px] font-medium text-muted">
-              {suggested ? "Confirm your rating (coach suggests the highlighted one):" : "How well did you remember it?"}
+              {suggested ? t("Confirm your rating (coach suggests the highlighted one):") : t("How well did you remember it?")}
             </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {RATINGS.map((r) => {
@@ -215,7 +219,7 @@ export default function ReviewPage() {
                       suggested === r.key ? "ring-2 ring-accent ring-offset-1" : ""
                     }`}
                   >
-                    {r.label}
+                    {t(r.label)}
                     <span className="text-[10px] font-normal opacity-70">{dueLabel(next.interval)}</span>
                   </button>
                 );
@@ -227,7 +231,7 @@ export default function ReviewPage() {
 
       {upcoming.length > 0 && (
         <section className="glass rounded-[var(--radius-card-lg)] p-6">
-          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-accent">Coming up</h2>
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-accent">{t("Coming up")}</h2>
           <ul className="mt-3 flex flex-col gap-2">
             {upcoming.map((u) => (
               <li key={u.id} className="flex items-center justify-between gap-3 text-[13.5px]">
@@ -242,7 +246,7 @@ export default function ReviewPage() {
       {rotation.length > 0 && (
         <details className="glass rounded-[var(--radius-card-lg)] p-6">
           <summary className="cursor-pointer text-[12px] font-semibold uppercase tracking-wider text-accent">
-            Your rotation · {rotation.length}
+            {t("Your rotation · {n}", { n: rotation.length })}
           </summary>
           <ul className="mt-3 flex flex-col gap-2">
             {rotation.map((r) => (
@@ -257,7 +261,7 @@ export default function ReviewPage() {
                     onClick={() => removeFromRotation(r.id)}
                     className="text-[11.5px] font-semibold text-muted hover:text-accent"
                   >
-                    Remove
+                    {t("Remove")}
                   </button>
                 </span>
               </li>
@@ -267,6 +271,15 @@ export default function ReviewPage() {
       )}
     </div>
   );
+}
+
+/** Mirrors lib/srs dueLabel(), in the UI language. */
+function localDueLabel(t: TFn, days: number): string {
+  if (days <= 0) return t("due today");
+  if (days === 1) return t("in 1 day");
+  if (days < 7) return t("in {n} days", { n: days });
+  if (days < 30) return t("in {n}w", { n: Math.round(days / 7) });
+  return t("in {n}mo", { n: Math.round(days / 30) });
 }
 
 /** Whole days from today to an ISO date string (yyyy-mm-dd), clamped at 0. */

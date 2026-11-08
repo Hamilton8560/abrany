@@ -9,6 +9,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useT } from "@/lib/i18n/client";
+import type { TFn } from "@/lib/i18n";
 
 /* ───────────────────────────────────────────────────────────
    Global focus/break timer.
@@ -108,15 +110,15 @@ function playChime() {
   }
 }
 
-function notifyDone(phase: Phase) {
+function notifyDone(phase: Phase, t: TFn) {
   try {
     navigator.vibrate?.([180, 90, 180]);
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("Abrany Timer", {
+      new Notification(t("Abrany Timer"), {
         body:
           phase === "focus"
-            ? "Focus session complete — time for a break."
-            : "Break's over — ready for another round of focus?",
+            ? t("Focus session complete — time for a break.")
+            : t("Break's over — ready for another round of focus?"),
         tag: "abrany-timer",
       });
     }
@@ -150,6 +152,9 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const baseTitle = useRef("");
+  const t = useT();
+  const tRef = useRef<TFn>(t);
+  tRef.current = t;
 
   useEffect(() => {
     baseTitle.current = document.title;
@@ -199,7 +204,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
             : s,
         );
         playChime();
-        notifyDone(phase);
+        notifyDone(phase, tRef.current);
       } else {
         setNow(Date.now());
       }
@@ -221,19 +226,19 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     if (state.status === "running" || state.status === "paused") {
-      const label = state.phase === "focus" ? "Focus" : "Break";
+      const label = state.phase === "focus" ? t("Focus") : t("Break");
       document.title = `${remainingLabel} ${
         state.status === "paused" ? "⏸" : "·"
       } ${label} — Abrany`;
     } else if (state.status === "done") {
       document.title =
         state.phase === "focus"
-          ? "✓ Focus done — break time! · Abrany"
-          : "✓ Break over · Abrany";
+          ? t("✓ Focus done — break time! · Abrany")
+          : t("✓ Break over · Abrany");
     } else {
       document.title = baseTitle.current || document.title;
     }
-  }, [hydrated, state.status, state.phase, remainingLabel]);
+  }, [hydrated, state.status, state.phase, remainingLabel, t]);
 
   const start = useCallback((phase: Phase) => {
     ensureAudio();

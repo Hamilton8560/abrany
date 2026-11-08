@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fmtClock, api } from "@/lib/client";
 import { PlayIcon, PauseIcon, ResetIcon, CheckIcon } from "@/components/icons";
 import Portal from "./Portal";
+import { useT } from "@/lib/i18n/client";
 import type { Goal, TimerState } from "@/lib/repo";
 
 type Mode = "focus" | "break";
@@ -29,6 +30,7 @@ type ServerState = {
  * watch it on the web, and there's only ever one running.
  */
 export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
+  const t = useT();
   const [focusMin, setFocusMin] = useState(25);
   const [breakMin, setBreakMin] = useState(5);
   const [mode, setMode] = useState<Mode>("focus");
@@ -230,7 +232,7 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
               mode === m ? "glassx-dark text-white" : "text-muted hover:text-ink"
             }`}
           >
-            {m}
+            {m === "focus" ? t("focus") : t("break")}
           </button>
         ))}
       </div>
@@ -260,7 +262,7 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
               className="mt-2 text-[11px] font-medium text-muted"
               style={{ letterSpacing: "1.8px" }}
             >
-              {mode === "focus" ? "STAY FOCUSED" : "TAKE A BREAK"}
+              {mode === "focus" ? t("STAY FOCUSED") : t("TAKE A BREAK")}
             </span>
           </div>
         </div>
@@ -271,7 +273,7 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
         <button
           type="button"
           onClick={reset}
-          aria-label="Reset"
+          aria-label={t("Reset")}
           className="glassx grid size-12 place-items-center rounded-full text-ink transition-transform hover:-translate-y-0.5"
         >
           <ResetIcon className="size-5" />
@@ -280,16 +282,16 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
           type="button"
           onClick={running ? pause : start}
           className="glassx-dark grid size-16 place-items-center rounded-full text-white shadow-[var(--shadow-glow)] transition-transform hover:scale-105"
-          aria-label={running ? "Pause" : "Start"}
+          aria-label={running ? t("Pause") : t("Start")}
         >
           {running ? <PauseIcon className="size-7" /> : <PlayIcon className="ml-1 size-6" />}
         </button>
         <button
           type="button"
           onClick={() => setRecording(true)}
-          aria-label="Log a session now"
+          aria-label={t("Log a session now")}
           className="glassx grid size-12 place-items-center rounded-full text-ink transition-transform hover:-translate-y-0.5"
-          title="Log what you did"
+          title={t("Log what you did")}
         >
           <CheckIcon className="size-5" />
         </button>
@@ -299,7 +301,7 @@ export default function PomodoroTimer({ onLogged }: { onLogged?: () => void }) {
       {!running && !recording && (
         <div className="flex flex-col items-center gap-2">
           <span className="text-[10.5px] font-medium uppercase tracking-wider text-muted">
-            {mode} length
+            {mode === "focus" ? t("focus length") : t("break length")}
           </span>
           <div className="flex gap-2">
             {(mode === "focus" ? FOCUS_PRESETS : BREAK_PRESETS).map((p) => {
@@ -355,6 +357,7 @@ function SessionRecorder({
   const [minutes, setMinutes] = useState(Math.max(1, Math.round(suggestedSec / 60)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   useEffect(() => {
     api<{ goals: Goal[] }>("/api/goals")
@@ -377,7 +380,7 @@ function SessionRecorder({
       });
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save");
+      setError(e instanceof Error ? e.message : t("Could not save"));
       setSaving(false);
     }
   };
@@ -393,33 +396,33 @@ function SessionRecorder({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-display text-[22px] font-extrabold uppercase text-ink">
-          Record session
+          {t("Record session")}
         </h3>
-        <p className="mt-1 text-[13px] text-muted">What did you work on? Keep the record honest.</p>
+        <p className="mt-1 text-[13px] text-muted">{t("What did you work on? Keep the record honest.")}</p>
 
         <label className="mt-5 block text-[11px] font-semibold uppercase tracking-wider text-muted">
-          What I did
+          {t("What I did")}
         </label>
         <textarea
           autoFocus
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={4}
-          placeholder="e.g. Worked through 12 Spanish flashcards + read one news article aloud."
+          placeholder={t("e.g. Worked through 12 Spanish flashcards + read one news article aloud.")}
           className="mt-2 w-full resize-none rounded-[14px] border border-line bg-white/70 px-3.5 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
         />
 
         <div className="mt-4 flex gap-3">
           <div className="flex-1">
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">
-              Goal
+              {t("Goal")}
             </label>
             <select
               value={goalId}
               onChange={(e) => setGoalId(e.target.value)}
               className="mt-2 w-full rounded-[14px] border border-line bg-white/70 px-3 py-2.5 text-[14px] text-ink outline-none focus:border-accent/50"
             >
-              <option value="">No goal</option>
+              <option value="">{t("No goal")}</option>
               {goals.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.title}
@@ -429,7 +432,7 @@ function SessionRecorder({
           </div>
           <div className="w-[110px]">
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted">
-              Minutes
+              {t("Minutes")}
             </label>
             <input
               type="number"
@@ -449,7 +452,7 @@ function SessionRecorder({
             onClick={onClose}
             className="rounded-full px-4 py-2.5 text-[13px] font-semibold text-muted hover:text-ink"
           >
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="button"
@@ -457,7 +460,7 @@ function SessionRecorder({
             disabled={saving || !notes.trim()}
             className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save session"}
+            {saving ? t("Saving…") : t("Save session")}
           </button>
         </div>
       </div>

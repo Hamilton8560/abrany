@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { createUser, getUser, getUserByEmail, backfillOwnerData, type User } from "./repo";
 import { createOrg, orgForUser } from "./org";
 import { hashPassword, verifyPassword } from "./password";
+import { LOCALE_COOKIE } from "./i18n/locale";
 
 export { hashPassword, verifyPassword };
 
@@ -66,6 +67,8 @@ const cookieOpts = {
 export async function startSession(userId: number): Promise<void> {
   const jar = await cookies();
   jar.set(COOKIE, sign(userId), cookieOpts);
+  // remember the account language so signed-out screens (login, reset) match it
+  rememberLocale(jar, getUser(userId)?.language || "en");
   jar.delete(ACT_COOKIE); // a fresh login never carries a stale impersonation
 }
 
@@ -73,6 +76,12 @@ export async function endSession(): Promise<void> {
   const jar = await cookies();
   jar.delete(COOKIE);
   jar.delete(ACT_COOKIE);
+}
+
+type Jar = Awaited<ReturnType<typeof cookies>>;
+/** Persist the UI language in a readable cookie (not a secret; one year). */
+export function rememberLocale(jar: Jar, language: string): void {
+  jar.set(LOCALE_COOKIE, language, { path: "/", sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
 }
 
 /**

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import { useT } from "@/lib/i18n/client";
+import { msg, plural } from "@/lib/i18n";
 import Markdown from "./Markdown";
 import QueueHint from "./QueueHint";
 import Portal from "./Portal";
@@ -18,9 +20,9 @@ type ExamView = {
 type Result = { score: number; pass: boolean; passScore: number; grade: GradeResult; questions: string[] };
 
 const VERDICT: Record<Verdict, { label: string; cls: string }> = {
-  correct: { label: "Correct", cls: "bg-up/15 text-up" },
-  partial: { label: "Partial", cls: "bg-accent-2/15 text-accent-2" },
-  incorrect: { label: "Missed", cls: "bg-accent/12 text-accent" },
+  correct: { label: msg("Correct"), cls: "bg-up/15 text-up" },
+  partial: { label: msg("Partial"), cls: "bg-accent-2/15 text-accent-2" },
+  incorrect: { label: msg("Missed"), cls: "bg-accent/12 text-accent" },
 };
 
 /**
@@ -40,6 +42,7 @@ export default function ExamModal({
   onClose: () => void;
   onGraded: () => void;
 }) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>("loading");
   const [guide, setGuide] = useState("");
   const [eligibility, setEligibility] = useState<Eligibility | null>(null);
@@ -55,7 +58,7 @@ export default function ExamModal({
     setSaved(true);
     await api("/api/study-guides", {
       method: "POST",
-      body: JSON.stringify({ content: guide, title: `${title} — ${kind} study guide`, source: "exam" }),
+      body: JSON.stringify({ content: guide, title: kind === "final" ? t("{title} — final study guide", { title }) : t("{title} — midterm study guide", { title }), source: "exam" }),
     }).catch(() => setSaved(false));
   };
 
@@ -75,7 +78,7 @@ export default function ExamModal({
       setResult(null);
       setPhase("study");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not prepare the exam.");
+      setError(e instanceof Error ? e.message : t("Could not prepare the exam."));
       setPhase("error");
     }
   };
@@ -94,7 +97,7 @@ export default function ExamModal({
       setResult(null);
       setPhase("answering");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start the exam.");
+      setError(e instanceof Error ? e.message : t("Could not start the exam."));
       setPhase("error");
     }
   };
@@ -114,13 +117,19 @@ export default function ExamModal({
       setPhase("result");
       onGraded();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not grade the exam.");
+      setError(e instanceof Error ? e.message : t("Could not grade the exam."));
       setPhase("error");
     }
   };
 
   const unanswered = answers.filter((a) => !a.trim()).length;
   const canStart = !!eligibility?.eligible;
+  // the server's reason is English; rebuild it from the counts so it reads in the UI language
+  const reason = !eligibility || eligibility.eligible
+    ? eligibility?.reason
+    : eligibility.total === 0
+      ? t(eligibility.reason)
+      : plural(t, eligibility.total - eligibility.done, "Complete {n} more section to unlock this exam.", "Complete {n} more sections to unlock this exam.");
 
   return (
     <Portal>
@@ -132,18 +141,18 @@ export default function ExamModal({
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-              {kind === "final" ? "Final exam" : "Midterm exam"}
+              {kind === "final" ? t("Final exam") : t("Midterm exam")}
             </p>
             <h3 className="mt-1 font-display text-[clamp(20px,5vw,26px)] font-extrabold uppercase leading-[1.05] text-ink">{title}</h3>
           </div>
           <button
             onClick={() => {
-              if (phase === "answering" && !window.confirm("Leave the exam? Your answers on this sitting won't be graded.")) return;
+              if (phase === "answering" && !window.confirm(t("Leave the exam? Your answers on this sitting won't be graded."))) return;
               onClose();
             }}
             className="glassx shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink"
           >
-            Close
+            {t("Close")}
           </button>
         </div>
 
@@ -151,10 +160,10 @@ export default function ExamModal({
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-[14px] text-muted">
               {phase === "loading"
-                ? "Preparing your study guide…"
+                ? t("Preparing your study guide…")
                 : phase === "starting"
-                  ? "Writing your exam questions…"
-                  : "Grading your answers…"}
+                  ? t("Writing your exam questions…")
+                  : t("Grading your answers…")}
             </p>
             <div className="max-w-[420px]">
               <QueueHint />
@@ -165,16 +174,15 @@ export default function ExamModal({
         {phase === "study" && (
           <div>
             <div className="rounded-[14px] border border-line bg-white/60 p-5">
-              <p className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-muted">Study guide</p>
-              {guide ? <Markdown>{guide}</Markdown> : <p className="text-[14px] text-muted">No study guide available.</p>}
+              <p className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-muted">{t("Study guide")}</p>
+              {guide ? <Markdown>{guide}</Markdown> : <p className="text-[14px] text-muted">{t("No study guide available.")}</p>}
             </div>
 
             {eligibility && !eligibility.eligible && (
               <div className="mt-4 rounded-[14px] bg-accent/8 px-4 py-3">
-                <p className="text-[13px] font-semibold text-ink">🔒 {eligibility.reason}</p>
+                <p className="text-[13px] font-semibold text-ink">🔒 {reason}</p>
                 <p className="mt-1 text-[12.5px] text-muted">
-                  {eligibility.done}/{eligibility.total} sections complete. The exam is graded against the whole course, so finish
-                  the sections first — you&apos;ll do better, and the credential means something.
+                  {t("{done}/{total} sections complete. The exam is graded against the whole course, so finish the sections first — you'll do better, and the credential means something.", { done: eligibility.done, total: eligibility.total })}
                 </p>
               </div>
             )}
@@ -182,8 +190,8 @@ export default function ExamModal({
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <p className="text-[12.5px] text-muted">
-                  {kind === "final" ? 8 : 6} written questions · pass at 70%
-                  {questions.length > 0 && canStart ? " · a sitting is ready" : ""}
+                  {t("{n} written questions · pass at 70%", { n: kind === "final" ? 8 : 6 })}
+                  {questions.length > 0 && canStart ? " · " + t("a sitting is ready") : ""}
                 </p>
                 {guide && (
                   <button
@@ -191,17 +199,17 @@ export default function ExamModal({
                     disabled={saved}
                     className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold ${saved ? "bg-up/15 text-up" : "glassx text-ink"}`}
                   >
-                    {saved ? "✓ Saved to my guides" : "Save to my guides"}
+                    {saved ? t("✓ Saved to my guides") : t("Save to my guides")}
                   </button>
                 )}
               </div>
               <button
                 onClick={() => start(false)}
                 disabled={!canStart}
-                title={canStart ? "" : eligibility?.reason}
+                title={canStart ? "" : reason}
                 className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
               >
-                {canStart ? "Start the exam →" : "Locked"}
+                {canStart ? t("Start the exam →") : t("Locked")}
               </button>
             </div>
           </div>
@@ -210,8 +218,7 @@ export default function ExamModal({
         {phase === "answering" && (
           <div className="flex flex-col gap-5">
             <p className="rounded-[12px] bg-white/55 px-4 py-2.5 text-[12.5px] text-muted">
-              Answer in your own words — a few sentences each. The coach grades against the course material, so specifics beat
-              generalities. Closing this window abandons the sitting.
+              {t("Answer in your own words — a few sentences each. The coach grades against the course material, so specifics beat generalities. Closing this window abandons the sitting.")}
             </p>
             {questions.map((q, i) => (
               <div key={i}>
@@ -223,23 +230,23 @@ export default function ExamModal({
                   value={answers[i]}
                   onChange={(e) => setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))}
                   rows={3}
-                  placeholder="Your answer…"
+                  placeholder={t("Your answer…")}
                   className="mt-2 w-full resize-y rounded-[12px] border border-line bg-white/80 px-4 py-2.5 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
                 />
               </div>
             ))}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[12px] text-muted">
-                {unanswered > 0 ? `${unanswered} unanswered — blanks count as missed.` : "All answered."}
+                {unanswered > 0 ? t("{n} unanswered — blanks count as missed.", { n: unanswered }) : t("All answered.")}
               </p>
               <button
                 onClick={() => {
-                  if (unanswered > 0 && !window.confirm(`${unanswered} question${unanswered === 1 ? " is" : "s are"} blank and will count as missed. Submit anyway?`)) return;
+                  if (unanswered > 0 && !window.confirm(plural(t, unanswered, "{n} question is blank and will count as missed. Submit anyway?", "{n} questions are blank and will count as missed. Submit anyway?"))) return;
                   submit();
                 }}
                 className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white"
               >
-                Submit exam
+                {t("Submit exam")}
               </button>
             </div>
           </div>
@@ -252,9 +259,9 @@ export default function ExamModal({
               <p className="mt-2 text-[15px] font-semibold text-ink">
                 {result.pass
                   ? kind === "final"
-                    ? "Passed! You can now claim your certificate."
-                    : "Midterm passed — keep going!"
-                  : `Not yet — you need ${result.passScore}%. Review the misses below and retake.`}
+                    ? t("Passed! You can now claim your certificate.")
+                    : t("Midterm passed — keep going!")
+                  : t("Not yet — you need {score}%. Review the misses below and retake.", { score: result.passScore })}
               </p>
               {result.grade.summary && <p className="mt-1 text-[13px] text-muted">{result.grade.summary}</p>}
             </div>
@@ -264,10 +271,10 @@ export default function ExamModal({
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-[13px] font-semibold text-ink">
                       <span className="mr-1.5 text-muted">{i + 1}.</span>
-                      {result.questions?.[i] ?? `Question ${i + 1}`}
+                      {result.questions?.[i] ?? t("Question {n}", { n: i + 1 })}
                     </p>
                     <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${VERDICT[r.verdict].cls}`}>
-                      {VERDICT[r.verdict].label}
+                      {t(VERDICT[r.verdict].label)}
                     </span>
                   </div>
                   <p className="mt-1.5 text-[13px] text-muted">{r.feedback}</p>
@@ -277,11 +284,11 @@ export default function ExamModal({
             <div className="flex items-center justify-end gap-2">
               {!result.pass && (
                 <button onClick={() => start(true)} className="glassx rounded-full px-5 py-2.5 text-[13px] font-semibold text-ink">
-                  Retake with new questions
+                  {t("Retake with new questions")}
                 </button>
               )}
               <button onClick={onClose} className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white">
-                Done
+                {t("Done")}
               </button>
             </div>
           </div>
@@ -291,7 +298,7 @@ export default function ExamModal({
           <div className="py-8 text-center">
             <p className="text-[14px] text-accent">{error}</p>
             <button onClick={prepare} className="mt-4 glassx rounded-full px-5 py-2.5 text-[13px] font-semibold text-ink">
-              Try again
+              {t("Try again")}
             </button>
           </div>
         )}

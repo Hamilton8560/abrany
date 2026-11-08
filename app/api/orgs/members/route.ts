@@ -29,7 +29,8 @@ export async function POST(request: Request) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
     return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
   const role = body.role === "admin" ? "admin" : "member";
-  const result = await addMemberByEmail(ctx.org.id, email, role);
+  const language = typeof body.language === "string" ? body.language : undefined;
+  const result = await addMemberByEmail(ctx.org.id, email, role, language);
   return NextResponse.json({
     status: result.status, // never leak tempPassword to the admin — it's emailed to the employee only
     members: listMembers(ctx.org.id),

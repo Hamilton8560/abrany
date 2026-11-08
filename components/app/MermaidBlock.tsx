@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { repairMermaid } from "@/lib/mermaidRepair";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Renders a ```mermaid code block as a diagram — free, client-side (the LLM that
@@ -104,6 +105,7 @@ export default function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState("");
   const [failed, setFailed] = useState(false);
   const idRef = useRef(`mmd-${counter++}`);
+  const t = useT();
 
   useEffect(() => {
     let alive = true;
@@ -192,7 +194,7 @@ export default function MermaidBlock({ code }: { code: string }) {
     return (
       <details className="mb-2.5 rounded-[12px] border border-line bg-white/50 px-4 py-3">
         <summary className="cursor-pointer text-[12.5px] font-medium text-muted">
-          Diagram couldn&apos;t render — view source
+          {t("Diagram couldn't render — view source")}
         </summary>
         <pre className="mt-2 overflow-x-auto rounded-[10px] bg-ink/90 p-3 font-mono text-[11.5px] text-white">{code}</pre>
       </details>
@@ -201,7 +203,7 @@ export default function MermaidBlock({ code }: { code: string }) {
   if (!svg) {
     return (
       <div className="mb-2.5 rounded-[12px] border border-line bg-white/40 px-4 py-6 text-center text-[12.5px] text-muted">
-        rendering diagram…
+        {t("rendering diagram…")}
       </div>
     );
   }

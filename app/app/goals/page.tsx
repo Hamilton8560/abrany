@@ -6,11 +6,14 @@ import { api, fmtWhen } from "@/lib/client";
 import type { GoalListItem as Goal } from "@/lib/repo";
 import { ArrowRight, CheckIcon, PlusIcon, TargetIcon } from "@/components/icons";
 import DraftAssistant from "@/components/app/DraftAssistant";
+import { useT, useI18n } from "@/lib/i18n/client";
+import { plural } from "@/lib/i18n";
 
 type Track = { title: string; description: string };
 type Gate = { rationale: string; tracks: Track[] };
 
 export default function GoalsPage() {
+  const t = useT();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -58,7 +61,7 @@ export default function GoalsPage() {
       resetForm();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create goal");
+      setError(err instanceof Error ? err.message : t("Could not create goal"));
     } finally {
       setChecking(false);
     }
@@ -78,7 +81,7 @@ export default function GoalsPage() {
       resetForm();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create tracks");
+      setError(err instanceof Error ? err.message : t("Could not create tracks"));
     } finally {
       setSaving(false);
     }
@@ -94,14 +97,14 @@ export default function GoalsPage() {
         <div className="flex items-center gap-3">
           <span className="h-[2px] w-[26px] bg-accent" />
           <span className="text-[12px] font-medium text-accent" style={{ letterSpacing: "1.68px" }}>
-            GOALS & LEARNING OBJECTIVES
+            {t("GOALS & LEARNING OBJECTIVES")}
           </span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(30px,4vw,42px)] font-extrabold uppercase leading-[0.98] text-ink">
-          What do you want to master?
+          {t("What do you want to master?")}
         </h1>
         <p className="mt-2 max-w-[480px] text-[14px] text-muted">
-          Name the ambition — big or small. Your coach turns it into a realistic, staged plan.
+          {t("Name the ambition — big or small. Your coach turns it into a realistic, staged plan.")}
         </p>
       </header>
 
@@ -113,7 +116,7 @@ export default function GoalsPage() {
             if (v.title) setTitle(v.title);
             if (v.description) setDescription(v.description);
           }}
-          triggerLabel="Help me shape this — Draft with AI"
+          triggerLabel={t("Help me shape this — Draft with AI")}
         />
       )}
       <form onSubmit={create} className="glass flex flex-col gap-3 rounded-[var(--radius-card-lg)] p-5">
@@ -121,7 +124,7 @@ export default function GoalsPage() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           disabled={!!gate}
-          placeholder="e.g. Become conversational in Spanish"
+          placeholder={t("e.g. Become conversational in Spanish")}
           className="w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[15px] font-medium text-ink outline-none placeholder:text-muted/60 focus:border-accent/50 disabled:opacity-60"
         />
         {!gate && (
@@ -129,7 +132,7 @@ export default function GoalsPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
-            placeholder="Optional: current level, why it matters, time you can give it per week…"
+            placeholder={t("Optional: current level, why it matters, time you can give it per week…")}
             className="w-full resize-none rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
           />
         )}
@@ -138,14 +141,14 @@ export default function GoalsPage() {
         {gate ? (
           <div className="flex flex-col gap-3">
             <div className="rounded-[14px] bg-accent/8 px-4 py-3">
-              <p className="text-[13px] font-semibold text-ink">That&apos;s a big one — let&apos;s not cram it into one plan.</p>
+              <p className="text-[13px] font-semibold text-ink">{t("That's a big one — let's not cram it into one plan.")}</p>
               {gate.rationale && <p className="mt-1 text-[12.5px] text-muted">{gate.rationale}</p>}
               <p className="mt-1.5 text-[12.5px] text-muted">
-                Pick the tracks to start with. Each becomes its own goal with its own plan and lessons.
+                {t("Pick the tracks to start with. Each becomes its own goal with its own plan and lessons.")}
               </p>
             </div>
             <div className="flex flex-col gap-2">
-              {gate.tracks.map((t, i) => {
+              {gate.tracks.map((tr, i) => {
                 const on = picked.has(i);
                 return (
                   <button
@@ -173,10 +176,10 @@ export default function GoalsPage() {
                     <span className="min-w-0">
                       <span className="block text-[14px] font-semibold text-ink">
                         <span className="mr-1.5 text-muted">{i + 1}.</span>
-                        {t.title}
+                        {tr.title}
                       </span>
-                      {t.description && (
-                        <span className="mt-0.5 block text-[12.5px] text-muted">{t.description}</span>
+                      {tr.description && (
+                        <span className="mt-0.5 block text-[12.5px] text-muted">{tr.description}</span>
                       )}
                     </span>
                   </button>
@@ -189,7 +192,7 @@ export default function GoalsPage() {
                 onClick={resetForm}
                 className="rounded-full px-4 py-2.5 text-[13px] font-semibold text-muted hover:text-ink"
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 type="button"
@@ -197,21 +200,21 @@ export default function GoalsPage() {
                 disabled={saving || picked.size === 0}
                 className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
               >
-                {saving ? "Creating…" : `Create ${picked.size} track${picked.size === 1 ? "" : "s"}`}
+                {saving ? t("Creating…") : plural(t, picked.size, "Create {n} track", "Create {n} tracks")}
               </button>
             </div>
           </div>
         ) : (
           <div className="flex items-center justify-end gap-3">
             {checking && (
-              <span className="text-[12px] text-muted">Checking scope with your coach…</span>
+              <span className="text-[12px] text-muted">{t("Checking scope with your coach…")}</span>
             )}
             <button
               type="submit"
               disabled={checking || !title.trim()}
               className="glassx-dark flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
             >
-              <PlusIcon className="size-3.5" /> {checking ? "Checking…" : "Add goal"}
+              <PlusIcon className="size-3.5" /> {checking ? t("Checking…") : t("Add goal")}
             </button>
           </div>
         )}
@@ -219,7 +222,7 @@ export default function GoalsPage() {
 
       {assigned.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">Assigned by your company</h2>
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">{t("Assigned by your company")}</h2>
           {assigned.map((g) => (
             <GoalRow key={g.id} goal={g} />
           ))}
@@ -228,10 +231,10 @@ export default function GoalsPage() {
 
       <section className="flex flex-col gap-3">
         {assigned.length > 0 && active.length > 0 && (
-          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">Your own goals</h2>
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">{t("Your own goals")}</h2>
         )}
         {active.length === 0 && assigned.length === 0 && (
-          <p className="text-[14px] text-muted">No active goals yet.</p>
+          <p className="text-[14px] text-muted">{t("No active goals yet.")}</p>
         )}
         {active.map((g) => (
           <GoalRow key={g.id} goal={g} />
@@ -240,7 +243,7 @@ export default function GoalsPage() {
 
       {done.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">Completed</h2>
+          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-muted">{t("Completed")}</h2>
           {done.map((g) => (
             <GoalRow key={g.id} goal={g} />
           ))}
@@ -253,6 +256,8 @@ export default function GoalsPage() {
 const daysLeft = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
 
 function GoalRow({ goal }: { goal: Goal }) {
+  const t = useT();
+  const { date } = useI18n();
   const building = goal.build_status === "queued" || goal.build_status === "building";
   const pct = goal.sections_total > 0 ? Math.round((goal.sections_done / goal.sections_total) * 100) : 0;
   const dl = goal.assignment_due ? daysLeft(goal.assignment_due) : null;
@@ -277,16 +282,16 @@ function GoalRow({ goal }: { goal: Goal }) {
               <span className="font-medium text-ink">{goal.assigned_org}</span>
               {goal.assignment_due && (
                 <span className={dl !== null && dl < 3 && !passed ? " font-semibold text-accent" : ""}>
-                  {" · "}due {new Date(goal.assignment_due).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  {!passed && dl !== null ? (dl >= 0 ? ` (${dl}d)` : " (overdue)") : ""}
+                  {" · "}{t("due {date}", { date: date(new Date(goal.assignment_due), { month: "short", day: "numeric" }) })}
+                  {!passed && dl !== null ? (dl >= 0 ? " " + t("({n}d)", { n: dl }) : " " + t("(overdue)")) : ""}
                 </span>
               )}
-              {building ? " · building your course…" : goal.sections_total > 0 ? ` · ${goal.sections_done}/${goal.sections_total} sections` : ""}
+              {building ? " · " + t("building your course…") : goal.sections_total > 0 ? " · " + t("{done}/{total} sections", { done: goal.sections_done, total: goal.sections_total }) : ""}
             </>
           ) : (
             <>
-              {goal.description || "No details"} · {fmtWhen(goal.created_at)}
-              {goal.sections_total > 0 ? ` · ${goal.sections_done}/${goal.sections_total} sections` : ""}
+              {goal.description || t("No details")} · {fmtWhen(goal.created_at)}
+              {goal.sections_total > 0 ? " · " + t("{done}/{total} sections", { done: goal.sections_done, total: goal.sections_total }) : ""}
             </>
           )}
         </p>

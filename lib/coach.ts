@@ -1,6 +1,7 @@
 import { jsonrepair } from "jsonrepair";
 import { complete, type ChatMessage } from "./minimax";
 import { chunkMarkdown } from "./translate";
+import { languageCodeByName } from "./languages";
 import { normalizeManual, type Manual, type ManualKind, type ManualRequest } from "./workshop";
 
 /**
@@ -604,6 +605,7 @@ export async function translateMarkdown(markdown: string, targetLangName: string
   const out = await complete({
     prefer: "minimax",
     maxTokens,
+    expectLang: languageCodeByName(targetLangName),
     system: `You are an expert translator. Translate the user's markdown document into ${targetLangName}.
 
 STRICT RULES:
@@ -640,6 +642,7 @@ export async function translateLine(text: string, targetLangName: string): Promi
   if (!t) return text;
   const out = await complete({
     prefer: "minimax",
+    expectLang: languageCodeByName(targetLangName),
     system: `Translate the user's text into ${targetLangName}. Output ONLY the translation — no quotes, no notes, no punctuation you weren't given. Keep proper nouns and code identifiers unchanged.`,
     maxTokens: 400,
     temperature: 0.2,
@@ -705,7 +708,8 @@ You are setting a ${scopeLabel} exam for the course "${ctx.goalTitle}". Produce 
 1. A concise STUDY GUIDE in Markdown — the key concepts, definitions, and skills a learner must know to pass, organized by topic with short bullet points and a "how to prepare" note. This is what they revise from.
 2. Exactly ${n} exam QUESTIONS that fairly test understanding across ALL the material (mix recall, explanation, and application; adapt to the subject). Each answerable in a few sentences. Do NOT include answers.
 Respond with ONLY JSON, no prose or fences:
-{ "studyGuide": "# Study Guide\\n...markdown...", "questions": [ "question one", "question two" ] }`,
+{ "studyGuide": "# <study guide title>\\n...markdown...", "questions": [ "<question 1>", "<question 2>" ] }
+The JSON keys stay in English; every heading, bullet and question inside the values is written in the learner's language.`,
     maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.5,
     messages: [
@@ -744,7 +748,8 @@ export async function generateExamQuestions(ctx: {
     system: `${COACH_SYSTEM}
 
 You are writing a FRESH set of exactly ${n} ${ctx.scope} exam questions for the course "${ctx.goalTitle}". Cover ALL the material evenly (spread questions across sections — never cluster on one). Mix recall, explanation and application; adapt to the subject (a skill gets "do it" questions, knowledge gets "explain/compare", exam-targeted subjects mirror the real test). Each must be answerable in a few sentences without any tool, and must be gradable against the material. Do NOT include answers. Respond with ONLY JSON, no prose or fences:
-{ "questions": [ "question one", "question two" ] }`,
+{ "questions": [ "<question 1>", "<question 2>" ] }
+The JSON key stays in English; the questions are written in the learner's language.`,
     maxTokens: MAX_OUTPUT_TOKENS,
     temperature: 0.7,
     messages: [

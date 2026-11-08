@@ -31,6 +31,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { token, id: tokenId } = createResetToken(target.id);
   await sendPasswordResetEmail({
     to: target.email,
+    lang: target.language,
     name: displayName(target),
     orgName: m.org.name,
     resetUrl: `${appBaseUrl()}/reset?token=${encodeURIComponent(token)}`,

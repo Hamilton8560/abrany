@@ -134,7 +134,7 @@ export function parseDateRange(url: string): { from: string; to: string } | { er
   if (from > to) return { error: "from must be on or before to" };
   // from..to inclusive, so the span in midnight steps may be at most MAX_RANGE_DAYS - 1
   const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
-  if (days >= MAX_RANGE_DAYS) return { error: `Keep the range to ${MAX_RANGE_DAYS} days or fewer` };
+  if (days >= MAX_RANGE_DAYS) return { error: "Keep the range to 366 days or fewer" };
   return { from, to };
 }
 

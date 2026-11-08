@@ -5,6 +5,20 @@ import { api } from "@/lib/client";
 import { languageName } from "@/lib/languages";
 import type { PublicUser } from "@/lib/user";
 import type { ContentKind } from "@/lib/translate";
+import { useI18n } from "@/lib/i18n/client";
+import type { UiLocale } from "@/lib/i18n";
+
+/** A content-language name in the UI locale ("Spanish" in English, "español" in Spanish). */
+export function languageLabel(code: string, uiLocale: UiLocale, englishName?: string): string {
+  if (uiLocale === "en") return englishName ?? languageName(code);
+  try {
+    const n = new Intl.DisplayNames([uiLocale === "es" ? "es-419" : uiLocale], { type: "language" }).of(code);
+    if (n && n !== code) return n;
+  } catch {
+    /* fall through */
+  }
+  return englishName ?? languageName(code);
+}
 
 /**
  * "Translate to <my language>" for any generated content. Translation runs as a
@@ -13,6 +27,10 @@ import type { ContentKind } from "@/lib/translate";
  * come back — the finished translation is waiting. Flipping back shows the
  * original at any time. All of this happens on the markdown source, never the
  * DOM, so it can't fight the browser translator or React.
+ *
+ * The account language wins: for a non-English account, content written in any
+ * other language starts translating automatically on open (no click), and the
+ * button then offers "Show original". English accounts keep the opt-in click.
  */
 
 // Resolve the reader's language once per page load, shared across every control.
@@ -47,6 +65,8 @@ export function useContentTranslation(kind: ContentKind, id: number, srcTitle: s
   const [ahead, setAhead] = useState(0);
   const token = useRef(0); // bumps on target change / unmount to cancel stale polls
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoKey = useRef(""); // which kind:id we already auto-started
+  const { locale } = useI18n();
 
   if (!myLang) getMyLang().then(setMyLang);
 
@@ -95,9 +115,7 @@ export function useContentTranslation(kind: ContentKind, id: number, srcTitle: s
       });
   };
 
-  const toggle = async () => {
-    if (on) { setOn(false); return; }
-    if (data) { setOn(true); return; }
+  const start = async (auto = false) => {
     const mine = token.current;
     setPhase("working");
     try {
@@ -108,12 +126,32 @@ export function useContentTranslation(kind: ContentKind, id: number, srcTitle: s
       if (apply(r, mine)) return;
       timer.current = setTimeout(() => poll(mine, 1), POLL_MS);
     } catch {
-      if (token.current === mine) setPhase("error");
+      // an automatic attempt that can't start (no AI configured, nothing to translate
+      // yet) stays quiet and leaves the opt-in button; a click shows the error
+      if (token.current === mine) setPhase(auto ? "idle" : "error");
     }
   };
 
+  const toggle = async () => {
+    if (on) { setOn(false); return; }
+    if (data) { setOn(true); return; }
+    await start();
+  };
+
+  // Account language wins: auto-translate once per piece of content for non-English
+  // accounts. The server answers "same" when it's already in the reader's language.
+  const hasContent = !!srcContent.trim();
+  useEffect(() => {
+    if (!myLang || myLang === "en" || !id || !hasContent) return;
+    const key = `${kind}:${id}`;
+    if (autoKey.current === key) return;
+    autoKey.current = key;
+    void start(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, id, myLang, hasContent]);
+
   return {
-    myLangName: myLang ? languageName(myLang) : "",
+    myLangName: myLang ? languageLabel(myLang, locale) : "",
     on,
     phase,
     ahead,
@@ -131,39 +169,42 @@ const GlobeIcon = () => (
 );
 
 export function TranslateButton({
-  t,
+  t: ctl,
   className = "",
 }: {
   t: ReturnType<typeof useContentTranslation>;
   className?: string;
 }) {
+  const { t } = useI18n();
   const label =
-    t.phase === "working"
-      ? t.ahead > 0
-        ? `Translating… ${t.ahead} ahead`
-        : "Translating…"
-      : t.phase === "same"
-        ? `Already in ${t.myLangName || "your language"}`
-        : t.phase === "error"
-          ? "Try again"
-          : t.on
-            ? "Show original"
-            : t.myLangName
-              ? `Translate to ${t.myLangName}`
-              : "Translate";
+    ctl.phase === "working"
+      ? ctl.ahead > 0
+        ? t("Translating… {n} ahead", { n: ctl.ahead })
+        : t("Translating…")
+      : ctl.phase === "same"
+        ? ctl.myLangName
+          ? t("Already in {lang}", { lang: ctl.myLangName })
+          : t("Already in your language")
+        : ctl.phase === "error"
+          ? t("Try again")
+          : ctl.on
+            ? t("Show original")
+            : ctl.myLangName
+              ? t("Translate to {lang}", { lang: ctl.myLangName })
+              : t("Translate");
   return (
     <button
-      onClick={t.toggle}
-      disabled={t.phase === "working" || t.phase === "same"}
+      onClick={ctl.toggle}
+      disabled={ctl.phase === "working" || ctl.phase === "same"}
       title={
-        t.phase === "working"
-          ? "Translating in the background — you can leave this page and come back"
-          : t.on
-            ? "Show the original language"
-            : "Translate this into your language"
+        ctl.phase === "working"
+          ? t("Translating in the background — you can leave this page and come back")
+          : ctl.on
+            ? t("Show the original language")
+            : t("Translate this into your language")
       }
       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold disabled:opacity-60 ${
-        t.on ? "bg-accent/12 text-accent" : "glassx text-ink"
+        ctl.on ? "bg-accent/12 text-accent" : "glassx text-ink"
       } ${className}`}
     >
       <GlobeIcon />

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/client";
+import { useT } from "@/lib/i18n/client";
+import { msg } from "@/lib/i18n";
 import type { Lesson } from "@/lib/repo";
 import Markdown from "./Markdown";
 import { useContentTranslation, TranslateButton } from "./TranslateControl";
@@ -16,14 +18,14 @@ const PRACTICE_KINDS = new Set<string>(["practice", "apply", "check"]);
 import { ChevronDown, CheckIcon } from "@/components/icons";
 
 const KIND_LABEL: Record<Lesson["kind"], string> = {
-  read: "Read",
-  teach: "Lecture",
-  practice: "Practice",
-  apply: "Apply",
-  check: "Self-check",
-  review: "Review",
+  read: msg("Read"),
+  teach: msg("Lecture"),
+  practice: msg("Practice"),
+  apply: msg("Apply"),
+  check: msg("Self-check"),
+  review: msg("Review"),
 };
-const kindLabel = (k: string) => KIND_LABEL[k as Lesson["kind"]] ?? "Lesson";
+const kindLabel = (k: string) => KIND_LABEL[k as Lesson["kind"]] ?? msg("Lesson");
 
 export default function MilestoneLessons({
   planItemId,
@@ -42,6 +44,7 @@ export default function MilestoneLessons({
   /** Open the section list immediately (a built course shouldn't hide its sections behind a click). */
   autoOpen?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [expanding, setExpanding] = useState(false);
@@ -65,7 +68,7 @@ export default function MilestoneLessons({
           { method: "PATCH", body: JSON.stringify({ done }) },
         );
         if (res.enrolled) {
-          setToast("✓ Added to your reviews — first check-in tomorrow.");
+          setToast(t("✓ Added to your reviews — first check-in tomorrow."));
           setTimeout(() => setToast(null), 4000);
         }
         onProgress?.();
@@ -73,7 +76,7 @@ export default function MilestoneLessons({
         setLessons((ls) => ls?.map((l) => (l.id === lesson.id ? { ...l, completed_at: lesson.completed_at } : l)) ?? ls);
       }
     },
-    [onProgress],
+    [onProgress, t],
   );
 
   const refresh = useCallback(async () => {
@@ -126,7 +129,7 @@ export default function MilestoneLessons({
         });
         setLessons(d.lessons);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not break this into lessons");
+        setError(e instanceof Error ? e.message : t("Could not break this into lessons"));
       } finally {
         setExpanding(false);
       }
@@ -163,7 +166,7 @@ export default function MilestoneLessons({
         className="flex w-full items-center justify-between gap-3 text-left text-[12px] font-semibold text-accent"
       >
         <span>
-          {total > 0 ? `Sections · ${doneCount}/${total} done` : "Break into lessons & study"}
+          {total > 0 ? t("Sections · {done}/{total} done", { done: doneCount, total }) : t("Break into lessons & study")}
         </span>
         <span className="flex items-center gap-2">
           {total > 0 && (
@@ -179,7 +182,7 @@ export default function MilestoneLessons({
         <div className="mt-3">
           {expanding && (
             <p className="text-[12.5px] text-muted">
-              Breaking “{milestoneTitle}” into lessons…
+              {t("Breaking “{title}” into lessons…", { title: milestoneTitle })}
             </p>
           )}
           {error && <p className="text-[12.5px] text-accent">{error}</p>}
@@ -188,14 +191,14 @@ export default function MilestoneLessons({
             <>
               <div className="mb-2.5 flex items-center justify-between">
                 <span className="text-[11px] text-muted">
-                  {anyPending ? "Generating in the background…" : "Study at your own pace"}
+                  {anyPending ? t("Generating in the background…") : t("Study at your own pace")}
                 </span>
                 {lessons.some((l) => l.status === "stub" || l.status === "error") && (
                   <button
                     onClick={prepareAll}
                     className="glassx rounded-full px-3 py-1 text-[11.5px] font-semibold text-ink"
                   >
-                    Prepare all
+                    {t("Prepare all")}
                   </button>
                 )}
               </div>
@@ -216,7 +219,7 @@ export default function MilestoneLessons({
                       {canComplete || done ? (
                         <button
                           onClick={() => setDone(l, !done)}
-                          aria-label={done ? "Mark section not done" : "Mark section done"}
+                          aria-label={done ? t("Mark section not done") : t("Mark section done")}
                           className={`grid size-6 shrink-0 place-items-center rounded-full border transition-all ${
                             done
                               ? "border-up bg-up text-white"
@@ -237,11 +240,11 @@ export default function MilestoneLessons({
                           {l.title}
                         </p>
                         <p className="flex items-center gap-1.5 text-[10.5px] text-muted">
-                          {kindLabel(l.kind)}
-                          {done && <span className="font-semibold text-up">· Done</span>}
+                          {t(kindLabel(l.kind))}
+                          {done && <span className="font-semibold text-up">· {t("Done")}</span>}
                           {l.needs_current ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-1.5 py-0.5 font-semibold text-accent">
-                              <span className="size-1 rounded-full bg-accent" /> Live sources
+                              <span className="size-1 rounded-full bg-accent" /> {t("Live sources")}
                             </span>
                           ) : null}
                         </p>
@@ -250,25 +253,25 @@ export default function MilestoneLessons({
                         <span className="flex shrink-0 items-center gap-2">
                           <button
                             onClick={async () => {
-                              const title = window.prompt("Rename this section:", l.title);
+                              const title = window.prompt(t("Rename this section:"), l.title);
                               if (!title || !title.trim() || title === l.title) return;
                               await api(`/api/lessons/${l.id}`, { method: "PATCH", body: JSON.stringify({ title }) }).catch(() => {});
                               refresh().catch(() => {});
                             }}
                             className="text-[11.5px] font-semibold text-muted hover:text-ink"
                           >
-                            Rename
+                            {t("Rename")}
                           </button>
                           <button
                             onClick={async () => {
-                              if (!window.confirm(`Delete section “${l.title}”?`)) return;
+                              if (!window.confirm(t("Delete section “{title}”?", { title: l.title }))) return;
                               await api(`/api/lessons/${l.id}`, { method: "DELETE" }).catch(() => {});
                               refresh().catch(() => {});
                               onProgress?.();
                             }}
                             className="text-[11.5px] font-semibold text-muted hover:text-accent"
                           >
-                            Delete
+                            {t("Delete")}
                           </button>
                         </span>
                       ) : (
@@ -332,23 +335,24 @@ function LessonAction({
   onRead: () => void;
   onPractice?: () => void;
 }) {
+  const t = useT();
   if (lesson.status === "ready")
     return (
       <span className="flex shrink-0 items-center gap-1.5">
         {onPractice && (
           <button
             onClick={onPractice}
-            title="Work problems one at a time with hints, checking and a debrief"
+            title={t("Work problems one at a time with hints, checking and a debrief")}
             className="glassx rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-ink"
           >
-            Practice
+            {t("Practice")}
           </button>
         )}
         <button
           onClick={onRead}
           className="glassx-dark rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-white"
         >
-          Read
+          {t("Read")}
         </button>
       </span>
     );
@@ -356,13 +360,13 @@ function LessonAction({
     return (
       <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-medium text-muted">
         <span className="size-2 animate-pulse rounded-full bg-accent" />
-        {lesson.status === "queued" ? "Queued" : "Writing…"}
+        {lesson.status === "queued" ? t("Queued") : t("Writing…")}
       </span>
     );
   if (lesson.status === "error")
     return (
       <button onClick={onGenerate} className="shrink-0 text-[11.5px] font-semibold text-accent">
-        Retry
+        {t("Retry")}
       </button>
     );
   return (
@@ -370,7 +374,7 @@ function LessonAction({
       onClick={onGenerate}
       className="glassx shrink-0 rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-ink"
     >
-      Generate
+      {t("Generate")}
     </button>
   );
 }
@@ -405,6 +409,7 @@ function LessonViewer({
   onSetDone: (done: boolean) => void;
   onPractice?: () => void;
 }) {
+  const t = useT();
   const [enrolled, setEnrolled] = useState(lesson.srs_due != null);
   const [busy, setBusy] = useState(false);
   const done = !!lesson.completed_at;
@@ -437,7 +442,7 @@ function LessonViewer({
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-              {kindLabel(lesson.kind)}
+              {t(kindLabel(lesson.kind))}
             </p>
             <h3 className="mt-1 font-display text-[clamp(20px,5vw,24px)] font-extrabold uppercase leading-[1.05] text-ink">
               {tr.displayTitle}
@@ -446,49 +451,49 @@ function LessonViewer({
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             <button
               onClick={() => onSetDone(!done)}
-              title={done ? "Marked done — click to undo" : "Mark this section done"}
+              title={done ? t("Marked done — click to undo") : t("Mark this section done")}
               className={`rounded-full px-3 py-1.5 text-[12px] font-semibold ${
                 done ? "bg-up/15 text-up" : "glassx text-ink"
               }`}
             >
-              {done ? "✓ Done" : "Mark done"}
+              {done ? t("✓ Done") : t("Mark done")}
             </button>
             <button
               onClick={toggleEnroll}
               disabled={busy}
-              title={enrolled ? "In your spaced-review rotation" : "Have your coach follow up on this over time"}
+              title={enrolled ? t("In your spaced-review rotation") : t("Have your coach follow up on this over time")}
               className={`rounded-full px-3 py-1.5 text-[12px] font-semibold disabled:opacity-60 ${
                 enrolled ? "bg-up/15 text-up" : "glassx text-ink"
               }`}
             >
-              {enrolled ? "✓ In reviews" : "Add to reviews"}
+              {enrolled ? t("✓ In reviews") : t("Add to reviews")}
             </button>
             {lesson.content ? <TranslateButton t={tr} /> : null}
             {lesson.content ? <ListenButton text={tr.displayContent} /> : null}
             {lesson.content ? (
               <Link
                 href={`/app/coach?lesson=${lesson.id}${goalId ? `&goal=${goalId}` : ""}`}
-                title="Open the tutor with this lesson loaded — ask for a hint, check an answer, get it re-explained"
+                title={t("Open the tutor with this lesson loaded — ask for a hint, check an answer, get it re-explained")}
                 className="glassx-dark rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
               >
-                Ask the tutor
+                {t("Ask the tutor")}
               </Link>
             ) : null}
             <button
               onClick={onClose}
               className="glassx rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink"
             >
-              Close
+              {t("Close")}
             </button>
           </div>
         </div>
         {tr.phase === "error" && (
-          <p className="mb-3 text-[12px] text-down">Couldn&apos;t translate just now — try again.</p>
+          <p className="mb-3 text-[12px] text-down">{t("Couldn't translate just now — try again.")}</p>
         )}
         {lesson.content ? (
           <Markdown>{tr.displayContent}</Markdown>
         ) : (
-          <p className="text-[14px] text-muted">This lesson has no content yet.</p>
+          <p className="text-[14px] text-muted">{t("This lesson has no content yet.")}</p>
         )}
 
         {lesson.content && (
@@ -499,7 +504,7 @@ function LessonViewer({
                   onClick={onPractice}
                   className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white"
                 >
-                  Start a practice session
+                  {t("Start a practice session")}
                 </button>
               )}
               <button
@@ -508,15 +513,15 @@ function LessonViewer({
                   done ? "bg-up/15 text-up" : onPractice ? "glassx text-ink" : "glassx-dark text-white"
                 }`}
               >
-                {done ? "✓ Section complete — tap to undo" : "Mark section complete"}
+                {done ? t("✓ Section complete — tap to undo") : t("Mark section complete")}
               </button>
             </div>
             <p className="text-[11.5px] text-muted">
               {done
-                ? "Counted toward your progress and transcript."
+                ? t("Counted toward your progress and transcript.")
                 : onPractice
-                  ? "Work the problems with hints and a debrief — finishing marks the section complete with a grade."
-                  : "Finished reading? Mark it done to track your progress."}
+                  ? t("Work the problems with hints and a debrief — finishing marks the section complete with a grade.")
+                  : t("Finished reading? Mark it done to track your progress.")}
             </p>
           </div>
         )}

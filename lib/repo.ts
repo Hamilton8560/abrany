@@ -1000,10 +1000,36 @@ export function examEligibility(exam: Exam): ExamEligibility {
   };
 }
 
+/**
+ * Auto-created exam titles, per learner language. Stored titles that match one
+ * of these patterns are re-rendered in the learner's CURRENT language on read,
+ * so switching an employee to Spanish also fixes exams created earlier.
+ */
+const EXAM_TITLES: Record<string, Record<ExamKind, (course: string) => string>> = {
+  en: { midterm: (c) => `Midterm — ${c}`, final: (c) => `Final exam — ${c}` },
+  es: { midterm: (c) => `Examen parcial — ${c}`, final: (c) => `Examen final — ${c}` },
+};
+
+export function examTitle(kind: ExamKind, courseTitle: string, lang: string | null | undefined): string {
+  return (EXAM_TITLES[lang ?? ""] ?? EXAM_TITLES.en)[kind](courseTitle);
+}
+
+/** Re-render a default exam title in `lang`; custom titles are left alone. */
+export function localizeExamTitle(exam: Pick<Exam, "kind" | "title">, courseTitle: string, lang: string | null | undefined): string {
+  const isDefault = Object.values(EXAM_TITLES).some((t) => t[exam.kind]?.(courseTitle) === exam.title);
+  return isDefault ? examTitle(exam.kind, courseTitle, lang) : exam.title;
+}
+
 export function examsForGoal(goalId: number): Exam[] {
-  return getDb()
+  const rows = getDb()
     .prepare("SELECT * FROM exams WHERE goal_id = ? ORDER BY CASE kind WHEN 'midterm' THEN 0 ELSE 1 END")
     .all(goalId) as Exam[];
+  if (!rows.length) return rows;
+  const owner = getDb()
+    .prepare("SELECT g.title AS goal_title, u.language FROM goals g JOIN users u ON u.id = g.user_id WHERE g.id = ?")
+    .get(goalId) as { goal_title: string; language: string } | undefined;
+  if (!owner) return rows;
+  return rows.map((e) => ({ ...e, title: localizeExamTitle(e, owner.goal_title, owner.language) }));
 }
 
 /** Create the midterm (if the course is big enough) + final for a planned goal. */
@@ -1011,16 +1037,21 @@ export function ensureExams(goalId: number): Exam[] {
   const plan = getPlanForGoal(goalId);
   if (!plan || plan.items.length === 0) return examsForGoal(goalId);
   const goal = getGoal(goalId);
+  const lang = (getDb().prepare("SELECT u.language FROM goals g JOIN users u ON u.id = g.user_id WHERE g.id = ?").get(goalId) as
+    | { language: string }
+    | undefined)?.language;
+  const course = goal?.title ?? (lang === "es" ? "Curso" : "Course");
   const db = getDb();
-  const mk = (kind: ExamKind, title: string) =>
-    db.prepare("INSERT OR IGNORE INTO exams (goal_id, kind, title) VALUES (?, ?, ?)").run(goalId, kind, title);
-  if (plan.items.length >= 4) mk("midterm", `Midterm — ${goal?.title ?? "Course"}`);
-  mk("final", `Final exam — ${goal?.title ?? "Course"}`);
+  const mk = (kind: ExamKind) =>
+    db.prepare("INSERT OR IGNORE INTO exams (goal_id, kind, title) VALUES (?, ?, ?)").run(goalId, kind, examTitle(kind, course, lang));
+  if (plan.items.length >= 4) mk("midterm");
+  mk("final");
   return examsForGoal(goalId);
 }
 
 export function getExam(id: number): Exam | undefined {
-  return getDb().prepare("SELECT * FROM exams WHERE id = ?").get(id) as Exam | undefined;
+  const e = getDb().prepare("SELECT * FROM exams WHERE id = ?").get(id) as Exam | undefined;
+  return e && examsForGoal(e.goal_id).find((x) => x.id === e.id);
 }
 
 export const userOwnsExam = (userId: number, examId: number) =>

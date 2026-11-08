@@ -8,6 +8,8 @@ import type { CheckTarget, Manual, ManualImageState, ManualItem, ManualStep } fr
 import MermaidBlock from "./MermaidBlock";
 import QueueHint from "./QueueHint";
 import { CheckIcon, WrenchIcon } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
+import { msg } from "@/lib/i18n";
 
 type Payload = {
   id: number;
@@ -25,15 +27,16 @@ type Payload = {
 
 const key = (pi: number, si: number) => `p${pi}s${si}`;
 const DIFFICULTY_LABEL: Record<Manual["difficulty"], string> = {
-  easy: "Easy",
-  moderate: "Moderate",
-  hard: "Hard",
-  pro: "Pro-level",
+  easy: msg("Easy"),
+  moderate: msg("Moderate"),
+  hard: msg("Hard"),
+  pro: msg("Pro-level"),
 };
 /** Stop polling for pictures after this long, whatever state they claim to be in. */
 const MAX_POLL_MS = 20 * 60 * 1000;
 
 export default function ManualViewer({ id }: { id: number }) {
+  const t = useT();
   const router = useRouter();
   const [m, setM] = useState<Payload | null>(null);
   const [missing, setMissing] = useState(false);
@@ -64,8 +67,8 @@ export default function ManualViewer({ id }: { id: number }) {
   }, [m]);
   useEffect(() => {
     if (!waiting || Date.now() - startedAt.current > MAX_POLL_MS) return;
-    const t = setInterval(refresh, 3500);
-    return () => clearInterval(t);
+    const timer = setInterval(refresh, 3500);
+    return () => clearInterval(timer);
   }, [waiting, refresh]);
 
   const saveProgress = (next: string[]) => {
@@ -83,23 +86,23 @@ export default function ManualViewer({ id }: { id: number }) {
     await api(`/api/workshop/${id}/image/${k}`, { method: "POST" }).catch(() => {});
   };
   const regenerate = async () => {
-    if (m?.status === "ready" && !window.confirm("Rewrite this manual from scratch? Your ticked steps will be kept by position.")) return;
+    if (m?.status === "ready" && !window.confirm(t("Rewrite this manual from scratch? Your ticked steps will be kept by position."))) return;
     await api(`/api/workshop/${id}`, { method: "PATCH", body: JSON.stringify({ regenerate: true }) }).catch(() => {});
     startedAt.current = Date.now();
     refresh();
   };
   const remove = async () => {
-    if (!window.confirm("Delete this manual?")) return;
+    if (!window.confirm(t("Delete this manual?"))) return;
     await api(`/api/workshop/${id}`, { method: "DELETE" }).catch(() => {});
     router.push("/app/workshop");
   };
 
-  if (missing) return <p className="text-[14px] text-muted">This manual couldn&apos;t be loaded.</p>;
-  if (!m) return <p className="text-[13px] text-muted">Loading…</p>;
+  if (missing) return <p className="text-[14px] text-muted">{t("This manual couldn't be loaded.")}</p>;
+  if (!m) return <p className="text-[13px] text-muted">{t("Loading…")}</p>;
 
   const back = (
     <Link href="/app/workshop" className="self-start text-[13px] font-medium text-muted hover:text-ink print:hidden">
-      ← Workshop
+      ← {t("Workshop")}
     </Link>
   );
 
@@ -116,7 +119,9 @@ export default function ManualViewer({ id }: { id: number }) {
           {m.status === "generating" ? (
             <>
               <p className="text-[13px] font-semibold text-ink">
-                Writing your {m.kind === "repair" ? "troubleshooting & repair" : "build"} manual… this takes a minute or two.
+                {m.kind === "repair"
+                  ? t("Writing your troubleshooting & repair manual… this takes a minute or two.")
+                  : t("Writing your build manual… this takes a minute or two.")}
               </p>
               <div className="max-w-[420px]">
                 <QueueHint background />
@@ -124,9 +129,9 @@ export default function ManualViewer({ id }: { id: number }) {
             </>
           ) : (
             <>
-              <p className="text-[13px] text-accent">Couldn&apos;t write this one: {m.error || "unknown error"}</p>
+              <p className="text-[13px] text-accent">{t("Couldn't write this one: {error}", { error: m.error || t("unknown error") })}</p>
               <button onClick={regenerate} className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white">
-                Try again
+                {t("Try again")}
               </button>
             </>
           )}
@@ -146,13 +151,13 @@ export default function ManualViewer({ id }: { id: number }) {
         {back}
         <div className="flex flex-wrap gap-2 print:hidden">
           <button onClick={() => window.print()} className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink">
-            Print / PDF
+            {t("Print / PDF")}
           </button>
           <button onClick={regenerate} className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink">
-            Rewrite
+            {t("Rewrite")}
           </button>
           <button onClick={remove} className="rounded-full px-3 py-2 text-[12.5px] font-semibold text-muted hover:text-accent">
-            Delete
+            {t("Delete")}
           </button>
         </div>
       </div>
@@ -161,23 +166,23 @@ export default function ManualViewer({ id }: { id: number }) {
       <header className="glass relative overflow-hidden rounded-[var(--radius-card-lg)] p-6 sm:p-8">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-accent px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-white">
-            {c.kind === "repair" ? "Repair manual" : "Build manual"}
+            {c.kind === "repair" ? t("Repair manual") : t("Build manual")}
           </span>
-          <span className="rounded-full bg-ink/8 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-muted">Beta</span>
+          <span className="rounded-full bg-ink/8 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-muted">{t("Beta")}</span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(26px,4.4vw,42px)] font-extrabold uppercase leading-[0.98] text-ink">{c.title}</h1>
         {c.summary && <p className="mt-3 max-w-[720px] text-[14.5px] leading-relaxed text-ink/80">{c.summary}</p>}
         <div className="mt-5 flex flex-wrap gap-2">
-          <Stat label="Difficulty" value={DIFFICULTY_LABEL[c.difficulty]} />
-          {c.time && <Stat label="Time" value={c.time} />}
-          {c.cost && <Stat label="Cost" value={c.cost} />}
-          <Stat label="Steps" value={String(totalSteps)} />
+          <Stat label={t("Difficulty")} value={t(DIFFICULTY_LABEL[c.difficulty])} />
+          {c.time && <Stat label={t("Time")} value={c.time} />}
+          {c.cost && <Stat label={t("Cost")} value={c.cost} />}
+          <Stat label={t("Steps")} value={String(totalSteps)} />
         </div>
         <div className="mt-5 print:hidden">
           <div className="flex justify-between text-[11.5px] font-semibold text-muted">
-            <span>Your progress</span>
+            <span>{t("Your progress")}</span>
             <span>
-              {done} / {totalSteps} steps
+              {t("{done} / {total} steps", { done, total: totalSteps })}
             </span>
           </div>
           <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/8">
@@ -192,7 +197,7 @@ export default function ManualViewer({ id }: { id: number }) {
           {c.safety.length > 0 && (
             <div className="rounded-[var(--radius-card-lg)] border-2 border-[#f5b400] bg-[#fff8e1] p-5">
               <h2 className="flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-wider text-[#7a5600]">
-                <Hazard /> Before you start
+                <Hazard /> {t("Before you start")}
               </h2>
               <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-[13.5px] leading-relaxed text-[#4a3708]">
                 {c.safety.map((s, i) => (
@@ -203,7 +208,7 @@ export default function ManualViewer({ id }: { id: number }) {
           )}
           {c.stopIf.length > 0 && (
             <div className="rounded-[var(--radius-card-lg)] border-2 border-accent/60 bg-[#fff0ec] p-5">
-              <h2 className="text-[13px] font-extrabold uppercase tracking-wider text-accent">Stop and call a pro if…</h2>
+              <h2 className="text-[13px] font-extrabold uppercase tracking-wider text-accent">{t("Stop and call a pro if…")}</h2>
               <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-[13.5px] leading-relaxed text-[#5a2414]">
                 {c.stopIf.map((s, i) => (
                   <li key={i}>{s}</li>
@@ -217,10 +222,10 @@ export default function ManualViewer({ id }: { id: number }) {
       {/* ── inventory ── */}
       {(c.tools.length > 0 || c.parts.length > 0) && (
         <section className="glass rounded-[var(--radius-card-lg)] p-5 sm:p-6">
-          <h2 className="font-display text-[19px] font-extrabold uppercase text-ink">What you need</h2>
+          <h2 className="font-display text-[19px] font-extrabold uppercase text-ink">{t("What you need")}</h2>
           <div className="mt-4 grid gap-6 md:grid-cols-2">
-            {c.tools.length > 0 && <Inventory title="Tools" items={c.tools} />}
-            {c.parts.length > 0 && <Inventory title={c.kind === "build" ? "Materials" : "Parts"} items={c.parts} />}
+            {c.tools.length > 0 && <Inventory title={t("Tools")} items={c.tools} />}
+            {c.parts.length > 0 && <Inventory title={c.kind === "build" ? t("Materials") : t("Parts")} items={c.parts} />}
           </div>
         </section>
       )}
@@ -236,13 +241,13 @@ export default function ManualViewer({ id }: { id: number }) {
             <div className="flex flex-wrap items-end justify-between gap-3 border-b-[3px] border-ink pb-2">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[1.6px] text-accent">
-                  {c.kind === "repair" ? `Fix ${String.fromCharCode(65 + pi)}` : `Phase ${pi + 1}`}
+                  {c.kind === "repair" ? t("Fix {letter}", { letter: String.fromCharCode(65 + pi) }) : t("Phase {n}", { n: pi + 1 })}
                 </p>
                 <h2 className="font-display text-[clamp(20px,3vw,26px)] font-extrabold uppercase leading-tight text-ink">{p.title}</h2>
                 {p.when && <p className="mt-1 max-w-[720px] text-[13px] text-muted">{p.when}</p>}
               </div>
               <span className="text-[12px] font-semibold text-muted print:hidden">
-                {doneHere}/{p.steps.length} done
+                {t("{done}/{total} done", { done: doneHere, total: p.steps.length })}
               </span>
             </div>
             <ol className="grid gap-4 lg:grid-cols-2">
@@ -269,16 +274,16 @@ export default function ManualViewer({ id }: { id: number }) {
       {/* ── aftercare ── */}
       {(c.aftercare.test.length > 0 || c.aftercare.maintenance.length > 0) && (
         <section className="glass rounded-[var(--radius-card-lg)] p-5 sm:p-6">
-          <h2 className="font-display text-[19px] font-extrabold uppercase text-ink">Finish &amp; keep it running</h2>
+          <h2 className="font-display text-[19px] font-extrabold uppercase text-ink">{t("Finish & keep it running")}</h2>
           <div className="mt-4 grid gap-6 md:grid-cols-2">
             {c.aftercare.test.length > 0 && (
               <div>
-                <h3 className="text-[12px] font-bold uppercase tracking-wider text-muted">Test it</h3>
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-muted">{t("Test it")}</h3>
                 <ul className="mt-2 flex flex-col gap-2">
-                  {c.aftercare.test.map((t, i) => (
+                  {c.aftercare.test.map((line, i) => (
                     <li key={i} className="flex gap-2 text-[13.5px] leading-relaxed text-ink">
                       <CheckIcon className="mt-0.5 size-4 shrink-0 text-[#2f8a51]" />
-                      {t}
+                      {line}
                     </li>
                   ))}
                 </ul>
@@ -286,7 +291,7 @@ export default function ManualViewer({ id }: { id: number }) {
             )}
             {c.aftercare.maintenance.length > 0 && (
               <div>
-                <h3 className="text-[12px] font-bold uppercase tracking-wider text-muted">Maintenance schedule</h3>
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-muted">{t("Maintenance schedule")}</h3>
                 <table className="mt-2 w-full border-collapse text-[13px]">
                   <tbody>
                     {c.aftercare.maintenance.map((x, i) => (
@@ -304,7 +309,7 @@ export default function ManualViewer({ id }: { id: number }) {
       )}
 
       <p className="pb-4 text-center text-[11.5px] text-muted">
-        AI-written beta manual. Verify specs against the manufacturer&apos;s documentation and local code. Isolate power and prove it dead before touching any wiring.
+        {t("AI-written beta manual. Verify specs against the manufacturer's documentation and local code. Isolate power and prove it dead before touching any wiring.")}
       </p>
     </>
   );
@@ -365,6 +370,7 @@ function StepCard({
   src: string;
   onRedraw: () => void;
 }) {
+  const t = useT();
   return (
     <li
       className={`glass flex break-inside-avoid flex-col gap-3 rounded-[var(--radius-card-lg)] p-4 sm:p-5 transition-opacity ${done ? "opacity-60" : ""}`}
@@ -375,9 +381,9 @@ function StepCard({
           <h3 className="text-[15.5px] font-bold leading-snug text-ink">{step.title}</h3>
           {step.tools.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
-              {step.tools.map((t, i) => (
+              {step.tools.map((tool, i) => (
                 <span key={i} className="rounded-full bg-ink/8 px-2 py-0.5 text-[10.5px] font-semibold text-ink/70">
-                  🔧 {t}
+                  🔧 {tool}
                 </span>
               ))}
             </div>
@@ -386,7 +392,7 @@ function StepCard({
         <button
           onClick={onToggle}
           aria-pressed={done}
-          title={done ? "Mark not done" : "Mark done"}
+          title={done ? t("Mark not done") : t("Mark done")}
           className={`grid size-8 shrink-0 place-items-center rounded-full border-2 print:hidden ${
             done ? "border-[#2f8a51] bg-[#2f8a51] text-white" : "border-line bg-white/70 text-transparent hover:text-muted"
           }`}
@@ -413,16 +419,16 @@ function StepCard({
           ) : image === "error" ? (
             <div className="grid aspect-[4/3] place-items-center p-4 text-center">
               <div>
-                <p className="text-[12.5px] text-muted">Couldn&apos;t draw this one.</p>
+                <p className="text-[12.5px] text-muted">{t("Couldn't draw this one.")}</p>
                 <button onClick={onRedraw} className="mt-2 text-[12px] font-semibold text-accent print:hidden">
-                  Try again
+                  {t("Try again")}
                 </button>
               </div>
             </div>
           ) : (
             <div className="grid aspect-[4/3] animate-pulse place-items-center bg-ink/[0.03] p-6 text-center">
               <p className="max-w-[300px] text-[12px] italic text-muted">
-                {image === "pending" ? "Drawing…" : "Queued for drawing…"} {step.figure}
+                {image === "pending" ? t("Drawing…") : t("Queued for drawing…")} {step.figure}
               </p>
             </div>
           )}
@@ -431,7 +437,7 @@ function StepCard({
               onClick={onRedraw}
               className="absolute right-2 top-2 rounded-full bg-white/90 px-2.5 py-1 text-[10.5px] font-semibold text-muted shadow-sm hover:text-ink print:hidden"
             >
-              Redraw
+              {t("Redraw")}
             </button>
           )}
         </figure>
@@ -454,7 +460,7 @@ function StepCard({
         <p className="flex gap-2 rounded-[10px] bg-[#e9f4ec] px-3 py-2 text-[12.5px] leading-relaxed text-[#14351f]">
           <CheckIcon className="mt-0.5 size-4 shrink-0" />
           <span>
-            <b>Check:</b> {step.check}
+            <b>{t("Check:")}</b> {step.check}
           </span>
         </p>
       )}
@@ -462,7 +468,7 @@ function StepCard({
         <p className="flex gap-2 rounded-[10px] bg-[#fff8e1] px-3 py-2 text-[12.5px] leading-relaxed text-[#4a3708]">
           <Hazard />
           <span>
-            <b>Caution:</b> {step.caution}
+            <b>{t("Caution:")}</b> {step.caution}
           </span>
         </p>
       )}
@@ -472,6 +478,7 @@ function StepCard({
 
 /** A yes/no walk through the diagnostic tree that ends at a fix, a pro, or done. */
 function Troubleshooter({ manual, flowchart }: { manual: Manual; flowchart: string }) {
+  const t = useT();
   const tree = manual.troubleshoot!;
   const byId = useMemo(() => new Map(tree.checks.map((c) => [c.id, c])), [tree]);
   const [path, setPath] = useState<{ id: string; answer: "yes" | "no" }[]>([]);
@@ -493,15 +500,15 @@ function Troubleshooter({ manual, flowchart }: { manual: Manual; flowchart: stri
   return (
     <section className="glass rounded-[var(--radius-card-lg)] p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-[19px] font-extrabold uppercase text-ink">Find the fault</h2>
+        <h2 className="font-display text-[19px] font-extrabold uppercase text-ink">{t("Find the fault")}</h2>
         <div className="flex gap-3 print:hidden">
           {path.length > 0 && (
             <>
               <button onClick={() => setPath((p) => p.slice(0, -1))} className="text-[12px] font-semibold text-muted hover:text-ink">
-                ← Back
+                ← {t("Back")}
               </button>
               <button onClick={() => setPath([])} className="text-[12px] font-semibold text-muted hover:text-ink">
-                Start over
+                {t("Start over")}
               </button>
             </>
           )}
@@ -513,7 +520,7 @@ function Troubleshooter({ manual, flowchart }: { manual: Manual; flowchart: stri
           {path.map((p, i) => (
             <li key={i} className="flex gap-2 text-[12px] text-muted">
               <span className={`shrink-0 rounded-full px-1.5 font-bold ${p.answer === "yes" ? "bg-[#e9f4ec] text-[#2f8a51]" : "bg-[#fff0ec] text-accent"}`}>
-                {p.answer === "yes" ? "Yes" : "No"}
+                {p.answer === "yes" ? t("Yes") : t("No")}
               </span>
               <span className="truncate">{byId.get(p.id)?.question}</span>
             </li>
@@ -524,7 +531,7 @@ function Troubleshooter({ manual, flowchart }: { manual: Manual; flowchart: stri
       <div className="mt-4 rounded-[16px] border-2 border-ink bg-white/80 p-5 print:hidden">
         {current ? (
           <>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-accent">Check {path.length + 1}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-accent">{t("Check {n}", { n: path.length + 1 })}</p>
             <p className="mt-1 text-[17px] font-bold leading-snug text-ink">{current.question}</p>
             {current.how && <p className="mt-2 text-[13.5px] leading-relaxed text-ink/80">{current.how}</p>}
             {current.tool && current.tool.toLowerCase() !== "none" && (
@@ -532,35 +539,35 @@ function Troubleshooter({ manual, flowchart }: { manual: Manual; flowchart: stri
             )}
             <div className="mt-4 flex gap-2">
               <button onClick={() => answer("yes")} className="rounded-full bg-[#2f8a51] px-6 py-2.5 text-[13.5px] font-bold text-white">
-                Yes
+                {t("Yes")}
               </button>
               <button onClick={() => answer("no")} className="rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-bold text-white">
-                No
+                {t("No")}
               </button>
             </div>
           </>
         ) : fix ? (
           <>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#2f8a51]">Most likely fix</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[#2f8a51]">{t("Most likely fix")}</p>
             <p className="mt-1 text-[17px] font-bold leading-snug text-ink">{fix.title}</p>
             {fix.when && <p className="mt-2 text-[13.5px] text-ink/80">{fix.when}</p>}
             <button
               onClick={() => document.getElementById(`proc-${fix.id}`)?.scrollIntoView({ behavior: "smooth" })}
               className="glassx-dark mt-4 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
             >
-              Go to Fix {String.fromCharCode(65 + fixIndex)} ↓
+              {t("Go to Fix {letter}", { letter: String.fromCharCode(65 + fixIndex) })} ↓
             </button>
           </>
         ) : at.kind === "done" ? (
           <>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#2f8a51]">Sorted</p>
-            <p className="mt-1 text-[17px] font-bold text-ink">That should be it — run the tests at the bottom to confirm.</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[#2f8a51]">{t("Sorted")}</p>
+            <p className="mt-1 text-[17px] font-bold text-ink">{t("That should be it — run the tests at the bottom to confirm.")}</p>
           </>
         ) : (
           <>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-accent">Time for a professional</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-accent">{t("Time for a professional")}</p>
             <p className="mt-1 text-[15px] font-semibold leading-snug text-ink">
-              This points past what&apos;s safe or sensible to DIY. Tell the technician what you checked above — it will save them time and you money.
+              {t("This points past what's safe or sensible to DIY. Tell the technician what you checked above — it will save them time and you money.")}
             </p>
           </>
         )}
@@ -569,7 +576,7 @@ function Troubleshooter({ manual, flowchart }: { manual: Manual; flowchart: stri
       {flowchart && (
         <div className="mt-4">
           <button onClick={() => setShowChart((s) => !s)} className="text-[12.5px] font-semibold text-accent print:hidden">
-            {showChart ? "Hide" : "Show"} the whole troubleshooting flowchart
+            {showChart ? t("Hide the whole troubleshooting flowchart") : t("Show the whole troubleshooting flowchart")}
           </button>
           <div className={showChart ? "mt-3" : "hidden print:mt-3 print:block"}>
             <MermaidBlock code={flowchart} />

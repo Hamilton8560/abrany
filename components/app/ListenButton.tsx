@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PlayIcon, PauseIcon } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Dynamically-capable lesson narration. Asks the server which voice provider is
@@ -30,6 +31,7 @@ export default function ListenButton({ text }: { text: string }) {
   const [loading, setLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
+  const t = useT();
 
   const browserSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
@@ -140,7 +142,7 @@ export default function ListenButton({ text }: { text: string }) {
 
   if (!browserSupported && !serverVoice) return null;
 
-  const label = loading ? "…" : !speaking ? "Listen" : paused ? "Resume" : "Pause";
+  const label = loading ? "…" : !speaking ? t("Listen") : paused ? t("Resume") : t("Pause");
 
   return (
     <div className="flex items-center gap-2">
@@ -150,7 +152,7 @@ export default function ListenButton({ text }: { text: string }) {
         disabled={loading}
         className="glassx flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-60"
         aria-label={label}
-        title={serverVoice ? "Listen (HD voice)" : "Listen"}
+        title={serverVoice ? t("Listen (HD voice)") : t("Listen")}
       >
         {!speaking || paused ? <PlayIcon className="size-3" /> : <PauseIcon className="size-3.5" />}
         {label}
@@ -161,7 +163,7 @@ export default function ListenButton({ text }: { text: string }) {
           onClick={stop}
           className="rounded-full px-2 py-1.5 text-[12px] font-medium text-muted hover:text-accent"
         >
-          Stop
+          {t("Stop")}
         </button>
       )}
     </div>

@@ -4,9 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Nav";
 import { BrainGlyph } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
 
 /** Public set-password form for a single-use reset link (`/reset?token=…`). */
 export default function TokenResetForm({ token }: { token: string }) {
+  const t = useT();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -15,8 +17,8 @@ export default function TokenResetForm({ token }: { token: string }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) return setError("Password must be at least 8 characters");
-    if (password !== confirm) return setError("Passwords don't match");
+    if (password.length < 8) return setError(t("Password must be at least 8 characters"));
+    if (password !== confirm) return setError(t("Passwords don't match"));
     setBusy(true);
     try {
       const res = await fetch("/api/auth/reset-with-token", {
@@ -26,13 +28,13 @@ export default function TokenResetForm({ token }: { token: string }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong");
+        setError(data.error ? t(data.error) : t("Something went wrong"));
         setBusy(false);
         return;
       }
       window.location.href = "/app";
     } catch {
-      setError("Network error — try again");
+      setError(t("Network error — try again"));
       setBusy(false);
     }
   };
@@ -49,9 +51,9 @@ export default function TokenResetForm({ token }: { token: string }) {
               <BrainGlyph className="size-6" />
             </span>
             <div>
-              <h1 className="font-display text-[24px] font-extrabold uppercase text-ink">Set your password</h1>
+              <h1 className="font-display text-[24px] font-extrabold uppercase text-ink">{t("Set your password")}</h1>
               <p className="mt-1 text-[13px] text-muted">
-                {token ? "Choose a new password — you'll be signed in right after." : "This link is missing its token."}
+                {token ? t("Choose a new password — you'll be signed in right after.") : t("This link is missing its token.")}
               </p>
             </div>
           </div>
@@ -62,7 +64,7 @@ export default function TokenResetForm({ token }: { token: string }) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="New password (8+ characters)"
+                placeholder={t("New password (8+ characters)")}
                 autoComplete="new-password"
                 autoFocus
                 className="w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
@@ -71,7 +73,7 @@ export default function TokenResetForm({ token }: { token: string }) {
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
-                placeholder="Confirm new password"
+                placeholder={t("Confirm new password")}
                 autoComplete="new-password"
                 className="w-full rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
               />
@@ -81,19 +83,19 @@ export default function TokenResetForm({ token }: { token: string }) {
                 disabled={busy || !password || !confirm}
                 className="glassx-dark mt-1 rounded-full px-5 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
               >
-                {busy ? "Saving…" : "Set password & sign in"}
+                {busy ? t("Saving…") : t("Set password & sign in")}
               </button>
             </form>
           ) : (
             <p className="text-center text-[13px] text-accent">
-              This link is invalid or has expired.
+              {t("This link is invalid or has expired.")}
             </p>
           )}
 
           <p className="mt-5 text-center text-[13px] text-muted">
-            Link expired?{" "}
+            {t("Link expired?")}{" "}
             <Link href="/forgot" className="font-semibold text-accent">
-              Request a new one
+              {t("Request a new one")}
             </Link>
           </p>
         </div>

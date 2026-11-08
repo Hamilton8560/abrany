@@ -4,6 +4,8 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
+import { useT, useI18n } from "@/lib/i18n/client";
+import { plural } from "@/lib/i18n";
 import type { Goal, Plan, PlanItem, PlanItemWithProgress, Exam } from "@/lib/repo";
 import { ArrowRight, CheckIcon, TargetIcon } from "@/components/icons";
 import MilestoneLessons from "@/components/app/MilestoneLessons";
@@ -25,13 +27,14 @@ type AssignmentInfo = {
 };
 type GoalResp = { goal: Goal; plan: FullPlan | null; children: TrackChild[]; assignment: AssignmentInfo | null };
 
-const fmtDue = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 const daysLeft = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
 
 export default function GoalDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const t = useT();
+  const { date } = useI18n();
+  const fmtDue = (iso: string) => date(new Date(iso), { year: "numeric", month: "short", day: "numeric" });
   const [goal, setGoal] = useState<Goal | null>(null);
   const [plan, setPlan] = useState<FullPlan | null>(null);
   const [children, setChildren] = useState<TrackChild[]>([]);
@@ -86,7 +89,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       setConfirmOpen(false);
       router.push(`/app/credential/${d.certificate.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not complete the goal.");
+      setError(e instanceof Error ? e.message : t("Could not complete the goal."));
     } finally {
       setCompleting(false);
     }
@@ -100,8 +103,8 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   const isBuilding = goal?.build_status === "queued" || goal?.build_status === "building";
   useEffect(() => {
     if (!isBuilding) return;
-    const t = setInterval(() => load().catch(() => {}), 3000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => load().catch(() => {}), 3000);
+    return () => clearInterval(timer);
   }, [isBuilding, load]);
 
   /** One click: plan (if missing) + every milestone's sections + all content, in the background. */
@@ -116,7 +119,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       setIntakeOpen(false);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't start the build.");
+      setError(e instanceof Error ? e.message : t("Couldn't start the build."));
     } finally {
       setBuilding(false);
     }
@@ -133,7 +136,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       setPlan(d.plan);
       setIntakeOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The coach couldn't build a plan right now.");
+      setError(e instanceof Error ? e.message : t("The coach couldn't build a plan right now."));
     } finally {
       setGenerating(false);
     }
@@ -148,7 +151,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     load();
   };
   const removeItem = async (item: PlanItem) => {
-    if (!window.confirm(`Delete milestone “${item.title}” and its sections?`)) return;
+    if (!window.confirm(t("Delete milestone “{title}” and its sections?", { title: item.title }))) return;
     await api(`/api/plan-items/${item.id}`, { method: "DELETE" }).catch(() => {});
     load();
   };
@@ -182,17 +185,17 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete “${goal?.title}” and everything in it — plan, sections, exams? This can't be undone.`)) return;
+    if (!window.confirm(t("Delete “{title}” and everything in it — plan, sections, exams? This can't be undone.", { title: goal?.title ?? "" }))) return;
     try {
       await api(`/api/goals/${id}`, { method: "DELETE" });
       router.push("/app/goals");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't delete this goal.");
+      setError(e instanceof Error ? e.message : t("Couldn't delete this goal."));
     }
   };
 
-  if (loading) return <p className="text-[14px] text-muted">Loading…</p>;
-  if (!goal) return <p className="text-[14px] text-muted">Goal not found.</p>;
+  if (loading) return <p className="text-[14px] text-muted">{t("Loading…")}</p>;
+  if (!goal) return <p className="text-[14px] text-muted">{t("Goal not found.")}</p>;
 
   const isUmbrella = children.length > 0;
   const items = plan?.items ?? [];
@@ -225,7 +228,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
     <div className="mx-auto flex max-w-[760px] flex-col gap-7">
       <div className="flex items-center gap-2 text-[12px] text-muted">
         <Link href="/app/goals" className="hover:text-ink">
-          Goals
+          {t("Goals")}
         </Link>
         <span>/</span>
         <span className="text-ink">{goal.title}</span>
@@ -257,8 +260,8 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             </div>
             <p className="text-[11px] text-muted">
               {sectionsTotal > 0
-                ? `${sectionsDone}/${sectionsTotal} sections read`
-                : "Break a milestone into sections and check them off as you read"}
+                ? t("{done}/{total} sections read", { done: sectionsDone, total: sectionsTotal })
+                : t("Break a milestone into sections and check them off as you read")}
             </p>
           </div>
         )}
@@ -271,15 +274,15 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
               <span className="text-[12px] font-bold uppercase tracking-wide text-ink">{assignment.orgName}</span>
             )}
             <div className="min-w-0 flex-1 text-[12.5px] text-muted">
-              <span>Assigned by <span className="font-semibold text-ink">{assignment.orgName}</span></span>
+              <span>{t("Assigned by")} <span className="font-semibold text-ink">{assignment.orgName}</span></span>
               {assignment.dueAt && (
                 <span className={dl !== null && dl < 3 && assignment.status !== "passed" ? " font-semibold text-accent" : ""}>
-                  {" · "}Due {fmtDue(assignment.dueAt)}
+                  {" · "}{t("Due {date}", { date: fmtDue(assignment.dueAt) })}
                   {assignment.status === "passed"
                     ? ""
                     : dl !== null && dl >= 0
-                      ? ` (${dl} day${dl === 1 ? "" : "s"} left)`
-                      : " (overdue)"}
+                      ? " " + plural(t, dl, "({n} day left)", "({n} days left)")
+                      : " " + t("(overdue)")}
                 </span>
               )}
               {assignment.note && <span className="block truncate">“{assignment.note}”</span>}
@@ -293,7 +296,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                     : "bg-ink/10 text-ink"
               }`}
             >
-              {assignment.status === "in_progress" ? "In progress" : assignment.status}
+              {assignment.status === "in_progress" ? t("In progress") : t(assignment.status)}
             </span>
           </div>
         )}
@@ -303,14 +306,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             href={`/app/coach?goal=${goal.id}`}
             className="glassx-dark rounded-full px-4 py-2 text-[12.5px] font-semibold text-white"
           >
-            Discuss with coach
+            {t("Discuss with coach")}
           </Link>
           {goal.status === "done" && (
             <button
               onClick={() => setStatus("active")}
               className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink"
             >
-              Reopen
+              {t("Reopen")}
             </button>
           )}
           {!locked && (
@@ -318,7 +321,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
               onClick={remove}
               className="rounded-full px-4 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
             >
-              Delete
+              {t("Delete")}
             </button>
           )}
         </div>
@@ -332,11 +335,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold text-ink">
-              {plan ? "Writing your sections…" : "Building your course…"}
+              {plan ? t("Writing your sections…") : t("Building your course…")}
             </p>
             <p className="mt-1 text-[13px] text-muted">
-              Your coach is laying out the plan, breaking every milestone into sections and writing the material.
-              Sections appear below as they finish — you can start reading the moment the first one is ready.
+              {t("Your coach is laying out the plan, breaking every milestone into sections and writing the material. Sections appear below as they finish — you can start reading the moment the first one is ready.")}
             </p>
             <div className="mt-2">
               <QueueHint background />
@@ -346,10 +348,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       )}
       {goal.build_status === "error" && !isUmbrella && (
         <section className="glass rounded-[var(--radius-card-lg)] p-5">
-          <p className="text-[14px] font-semibold text-accent">The course build hit a problem.</p>
-          <p className="mt-1 text-[12.5px] text-muted">{goal.build_error || "Unknown error."}</p>
+          <p className="text-[14px] font-semibold text-accent">{t("The course build hit a problem.")}</p>
+          <p className="mt-1 text-[12.5px] text-muted">{goal.build_error || t("Unknown error.")}</p>
           <button onClick={buildAll} disabled={building} className="mt-3 glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink disabled:opacity-50">
-            {building ? "Retrying…" : "Retry the build"}
+            {building ? t("Retrying…") : t("Retry the build")}
           </button>
         </section>
       )}
@@ -358,11 +360,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       {isUmbrella && (
         <section className="glass rounded-[var(--radius-card-lg)] p-6">
           <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
-            Tracks — start anywhere
+            {t("Tracks — start anywhere")}
           </h2>
           <p className="mt-1.5 text-[13.5px] text-muted">
-            This is a big one, so your coach split it into standalone tracks. Open one to build its
-            plan and lessons.
+            {t("This is a big one, so your coach split it into standalone tracks. Open one to build its plan and lessons.")}
           </p>
           <div className="mt-4 flex flex-col gap-2.5">
             {children.map((c, i) => (
@@ -382,11 +383,11 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 </div>
                 {c.hasPlan ? (
                   <span className="shrink-0 rounded-full bg-up/12 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wide text-up">
-                    {c.sectionsTotal > 0 ? `${c.sectionsDone}/${c.sectionsTotal} sections` : `Plan ready · ${c.milestones}`}
+                    {c.sectionsTotal > 0 ? t("{done}/{total} sections", { done: c.sectionsDone, total: c.sectionsTotal }) : t("Plan ready · {n}", { n: c.milestones })}
                   </span>
                 ) : (
                   <span className="shrink-0 rounded-full bg-ink/6 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted">
-                    Not started
+                    {t("Not started")}
                   </span>
                 )}
                 <ArrowRight className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
@@ -401,7 +402,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       <section className="glass rounded-[var(--radius-card-lg)] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">
-            Learning plan
+            {t("Learning plan")}
             {plan && plan.version >= 2 && (
               <span className="ml-2 rounded-full bg-up/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-up">
                 V2
@@ -414,10 +415,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 <button
                   onClick={buildAll}
                   disabled={building}
-                  title="Break every milestone into sections and write all the material in the background"
+                  title={t("Break every milestone into sections and write all the material in the background")}
                   className="glassx rounded-full px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-50"
                 >
-                  {building ? "Starting…" : "Build all sections"}
+                  {building ? t("Starting…") : t("Build all sections")}
                 </button>
               )}
               {!locked && (
@@ -426,14 +427,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                     onClick={() => setEditing((v) => !v)}
                     className={`text-[12px] font-medium ${editing ? "text-up" : "text-accent"} hover:underline`}
                   >
-                    {editing ? "Done editing" : "Edit course"}
+                    {editing ? t("Done editing") : t("Edit course")}
                   </button>
                   <button
                     onClick={() => setIntakeOpen((v) => !v)}
                     disabled={generating}
                     className="text-[12px] font-medium text-accent hover:underline disabled:opacity-50"
                   >
-                    {generating ? "Rebuilding…" : "Rebuild plan"}
+                    {generating ? t("Rebuilding…") : t("Rebuild plan")}
                   </button>
                 </>
               )}
@@ -447,8 +448,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           <div className={`mt-4 flex flex-col gap-3 rounded-[16px] border border-dashed border-line px-5 py-5 ${plan ? "" : "items-stretch"}`}>
             {!plan && (
               <p className="text-center text-[14px] text-muted">
-                No plan yet. Tell your coach where you&apos;re starting from and it builds an
-                outcome-based plan sized to your real time.
+                {t("No plan yet. Tell your coach where you're starting from and it builds an outcome-based plan sized to your real time.")}
               </p>
             )}
             <DraftAssistant
@@ -461,24 +461,24 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 if (v.targetDate) setTargetDate(v.targetDate);
                 if (v.focus) setFocus(v.focus);
               }}
-              triggerLabel="Not sure? Let AI set these up"
+              triggerLabel={t("Not sure? Let AI set these up")}
               className="self-start"
             />
             <div className="grid gap-2.5 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Current level
+                {t("Current level")}
                 <select
                   value={level}
                   onChange={(e) => setLevel(e.target.value as typeof level)}
                   className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
                 >
-                  <option value="new">Complete beginner</option>
-                  <option value="some">Some experience</option>
-                  <option value="solid">Solid — want depth</option>
+                  <option value="new">{t("Complete beginner")}</option>
+                  <option value="some">{t("Some experience")}</option>
+                  <option value="solid">{t("Solid — want depth")}</option>
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Hours per week
+                {t("Hours per week")}
                 <input
                   type="number"
                   min={1}
@@ -489,7 +489,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 />
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Target date (optional)
+                {t("Target date (optional)")}
                 <input
                   type="date"
                   value={targetDate}
@@ -498,11 +498,11 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 />
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Why / focus (optional)
+                {t("Why / focus (optional)")}
                 <input
                   value={focus}
                   onChange={(e) => setFocus(e.target.value)}
-                  placeholder="e.g. conversation for a trip in October"
+                  placeholder={t("e.g. conversation for a trip in October")}
                   className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
                 />
               </label>
@@ -513,23 +513,22 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 disabled={generating || building}
                 className="glassx-dark rounded-full px-6 py-3 text-[14px] font-semibold text-white disabled:opacity-60"
               >
-                {generating ? "Building your plan…" : plan ? "Rebuild my plan (V2)" : "Build my plan with AI"}
+                {generating ? t("Building your plan…") : plan ? t("Rebuild my plan (V2)") : t("Build my plan with AI")}
               </button>
               {!plan && (
                 <button
                   onClick={buildAll}
                   disabled={generating || building}
-                  title="Plan + every section's material, written in the background while you do other things"
+                  title={t("Plan + every section's material, written in the background while you do other things")}
                   className="glassx rounded-full px-6 py-3 text-[14px] font-semibold text-ink disabled:opacity-60"
                 >
-                  {building ? "Starting…" : "Build the whole course"}
+                  {building ? t("Starting…") : t("Build the whole course")}
                 </button>
               )}
             </div>
             {!plan && (
               <p className="text-center text-[11.5px] text-muted">
-                “Build my plan” gives you the milestones to review first. “Build the whole course” also writes every
-                section in the background — come back to a ready course.
+                {t("“Build my plan” gives you the milestones to review first. “Build the whole course” also writes every section in the background — come back to a ready course.")}
               </p>
             )}
             {generating && (
@@ -561,7 +560,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                   >
                     <button
                       onClick={() => toggleItem(item)}
-                      aria-label={done ? "Mark not done" : "Mark done"}
+                      aria-label={done ? t("Mark not done") : t("Mark done")}
                       className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border transition-all ${
                         done
                           ? "border-up bg-up text-white"
@@ -579,13 +578,13 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                               onBlur={(e) => e.target.value.trim() && e.target.value !== item.title && saveItem(item.id, { title: e.target.value }).then(load)}
                               className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-1.5 text-[13.5px] font-semibold text-ink outline-none focus:border-accent"
                             />
-                            <button onClick={() => moveItem(item.id, "up")} disabled={i === 0} title="Move up" className="text-[13px] font-bold text-muted hover:text-ink disabled:opacity-30">↑</button>
-                            <button onClick={() => moveItem(item.id, "down")} disabled={i === plan.items.length - 1} title="Move down" className="text-[13px] font-bold text-muted hover:text-ink disabled:opacity-30">↓</button>
-                            <button onClick={() => removeItem(item)} title="Delete milestone" className="text-[13px] font-bold text-muted hover:text-accent">✕</button>
+                            <button onClick={() => moveItem(item.id, "up")} disabled={i === 0} title={t("Move up")} className="text-[13px] font-bold text-muted hover:text-ink disabled:opacity-30">↑</button>
+                            <button onClick={() => moveItem(item.id, "down")} disabled={i === plan.items.length - 1} title={t("Move down")} className="text-[13px] font-bold text-muted hover:text-ink disabled:opacity-30">↓</button>
+                            <button onClick={() => removeItem(item)} title={t("Delete milestone")} className="text-[13px] font-bold text-muted hover:text-accent">✕</button>
                           </div>
                           <input
                             defaultValue={item.detail}
-                            placeholder="What to do and how to know you're done"
+                            placeholder={t("What to do and how to know you're done")}
                             onBlur={(e) => e.target.value !== item.detail && saveItem(item.id, { detail: e.target.value }).then(load)}
                             className="rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] text-muted outline-none focus:border-accent"
                           />
@@ -612,7 +611,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                                         : "bg-accent/10 text-accent"
                                   }`}
                                 >
-                                  {item.difficulty}
+                                  {t(item.difficulty)}
                                 </span>
                               )}
                               {item.estimate && (
@@ -656,7 +655,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                   value={newMilestone}
                   onChange={(e) => setNewMilestone(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addMilestone()}
-                  placeholder="Add a milestone…"
+                  placeholder={t("Add a milestone…")}
                   className="min-w-0 flex-1 rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
                 />
                 <button
@@ -664,7 +663,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                   disabled={!newMilestone.trim()}
                   className="glassx-dark shrink-0 rounded-full px-4 py-2.5 text-[12.5px] font-semibold text-white disabled:opacity-50"
                 >
-                  Add
+                  {t("Add")}
                 </button>
               </div>
             )}
@@ -676,10 +675,9 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
       {/* course exams — the final gates the certificate; reviews stay optional */}
       {!isUmbrella && exams.length > 0 && (
         <section className="glass rounded-[var(--radius-card-lg)] p-6">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">Course exams</h2>
+          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-ink">{t("Course exams")}</h2>
           <p className="mt-1.5 text-[13.5px] text-muted">
-            Each exam comes with a study guide. Complete the sections it covers to unlock it, then pass
-            the final (70%) to earn your certificate. Spaced reviews are optional practice to help you pass.
+            {t("Each exam comes with a study guide. Complete the sections it covers to unlock it, then pass the final (70%) to earn your certificate. Spaced reviews are optional practice to help you pass.")}
           </p>
           <div className="mt-4 flex flex-col gap-2.5">
             {exams.map((e) => (
@@ -693,14 +691,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[14.5px] font-semibold text-ink">
-                    {e.kind === "final" ? "Final exam" : "Midterm exam"}
+                    {e.kind === "final" ? t("Final exam") : t("Midterm exam")}
                   </p>
                   <p className="text-[12.5px] text-muted">
                     {e.passed
-                      ? `Passed · best score ${e.best_score}%`
+                      ? t("Passed · best score {score}%", { score: e.best_score })
                       : e.attempts > 0
-                        ? `Best ${e.best_score}% · not passed yet (need 70%)`
-                        : "Not attempted · includes a study guide"}
+                        ? t("Best {score}% · not passed yet (need 70%)", { score: e.best_score })
+                        : t("Not attempted · includes a study guide")}
                   </p>
                 </div>
                 <button
@@ -709,7 +707,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                     e.passed ? "glassx text-ink" : "glassx-dark text-white"
                   }`}
                 >
-                  {e.passed ? "Review" : "Study & take"}
+                  {e.passed ? t("Review") : t("Study & take")}
                 </button>
               </div>
             ))}
@@ -723,25 +721,24 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
           {cert ? (
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[15px] font-semibold text-ink">🎓 Certificate issued</p>
+                <p className="text-[15px] font-semibold text-ink">{t("🎓 Certificate issued")}</p>
                 <p className="mt-1 text-[13.5px] text-muted">
-                  You completed this goal. Credential <span className="font-medium text-ink">{cert.id}</span>.
+                  {t("You completed this goal.")} {t("Credential")} <span className="font-medium text-ink">{cert.id}</span>.
                 </p>
               </div>
               <Link
                 href={`/app/credential/${cert.id}`}
                 className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
               >
-                View certificate
+                {t("View certificate")}
               </Link>
             </div>
           ) : !canComplete ? (
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[15px] font-semibold text-ink">Pass the final exam to graduate</p>
+                <p className="text-[15px] font-semibold text-ink">{t("Pass the final exam to graduate")}</p>
                 <p className="mt-1 text-[13.5px] text-muted">
-                  Your certificate is earned, not clicked — pass the final exam (70%) and it&apos;s issued
-                  automatically.
+                  {t("Your certificate is earned, not clicked — pass the final exam (70%) and it's issued automatically.")}
                 </p>
               </div>
               {finalExam && (
@@ -749,7 +746,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                   onClick={() => setExamOpen(finalExam)}
                   className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
                 >
-                  Take the final exam
+                  {t("Take the final exam")}
                 </button>
               )}
             </div>
@@ -757,10 +754,10 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-[15px] font-semibold text-ink">
-                  {finalPassed ? "🎉 Final exam passed — claim your certificate" : "Finished this goal?"}
+                  {finalPassed ? t("🎉 Final exam passed — claim your certificate") : t("Finished this goal?")}
                 </p>
                 <p className="mt-1 text-[13.5px] text-muted">
-                  Confirm you&apos;ve completed everything — we&apos;ll issue your certificate and transcript.
+                  {t("Confirm you've completed everything — we'll issue your certificate and transcript.")}
                 </p>
               </div>
               <button
@@ -771,7 +768,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 }}
                 className="glassx-dark shrink-0 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
               >
-                {finalPassed ? "Claim certificate" : "Mark this goal complete"}
+                {finalPassed ? t("Claim certificate") : t("Mark this goal complete")}
               </button>
             </div>
           )}
@@ -798,16 +795,17 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
             className="glass w-full max-w-[440px] rounded-[var(--radius-card-lg)] p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-display text-[22px] font-extrabold uppercase text-ink">Complete this goal?</h3>
+            <h3 className="font-display text-[22px] font-extrabold uppercase text-ink">{t("Complete this goal?")}</h3>
             <p className="mt-2 text-[14px] leading-relaxed text-muted">
-              This issues your certificate &amp; transcript for{" "}
-              <span className="font-semibold text-ink">{goal.title}</span> — a permanent, shareable record.
-              Only confirm if you&apos;ve genuinely finished.
+              {t("This issues your certificate & transcript for")}{" "}
+              <span className="font-semibold text-ink">{goal.title}</span>{" "}
+              {t("— a permanent, shareable record.")}{" "}
+              {t("Only confirm if you've genuinely finished.")}
             </p>
             {sectionsTotal > 0 && (
               <p className="mt-3 rounded-[12px] bg-white/60 px-4 py-2.5 text-[13px] text-muted">
-                Progress: <span className="font-semibold text-ink">{sectionsDone}/{sectionsTotal} sections</span> · {progress}%
-                {sectionsDone < sectionsTotal ? " — some sections aren't marked done yet." : ""}
+                {t("Progress:")} <span className="font-semibold text-ink">{t("{done}/{total} sections", { done: sectionsDone, total: sectionsTotal })}</span> · {progress}%
+                {sectionsDone < sectionsTotal ? " " + t("— some sections aren't marked done yet.") : ""}
               </p>
             )}
             <label className="mt-4 flex items-start gap-2.5 text-[13.5px] text-ink">
@@ -817,7 +815,7 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 onChange={(e) => setConfirmChecked(e.target.checked)}
                 className="mt-0.5 size-4 accent-accent"
               />
-              <span>I confirm I&apos;ve completed everything in this goal.</span>
+              <span>{t("I confirm I've completed everything in this goal.")}</span>
             </label>
             {error && <p className="mt-3 text-[13px] text-accent">{error}</p>}
             <div className="mt-5 flex items-center justify-end gap-2">
@@ -825,14 +823,14 @@ export default function GoalDetail({ params }: { params: Promise<{ id: string }>
                 onClick={() => setConfirmOpen(false)}
                 className="px-4 py-2 text-[13px] font-semibold text-muted hover:text-ink"
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 onClick={completeGoal}
                 disabled={!confirmChecked || completing}
                 className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
               >
-                {completing ? "Issuing…" : "Complete & issue certificate"}
+                {completing ? t("Issuing…") : t("Complete & issue certificate")}
               </button>
             </div>
           </div>

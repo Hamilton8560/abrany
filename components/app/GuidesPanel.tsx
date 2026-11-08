@@ -9,6 +9,8 @@ import DraftAssistant from "./DraftAssistant";
 import { useContentTranslation, TranslateButton } from "./TranslateControl";
 import ListenButton from "./ListenButton";
 import QueueHint from "./QueueHint";
+import { useT } from "@/lib/i18n/client";
+import { msg } from "@/lib/i18n";
 
 type Guide = {
   id: number;
@@ -23,13 +25,14 @@ type Guide = {
 };
 
 const SOURCE_LABEL: Record<Guide["source"], string> = {
-  goal: "Course",
-  milestone: "Milestone",
-  topic: "Topic",
-  exam: "From exam",
+  goal: msg("Course"),
+  milestone: msg("Milestone"),
+  topic: msg("Topic"),
+  exam: msg("From exam"),
 };
 
 export default function GuidesPanel({ goals }: { goals: { id: number; title: string }[] }) {
+  const t = useT();
   const [guides, setGuides] = useState<Guide[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState<Guide | null>(null);
@@ -43,9 +46,9 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
       setGuides(d.guides);
       setReading((r) => (r ? d.guides.find((g) => g.id === r.id) ?? r : r));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load your study guides");
+      setError(e instanceof Error ? e.message : t("Could not load your study guides"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refresh();
@@ -72,7 +75,7 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
   }, []);
 
   const remove = async (g: Guide) => {
-    if (!window.confirm(`Delete study guide "${g.title}"?`)) return;
+    if (!window.confirm(t("Delete study guide \"{title}\"?", { title: g.title }))) return;
     setGuides((gs) => gs?.filter((x) => x.id !== g.id) ?? gs);
     if (reading?.id === g.id) setReading(null);
     await api(`/api/study-guides/${g.id}`, { method: "DELETE" }).catch(() => {});
@@ -86,12 +89,12 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
           onClick={() => setReading(null)}
           className="self-start text-[13px] font-medium text-muted hover:text-ink"
         >
-          ← All study guides
+          ← {t("All study guides")}
         </button>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-              {SOURCE_LABEL[reading.source]} study guide
+              {t("{source} study guide", { source: t(SOURCE_LABEL[reading.source]) })}
             </p>
             <h2 className="mt-1 font-display text-[clamp(22px,4vw,30px)] font-extrabold uppercase leading-[1.05] text-ink">
               {tr.displayTitle}
@@ -104,7 +107,7 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
               href={`/app/coach?guide=${reading.id}`}
               className="glassx-dark flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-semibold text-white"
             >
-              <ChatIcon className="size-4" /> Discuss with tutor
+              <ChatIcon className="size-4" /> {t("Discuss with tutor")}
             </Link>
           </div>
         </div>
@@ -113,10 +116,10 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
           {reading.status === "ready" ? (
             <Markdown>{tr.displayContent}</Markdown>
           ) : reading.status === "error" ? (
-            <p className="text-[14px] text-accent">Generation failed: {reading.error || "unknown error"}</p>
+            <p className="text-[14px] text-accent">{t("Generation failed: {error}", { error: reading.error || t("unknown error") })}</p>
           ) : (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-[14px] text-muted">Writing your study guide…</p>
+              <p className="text-[14px] text-muted">{t("Writing your study guide…")}</p>
               <div className="max-w-[400px]">
                 <QueueHint background />
               </div>
@@ -131,12 +134,12 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
-        <p className="text-[12.5px] text-muted">{guides?.length ? `${guides.length} saved` : ""}</p>
+        <p className="text-[12.5px] text-muted">{guides?.length ? t("{n} saved", { n: guides.length }) : ""}</p>
         <button
           onClick={() => setCreating(true)}
           className="glassx-dark flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
         >
-          <PlusIcon className="size-4" /> New study guide
+          <PlusIcon className="size-4" /> {t("New study guide")}
         </button>
       </div>
 
@@ -155,15 +158,14 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
       )}
 
       {!guides ? (
-        <p className="text-[13px] text-muted">Loading…</p>
+        <p className="text-[13px] text-muted">{t("Loading…")}</p>
       ) : guides.length === 0 && !creating ? (
         <div className="glass flex flex-col items-center gap-3 rounded-[var(--radius-card-lg)] px-6 py-12 text-center">
           <span className="grid size-12 place-items-center rounded-full bg-accent/12 text-accent">
             <GuideIcon className="size-6" />
           </span>
           <p className="max-w-[380px] text-[13.5px] text-muted">
-            No study guides yet. Generate one for a course you&apos;re taking or any topic — then keep it
-            and talk it through with your tutor.
+            {t("No study guides yet. Generate one for a course you're taking or any topic — then keep it and talk it through with your tutor.")}
           </p>
         </div>
       ) : (
@@ -182,13 +184,13 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
               >
                 <p className="truncate text-[14px] font-semibold text-ink">{g.title}</p>
                 <p className="flex items-center gap-2 text-[11px] text-muted">
-                  <span className="rounded-full bg-ink/8 px-2 py-0.5 font-medium">{SOURCE_LABEL[g.source]}</span>
+                  <span className="rounded-full bg-ink/8 px-2 py-0.5 font-medium">{t(SOURCE_LABEL[g.source])}</span>
                   {g.status === "generating" ? (
                     <span className="flex items-center gap-1 text-accent">
-                      <span className="size-1.5 animate-pulse rounded-full bg-accent" /> Writing…
+                      <span className="size-1.5 animate-pulse rounded-full bg-accent" /> {t("Writing…")}
                     </span>
                   ) : g.status === "error" ? (
-                    <span className="text-accent">Failed</span>
+                    <span className="text-accent">{t("Failed")}</span>
                   ) : (
                     <span>{fmtWhen(g.created_at)}</span>
                   )}
@@ -197,7 +199,7 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
               {g.status === "ready" && (
                 <Link
                   href={`/app/coach?guide=${g.id}`}
-                  title="Discuss with tutor"
+                  title={t("Discuss with tutor")}
                   className="glassx grid size-8 shrink-0 place-items-center rounded-full text-ink"
                 >
                   <ChatIcon className="size-4" />
@@ -207,7 +209,7 @@ export default function GuidesPanel({ goals }: { goals: { id: number; title: str
                 onClick={() => remove(g)}
                 className="shrink-0 text-[11.5px] font-semibold text-muted hover:text-accent"
               >
-                Delete
+                {t("Delete")}
               </button>
             </li>
           ))}
@@ -226,6 +228,7 @@ function CreateGuide({
   onClose: () => void;
   onCreated: (g: Guide) => void;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<"goal" | "topic">(goals.length ? "goal" : "topic");
   const [goalId, setGoalId] = useState(goals[0]?.id ? String(goals[0].id) : "");
   const [topic, setTopic] = useState("");
@@ -240,7 +243,7 @@ function CreateGuide({
       const body =
         mode === "goal" ? { goalId: Number(goalId) } : { topic: topic.trim() };
       if (mode === "topic" && !topic.trim()) {
-        setErr("Enter a topic");
+        setErr(t("Enter a topic"));
         setBusy(false);
         return;
       }
@@ -250,7 +253,7 @@ function CreateGuide({
       });
       onCreated(d.guide);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not create the study guide");
+      setErr(e instanceof Error ? e.message : t("Could not create the study guide"));
     } finally {
       setBusy(false);
     }
@@ -259,9 +262,9 @@ function CreateGuide({
   return (
     <div className="glass flex flex-col gap-3 rounded-[var(--radius-card-lg)] p-5">
       <div className="flex items-center justify-between">
-        <p className="text-[13px] font-semibold text-ink">New study guide</p>
+        <p className="text-[13px] font-semibold text-ink">{t("New study guide")}</p>
         <button onClick={onClose} className="text-[12px] font-semibold text-muted hover:text-ink">
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
       {goals.length > 0 && (
@@ -270,13 +273,13 @@ function CreateGuide({
             onClick={() => setMode("goal")}
             className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold ${mode === "goal" ? "glassx-dark text-white" : "glassx text-ink"}`}
           >
-            From a course
+            {t("From a course")}
           </button>
           <button
             onClick={() => setMode("topic")}
             className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold ${mode === "topic" ? "glassx-dark text-white" : "glassx text-ink"}`}
           >
-            From a topic
+            {t("From a topic")}
           </button>
         </div>
       )}
@@ -298,14 +301,14 @@ function CreateGuide({
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && create()}
-            placeholder="What should the guide cover? e.g. Spanish past tenses, Ohm's law"
+            placeholder={t("What should the guide cover? e.g. Spanish past tenses, Ohm's law")}
             className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
           />
           <DraftAssistant
             surfaceId="studyGuide"
             seed={topic}
             onApply={(v) => v.topic && setTopic(v.topic)}
-            triggerLabel="Narrow it down with AI"
+            triggerLabel={t("Narrow it down with AI")}
           />
         </div>
       )}
@@ -316,13 +319,13 @@ function CreateGuide({
           disabled={busy}
           className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
         >
-          {busy ? "Starting…" : "Generate"}
+          {busy ? t("Starting…") : t("Generate")}
         </button>
       </div>
       <p className="text-[11px] text-muted">
         {mode === "goal"
-          ? "Built from the lessons you've generated for that course."
-          : "A standalone guide on any topic you name."}
+          ? t("Built from the lessons you've generated for that course.")
+          : t("A standalone guide on any topic you name.")}
       </p>
     </div>
   );

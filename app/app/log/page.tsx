@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { api, fmtDuration, fmtWhen } from "@/lib/client";
 import type { Session, SessionStats } from "@/lib/repo";
+import { useI18n } from "@/lib/i18n/client";
 
 type Resp = { sessions: (Session & { goal_title: string | null })[]; stats: SessionStats };
 
 export default function LogPage() {
   const [data, setData] = useState<Resp | null>(null);
+  const { t, date, locale } = useI18n();
 
   useEffect(() => {
     api<Resp>("/api/sessions")
@@ -23,7 +25,7 @@ export default function LogPage() {
     const d = new Date(s.created_at.replace(" ", "T") + "Z");
     const key = Number.isNaN(d.getTime())
       ? s.created_at.slice(0, 10)
-      : d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+      : date(d, { weekday: "long", month: "short", day: "numeric" });
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(s);
   }
@@ -34,23 +36,24 @@ export default function LogPage() {
         <div className="flex items-center gap-3">
           <span className="h-[2px] w-[26px] bg-accent" />
           <span className="text-[12px] font-medium text-accent" style={{ letterSpacing: "1.68px" }}>
-            TRAINING LOG
+            {t("TRAINING LOG")}
           </span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(30px,4vw,42px)] font-extrabold uppercase leading-[0.98] text-ink">
-          Everything you recorded
+          {t("Everything you recorded")}
         </h1>
         {data && (
           <p className="mt-2 text-[14px] text-muted">
-            {data.stats.sessionCount} sessions · {fmtDuration(data.stats.totalFocusSec)} of focused
-            training logged.
+            {locale === "es" && data.stats.sessionCount === 1
+              ? t("1 session · {duration} of focused training logged.", { duration: fmtDuration(data.stats.totalFocusSec) })
+              : t("{n} sessions · {duration} of focused training logged.", { n: data.stats.sessionCount, duration: fmtDuration(data.stats.totalFocusSec) })}
           </p>
         )}
       </header>
 
       {sessions.length === 0 && (
         <p className="text-[14px] text-muted">
-          Nothing logged yet. Run a focus block and record what you did.
+          {t("Nothing logged yet. Run a focus block and record what you did.")}
         </p>
       )}
 
@@ -62,7 +65,7 @@ export default function LogPage() {
               <article key={s.id} className="glass rounded-[var(--radius-card)] p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[14px] font-semibold text-ink">
-                    {fmtDuration(s.duration_sec)} focus
+                    {t("{duration} focus", { duration: fmtDuration(s.duration_sec) })}
                   </span>
                   <span className="text-[11.5px] text-muted">{fmtWhen(s.created_at)}</span>
                 </div>

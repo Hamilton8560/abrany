@@ -23,7 +23,12 @@ export async function POST(request: Request) {
   const email = (body.email ?? "").toString().trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
     return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
-  const result = await addMemberByEmail(org.id, email, body.role === "admin" ? "admin" : "member");
+  const result = await addMemberByEmail(
+    org.id,
+    email,
+    body.role === "admin" ? "admin" : "member",
+    typeof body.language === "string" ? body.language : undefined,
+  );
   // never expose the temp password over the API — it's emailed to the employee only
   return NextResponse.json({ status: result.status, members: memberJson(org) }, { status: 201 });
 }

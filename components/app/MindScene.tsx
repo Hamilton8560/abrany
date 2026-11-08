@@ -8,6 +8,8 @@ import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import gsap from "gsap";
 import { api } from "@/lib/client";
+import { useI18n } from "@/lib/i18n/client";
+import { interpolate, msg, type TFn } from "@/lib/i18n";
 
 type RegionId = "prefrontal" | "temporal" | "hippocampus" | "cerebellum" | "association";
 type MindNode = {
@@ -62,12 +64,30 @@ const REGION_ANCHORS: Record<RegionId, { anchors: [number, number, number][]; sc
   association: { anchors: [[0, 0.40 * R, -0.30 * R]], scatter: 0.24 * R },
 };
 const REGION_NAME: Record<RegionId, string> = {
-  prefrontal: "Prefrontal cortex",
-  temporal: "Temporal lobe",
-  hippocampus: "Hippocampus",
-  cerebellum: "Cerebellum",
-  association: "Association cortex",
+  prefrontal: msg("Prefrontal cortex"),
+  temporal: msg("Temporal lobe"),
+  hippocampus: msg("Hippocampus"),
+  cerebellum: msg("Cerebellum"),
+  association: msg("Association cortex"),
 };
+/** lib/mind.ts builds each region's detail as "<number> …"; these mirror it for translation. */
+const REGION_DETAIL: Record<RegionId, string> = {
+  prefrontal: msg("{n} focused minutes logged"),
+  hippocampus: msg("{n} spaced-repetition reps"),
+  temporal: msg("{n} min of reading & lectures"),
+  cerebellum: msg("{n} practice/apply sections done"),
+  association: msg("{n} things created (guides, decks, books)"),
+};
+/** Region stats as lib/mind.ts names them. */
+const REGION_STATS = [msg("Focus"), msg("Retention"), msg("Comprehension"), msg("Skill"), msg("Creation")];
+void REGION_STATS;
+
+function regionDetail(t: TFn, r: { id: string; detail: string }): string {
+  const key = REGION_DETAIL[r.id as RegionId];
+  const n = /^\d+/.exec(r.detail)?.[0];
+  if (key && n !== undefined && interpolate(key, { n }) === r.detail) return t(key, { n });
+  return r.detail;
+}
 
 type Placed = MindNode & { pos: THREE.Vector3; color: THREE.Color; r: number };
 
@@ -452,7 +472,7 @@ function Scene({
 type LevelUp = { title: string; sub: string; region: RegionId | "all" };
 const LS_KEY = "abrany.mind.levels.v1";
 
-function detectLevelUps(stats: Stats): LevelUp[] {
+function detectLevelUps(stats: Stats, t: TFn): LevelUp[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
     const current = {
@@ -465,16 +485,16 @@ function detectLevelUps(stats: Stats): LevelUp[] {
     const prev = JSON.parse(raw) as typeof current;
     const ups: LevelUp[] = [];
     if (stats.mindLevel > (prev.mind ?? 0)) {
-      ups.push({ title: `Mind Level ${stats.mindLevel}`, sub: "Your whole mind leveled up", region: "all" });
+      ups.push({ title: t("Mind Level {n}", { n: stats.mindLevel }), sub: t("Your whole mind leveled up"), region: "all" });
     }
     for (const r of stats.regions) {
       if (r.level > (prev.regions?.[r.id] ?? 0)) {
-        ups.push({ title: `${REGION_NAME[r.id as RegionId] ?? r.name} — ${r.stat} Lv ${r.level}`, sub: r.detail, region: r.id as RegionId });
+        ups.push({ title: t("{region} — {stat} Lv {level}", { region: t(REGION_NAME[r.id as RegionId] ?? r.name), stat: t(r.stat), level: r.level }), sub: regionDetail(t, r), region: r.id as RegionId });
       }
     }
     for (const c of stats.clusters) {
       if (c.level > (prev.clusters?.[c.clusterId] ?? 0)) {
-        ups.push({ title: `${c.cluster} — Lv ${c.level}`, sub: "Subject leveled up", region: "all" });
+        ups.push({ title: t("{subject} — Lv {level}", { subject: c.cluster, level: c.level }), sub: t("Subject leveled up"), region: "all" });
       }
     }
     return ups;
@@ -500,6 +520,7 @@ function XpBar({ progress, color = "#ff4326" }: { progress: number; color?: stri
 }
 
 function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void }) {
+  const { t, num } = useI18n();
   return (
     <div
       style={{
@@ -514,45 +535,45 @@ function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ font: font(800, 30), color: "#ff4326", fontVariantNumeric: "tabular-nums" }}>{stats.mindLevel}</span>
-            <span style={{ font: font(700, 11), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>Mind level</span>
+            <span style={{ font: font(700, 11), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>{t("Mind level")}</span>
           </div>
           <button onClick={onClose} style={{ font: font(600, 11), color: "#8891a0", cursor: "pointer", background: "transparent", border: "none", padding: 4 }}>
-            hide
+            {t("hide")}
           </button>
         </div>
         <div style={{ marginTop: 8 }}><XpBar progress={stats.mindProgress} /></div>
         <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", font: font(500, 11), color: "#8891a0" }}>
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>{stats.totalXp.toLocaleString()} XP</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{num(stats.totalXp)} XP</span>
           <span>
-            {stats.streakDays > 0 ? <span style={{ color: "#ffb8a6", fontWeight: 700 }}>{stats.streakDays}-day streak</span> : "no streak yet — train today"}
+            {stats.streakDays > 0 ? <span style={{ color: "#ffb8a6", fontWeight: 700 }}>{stats.streakDays === 1 ? t("1-day streak") : t("{n}-day streak", { n: stats.streakDays })}</span> : t("no streak yet — train today")}
           </span>
         </div>
       </div>
       <div style={{ overflowY: "auto", padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
-          <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>Brain regions</p>
+          <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>{t("Brain regions")}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {stats.regions.map((r) => (
-              <div key={r.id} title={r.detail}>
+              <div key={r.id} title={regionDetail(t, r)}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-                  <span style={{ font: font(600, 12.5) }}>{r.name}</span>
-                  <span style={{ font: font(700, 11), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>{r.stat} Lv {r.level}</span>
+                  <span style={{ font: font(600, 12.5) }}>{t(r.name)}</span>
+                  <span style={{ font: font(700, 11), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>{t("{stat} Lv {level}", { stat: t(r.stat), level: r.level })}</span>
                 </div>
                 <XpBar progress={r.progress} color="#ff7a5e" />
-                <p style={{ margin: "3px 0 0", font: font(400, 10.5), color: "#6f7889" }}>{r.detail}</p>
+                <p style={{ margin: "3px 0 0", font: font(400, 10.5), color: "#6f7889" }}>{regionDetail(t, r)}</p>
               </div>
             ))}
           </div>
         </div>
         {stats.clusters.length > 0 && (
           <div>
-            <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>Subjects</p>
+            <p style={{ margin: "0 0 8px", font: font(700, 10), letterSpacing: ".16em", textTransform: "uppercase", color: "#8891a0" }}>{t("Subjects")}</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
               {stats.clusters.slice(0, 6).map((c) => (
                 <div key={c.clusterId}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
                     <span style={{ font: font(600, 12), maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.cluster}</span>
-                    <span style={{ font: font(700, 11), color: "#a8c8d6", fontVariantNumeric: "tabular-nums" }}>Lv {c.level}</span>
+                    <span style={{ font: font(700, 11), color: "#a8c8d6", fontVariantNumeric: "tabular-nums" }}>{t("Lv {level}", { level: c.level })}</span>
                   </div>
                   <XpBar progress={c.progress} color="#8fb0c8" />
                 </div>
@@ -561,17 +582,19 @@ function CharacterSheet({ stats, onClose }: { stats: Stats; onClose: () => void 
           </div>
         )}
         <p style={{ margin: 0, font: font(400, 10.5), color: "#6f7889", lineHeight: 1.5 }}>
-          Every number is earned from real training. Each region of the brain lights with its own activity —
-          bright is strong, fading is due for review.
+          {t("Every number is earned from real training. Each region of the brain lights with its own activity — bright is strong, fading is due for review.")}
         </p>
       </div>
     </div>
   );
 }
 
-const KIND_LABEL: Record<string, string> = { guide: "Study guide", chapter: "Book chapter", lesson: "Lesson" };
+const KIND_LABEL: Record<string, string> = { guide: msg("Study guide"), chapter: msg("Book chapter"), lesson: msg("Lesson") };
 
 export default function MindScene() {
+  const { t } = useI18n();
+  const tRef = useRef<TFn>(t);
+  tRef.current = t;
   const [graph, setGraph] = useState<Graph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Placed | null>(null);
@@ -588,7 +611,7 @@ export default function MindScene() {
       .then((g) => {
         setGraph(g);
         // level-up ceremony: one toast at a time, each flaring its region
-        const ups = detectLevelUps(g.stats);
+        const ups = detectLevelUps(g.stats, tRef.current);
         if (ups.length) {
           let i = 0;
           const show = () => {
@@ -606,7 +629,7 @@ export default function MindScene() {
           setTimeout(show, 1200); // let the brain fade in first
         }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load your mind"));
+      .catch((e) => setError(e instanceof Error ? e.message : tRef.current("Could not load your mind")));
   }, []);
 
   const { placed, byId } = useMemo(
@@ -635,9 +658,9 @@ export default function MindScene() {
               <BrainMark />
             </span>
             <div style={{ minWidth: 0 }}>
-              <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>Your Mind</div>
+              <div style={{ font: font(800, 14), letterSpacing: ".12em", textTransform: "uppercase", color: "#eef1f5" }}>{t("Your Mind")}</div>
               <div style={{ font: font(500, 11), color: "#8891a0", whiteSpace: "nowrap" }}>
-                {graph ? `Level ${graph.stats.mindLevel} · ${graph.nodes.length} nodes · ${graph.stats.clusters.length} subjects` : "loading…"}
+                {graph ? t("Level {level} · {nodes} nodes · {subjects} subjects", { level: graph.stats.mindLevel, nodes: graph.nodes.length, subjects: graph.stats.clusters.length }) : t("loading…")}
               </div>
             </div>
             {graph && !sheetOpen && (
@@ -648,20 +671,20 @@ export default function MindScene() {
                   background: "rgba(255,66,38,.12)", border: "1px solid rgba(255,66,38,.3)", padding: "6px 12px", borderRadius: 999,
                 }}
               >
-                Character sheet
+                {t("Character sheet")}
               </button>
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <Link
               href="/app/mind/about"
-              title="What is this? How Your Mind works"
+              title={t("What is this? How Your Mind works")}
               style={{
                 pointerEvents: "auto", font: font(600, 12.5), color: "#cfd6e0", textDecoration: "none", whiteSpace: "nowrap",
                 background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
               }}
             >
-              ⓘ How this works
+              ⓘ {t("How this works")}
             </Link>
             <Link
               href="/app"
@@ -670,7 +693,7 @@ export default function MindScene() {
                 background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "7px 14px", borderRadius: 999,
               }}
             >
-              ✕ Close
+              ✕ {t("Close")}
             </Link>
           </div>
         </div>
@@ -680,7 +703,7 @@ export default function MindScene() {
             font: font(500, 11.5), color: "#6f7889", textAlign: "center", width: "max-content", maxWidth: "90vw",
           }}
         >
-          drag to orbit · scroll to zoom · click a node to fly in
+          {t("drag to orbit · scroll to zoom · click a node to fly in")}
         </div>
       </div>
 
@@ -705,7 +728,7 @@ export default function MindScene() {
             <BrainMark />
           </span>
           <div>
-            <div style={{ font: font(800, 10.5), letterSpacing: ".22em", textTransform: "uppercase", color: "#ffb8a6" }}>Level up</div>
+            <div style={{ font: font(800, 10.5), letterSpacing: ".22em", textTransform: "uppercase", color: "#ffb8a6" }}>{t("Level up")}</div>
             <div style={{ font: font(800, 15.5), color: "#fff", marginTop: 1 }}>{toast.title}</div>
             <div style={{ font: font(500, 11), color: "#8891a0", marginTop: 1 }}>{toast.sub}</div>
           </div>
@@ -726,7 +749,7 @@ export default function MindScene() {
           }}
         >
           <div style={{ font: font(700, 11), letterSpacing: ".14em", textTransform: "uppercase", color: "#ff9d86" }}>
-            {KIND_LABEL[selected.type]} · {REGION_NAME[selected.region]}
+            {KIND_LABEL[selected.type] ? t(KIND_LABEL[selected.type]) : null} · {t(REGION_NAME[selected.region])}
           </div>
           <div style={{ font: font(700, 17), margin: "6px 0 2px", lineHeight: 1.2 }}>{selected.label}</div>
           <div style={{ font: font(400, 12), color: "#8fb0c8", marginBottom: 4 }}>{selected.cluster}</div>
@@ -734,11 +757,11 @@ export default function MindScene() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <span style={{ font: font(700, 11.5), color: "#ffb8a6", fontVariantNumeric: "tabular-nums" }}>{selected.xp} XP</span>
             <div style={{ flex: 1 }}><XpBar progress={selected.mastery} color="#3fbf80" /></div>
-            <span style={{ font: font(600, 11), color: "#8891a0" }}>{Math.round(selected.mastery * 100)}% mastered</span>
+            <span style={{ font: font(600, 11), color: "#8891a0" }}>{t("{pct}% mastered", { pct: Math.round(selected.mastery * 100) })}</span>
           </div>
           {selected.heat < 0.25 && (
             <p style={{ margin: "0 0 10px", font: font(600, 11.5), color: "#ffb8a6" }}>
-              Fading — you haven&apos;t trained this in a while.
+              {t("Fading — you haven't trained this in a while.")}
             </p>
           )}
           <div style={{ display: "flex", gap: 8 }}>
@@ -749,7 +772,7 @@ export default function MindScene() {
                 font: font(700, 12.5), color: "#fff", background: "#ff4326", padding: "9px 10px", borderRadius: 999,
               }}
             >
-              Discuss with tutor
+              {t("Discuss with tutor")}
             </Link>
             <button
               onClick={() => setSelected(null)}
@@ -758,7 +781,7 @@ export default function MindScene() {
                 background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", padding: "9px 14px", borderRadius: 999,
               }}
             >
-              Back
+              {t("Back")}
             </button>
           </div>
         </div>
@@ -767,8 +790,7 @@ export default function MindScene() {
       {error && <Centered>{error}</Centered>}
       {graph && graph.nodes.length === 0 && (
         <Centered>
-          Your mind is quiet for now. Generate some lessons or a study guide and they&apos;ll appear here inside your brain —
-          and every focus session you log will light it up.
+          {t("Your mind is quiet for now. Generate some lessons or a study guide and they'll appear here inside your brain — and every focus session you log will light it up.")}
         </Centered>
       )}
 
