@@ -1,20 +1,21 @@
 import { BrainGlyph } from "@/components/icons";
 import type { CertData } from "./Certificate";
+import { fmtDate, makeT, msg, type TFn, type UiLocale } from "@/lib/i18n";
 
 export type TranscriptRow = { title: string; kind: string; completed_at: string | null; grade: string };
 
 const KIND: Record<string, string> = {
-  read: "Reading", teach: "Lecture", practice: "Practice", apply: "Apply", check: "Self-check", review: "Review",
+  read: msg("Reading"), teach: msg("Lecture"), practice: msg("Practice"), apply: msg("Apply"), check: msg("Self-check"), review: msg("Review"),
 };
-const kindLabel = (k: string) => KIND[k] ?? "Lesson";
-const shortDate = (iso: string | null) =>
-  iso ? new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z")).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
+const kindLabel = (k: string) => KIND[k] ?? msg("Lesson");
+const shortDate = (locale: UiLocale, iso: string | null) =>
+  iso ? fmtDate(locale, new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z")), { month: "short", day: "numeric" }) : "—";
 const completionPct = (c: CertData) => (c.sectionsTotal ? Math.round((c.sectionsDone / c.sectionsTotal) * 100) : 0);
 const timeLabel = (min: number) => (min >= 60 ? `${(min / 60).toFixed(1)}h` : `${min}m`);
 
-function GradePill({ grade, done }: { grade: string; done: boolean }) {
-  if (!done) return <span className="rounded-full bg-ink/6 px-2.5 py-1 text-[11.5px] font-semibold text-muted">Pending</span>;
-  if (!grade) return <span className="rounded-full bg-up/15 px-2.5 py-1 text-[11.5px] font-semibold text-up">Completed</span>;
+function GradePill({ grade, done, t }: { grade: string; done: boolean; t: TFn }) {
+  if (!done) return <span className="rounded-full bg-ink/6 px-2.5 py-1 text-[11.5px] font-semibold text-muted">{t("Pending")}</span>;
+  if (!grade) return <span className="rounded-full bg-up/15 px-2.5 py-1 text-[11.5px] font-semibold text-up">{t("Completed")}</span>;
   const tone = /^[A-F]/.test(grade)
     ? "bg-up/15 text-[#1f8043]"
     : grade.includes("%")
@@ -26,8 +27,9 @@ function GradePill({ grade, done }: { grade: string; done: boolean }) {
 export type ExamRow = { kind: string; best_score: number; passed: number };
 
 /** On-brand curriculum transcript — the graded record of everything done. */
-export default function Transcript({ c, rows, exams = [] }: { c: CertData; rows: TranscriptRow[]; exams?: ExamRow[] }) {
-  const issued = new Date(c.issuedAt.replace(" ", "T") + (c.issuedAt.includes("Z") ? "" : "Z")).toLocaleDateString("en-US", {
+export default function Transcript({ c, rows, exams = [], locale = "en" }: { c: CertData; rows: TranscriptRow[]; exams?: ExamRow[]; locale?: UiLocale }) {
+  const t = makeT(locale);
+  const issued = fmtDate(locale, new Date(c.issuedAt.replace(" ", "T") + (c.issuedAt.includes("Z") ? "" : "Z")), {
     year: "numeric", month: "long", day: "numeric",
   });
   return (
@@ -45,24 +47,24 @@ export default function Transcript({ c, rows, exams = [] }: { c: CertData; rows:
             <span className="font-display text-[20px] font-extrabold tracking-[2px]">ABRANY</span>
           </div>
           <span className="rounded-full border border-line px-3 py-1.5 text-[10.5px] font-bold tracking-[1.8px] text-muted">
-            OFFICIAL RECORD
+            {t("OFFICIAL RECORD")}
           </span>
         </div>
 
         {/* title */}
         <div>
-          <p className="font-display text-[12.5px] font-bold tracking-[3px] text-accent">CURRICULUM TRANSCRIPT</p>
+          <p className="font-display text-[12.5px] font-bold tracking-[3px] text-accent">{t("CURRICULUM TRANSCRIPT")}</p>
           <h1 className="mt-1.5 font-display text-[clamp(26px,4vw,34px)] font-extrabold leading-[1.02]">{c.title}</h1>
-          <p className="mt-1.5 text-[14px] text-muted">Issued to {c.recipientName} · Completed {issued}</p>
+          <p className="mt-1.5 text-[14px] text-muted">{t("Issued to {name} · Completed {date}", { name: c.recipientName, date: issued })}</p>
         </div>
 
         {/* summary tiles */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            [c.overall, "OVERALL", true],
-            [`${completionPct(c)}%`, "COMPLETION", false],
-            [timeLabel(c.minutesTotal), "TIME INVESTED", false],
-            [`${c.sectionsTotal}`, "SECTIONS", false],
+            [c.overall, t("OVERALL"), true],
+            [`${completionPct(c)}%`, t("COMPLETION"), false],
+            [timeLabel(c.minutesTotal), t("TIME INVESTED"), false],
+            [`${c.sectionsTotal}`, t("SECTIONS"), false],
           ].map(([v, l, accent], i) => (
             <div key={i} className="rounded-[16px] border border-line bg-white p-4">
               <p className={`font-display text-[22px] font-extrabold ${accent ? "text-accent" : "text-ink"}`}>{v as string}</p>
@@ -74,18 +76,18 @@ export default function Transcript({ c, rows, exams = [] }: { c: CertData; rows:
         {/* table */}
         <div className="overflow-hidden rounded-[16px] border border-line">
           <div className="grid grid-cols-[1fr_100px_96px_90px] bg-[#f1f5fa] px-5 py-3 text-[10.5px] font-medium tracking-[1px] text-muted">
-            <span>SECTION</span><span>TYPE</span><span>GRADE</span><span className="text-right">DONE</span>
+            <span>{t("SECTION")}</span><span>{t("TYPE")}</span><span>{t("GRADE")}</span><span className="text-right">{t("DONE")}</span>
           </div>
-          {rows.length === 0 && <p className="px-5 py-6 text-center text-[13px] text-muted">No sections recorded.</p>}
+          {rows.length === 0 && <p className="px-5 py-6 text-center text-[13px] text-muted">{t("No sections recorded.")}</p>}
           {rows.map((r, i) => (
             <div
               key={i}
               className={`grid grid-cols-[1fr_100px_96px_90px] items-center px-5 py-3 ${i % 2 ? "bg-[#fafcfe]" : "bg-white"} ${i < rows.length - 1 ? "border-b border-line" : ""}`}
             >
               <span className="truncate pr-3 text-[13.5px] font-semibold text-ink">{r.title}</span>
-              <span className="text-[12.5px] text-muted">{kindLabel(r.kind)}</span>
-              <span><GradePill grade={r.grade} done={!!r.completed_at} /></span>
-              <span className="text-right text-[12.5px] text-muted">{shortDate(r.completed_at)}</span>
+              <span className="text-[12.5px] text-muted">{t(kindLabel(r.kind))}</span>
+              <span><GradePill grade={r.grade} done={!!r.completed_at} t={t} /></span>
+              <span className="text-right text-[12.5px] text-muted">{shortDate(locale, r.completed_at)}</span>
             </div>
           ))}
         </div>
@@ -93,14 +95,14 @@ export default function Transcript({ c, rows, exams = [] }: { c: CertData; rows:
         {/* examinations */}
         {exams.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-[10.5px] font-medium tracking-[1px] text-muted">EXAMINATIONS · with study guides</p>
+            <p className="text-[10.5px] font-medium tracking-[1px] text-muted">{t("EXAMINATIONS · with study guides")}</p>
             <div className="flex flex-wrap gap-2">
               {exams.map((e, i) => (
                 <span
                   key={i}
                   className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold ${e.passed ? "bg-up/15 text-[#1f8043]" : "bg-ink/6 text-muted"}`}
                 >
-                  {e.kind === "final" ? "Final exam" : "Midterm"} — {e.best_score}%{e.passed ? " · Passed ✓" : ""}
+                  {e.kind === "final" ? t("Final exam") : t("Midterm")} — {e.best_score}%{e.passed ? " · " + t("Passed ✓") : ""}
                 </span>
               ))}
             </div>
@@ -114,12 +116,12 @@ export default function Transcript({ c, rows, exams = [] }: { c: CertData; rows:
               <BrainGlyph className="size-4" />
             </span>
             <div>
-              <p className="text-[13px] font-semibold text-ink">Verified by Abrany</p>
-              <p className="text-[11.5px] text-muted">Official record of completion</p>
+              <p className="text-[13px] font-semibold text-ink">{t("Verified by Abrany")}</p>
+              <p className="text-[11.5px] text-muted">{t("Official record of completion")}</p>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[9.5px] font-medium tracking-[1.5px] text-muted">CREDENTIAL ID</p>
+            <p className="text-[9.5px] font-medium tracking-[1.5px] text-muted">{t("CREDENTIAL ID")}</p>
             <p className="text-[13px] font-semibold tracking-[0.3px] text-ink">{c.id}</p>
           </div>
         </div>

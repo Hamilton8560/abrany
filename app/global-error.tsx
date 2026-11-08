@@ -1,12 +1,36 @@
 "use client"; // Error boundaries must be Client Components
 
+import { useEffect, useState } from "react";
+import { makeT } from "@/lib/i18n";
+import { DEFAULT_UI_LOCALE, LOCALE_COOKIE, resolveUiLocale, toUiLocale } from "@/lib/i18n/locale";
+
 /**
  * Last-resort boundary: catches anything the root layout throws (including a
  * hydration/translation crash that slipped past the DOM guard) so users get a
  * clear recovery action instead of a blank, stuck-loading page. It replaces the
  * root layout when active, so it must ship its own <html>/<body> and can't rely
  * on the app's stylesheet — everything here is inline.
+ *
+ * It also renders outside the I18nProvider, so it picks the language itself:
+ * the <html lang> the root layout already wrote (account language), else the
+ * remembered-language cookie, else the browser — English until mounted so the
+ * server and client render agree.
  */
+function useGlobalErrorLocale(): string {
+  const [locale, setLocale] = useState<string>(DEFAULT_UI_LOCALE);
+  useEffect(() => {
+    const fromHtml = toUiLocale(document.documentElement.lang);
+    const cookie = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith(`${LOCALE_COOKIE}=`))
+      ?.split("=")[1];
+    setLocale(
+      fromHtml ?? resolveUiLocale({ cookie, acceptLanguage: navigator.languages?.join(",") || navigator.language }),
+    );
+  }, []);
+  return locale;
+}
+
 export default function GlobalError({
   error,
   unstable_retry,
@@ -14,8 +38,10 @@ export default function GlobalError({
   error: Error & { digest?: string };
   unstable_retry: () => void;
 }) {
+  const locale = useGlobalErrorLocale();
+  const t = makeT(locale);
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body
         style={{
           margin: 0,
@@ -34,11 +60,10 @@ export default function GlobalError({
             ABRANY
           </div>
           <h2 style={{ margin: "14px 0 8px", fontSize: 22, fontWeight: 800 }}>
-            Something interrupted the page
+            {t("Something interrupted the page")}
           </h2>
           <p style={{ margin: "0 0 20px", fontSize: 14, lineHeight: 1.6, color: "#a1a1aa" }}>
-            This can happen if a browser translation ran mid-render. Your data is safe — reload to
-            continue.
+            {t("This can happen if a browser translation ran mid-render. Your data is safe — reload to continue.")}
           </p>
           <button
             onClick={() => unstable_retry()}
@@ -53,10 +78,10 @@ export default function GlobalError({
               color: "#0b0b0f",
             }}
           >
-            Reload
+            {t("Reload")}
           </button>
           {error?.digest && (
-            <p style={{ marginTop: 16, fontSize: 11, color: "#52525b" }}>ref {error.digest}</p>
+            <p style={{ marginTop: 16, fontSize: 11, color: "#52525b" }}>{t("ref {digest}", { digest: error.digest })}</p>
           )}
         </div>
       </body>

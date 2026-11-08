@@ -5,6 +5,13 @@ import { qrDataUrl } from "@/lib/qr";
 import Certificate, { type CertData } from "@/components/app/Certificate";
 import Transcript from "@/components/app/Transcript";
 import { CheckIcon } from "@/components/icons";
+import { getUiLocale } from "@/lib/i18n/server";
+import { makeT } from "@/lib/i18n";
+
+/** Render a translated sentence, swapping its {placeholders} for JSX so word order follows the language. */
+function rich(s: string, parts: Record<string, React.ReactNode>): React.ReactNode[] {
+  return s.split(/\{(\w+)\}/).map((seg, i) => (i % 2 ? <span key={i}>{parts[seg] ?? `{${seg}}`}</span> : seg));
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,16 +20,18 @@ export const dynamic = "force-dynamic";
 export default async function VerifyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const cert = getCertificate(id);
+  const locale = await getUiLocale();
+  const t = makeT(locale);
 
   if (!cert) {
     return (
       <main className="grid min-h-dvh place-items-center px-6 py-16">
         <div className="glass w-full max-w-[440px] rounded-[var(--radius-card-lg)] p-8 text-center">
-          <h1 className="font-display text-[24px] font-extrabold uppercase text-ink">Credential not found</h1>
+          <h1 className="font-display text-[24px] font-extrabold uppercase text-ink">{t("Credential not found")}</h1>
           <p className="mt-2 text-[14px] text-muted">
-            No Abrany credential matches <span className="font-semibold text-ink">{id}</span>. Check the ID and try again.
+            {rich(t("No Abrany credential matches {id}. Check the ID and try again."), { id: <span className="font-semibold text-ink">{id}</span> })}
           </p>
-          <Link href="/" className="mt-5 inline-block text-[13px] font-semibold text-accent">← Back to Abrany</Link>
+          <Link href="/" className="mt-5 inline-block text-[13px] font-semibold text-accent">{t("← Back to Abrany")}</Link>
         </div>
       </main>
     );
@@ -55,27 +64,28 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
           <CheckIcon className="size-6" />
         </span>
         <div>
-          <p className="font-display text-[18px] font-extrabold uppercase text-ink">Verified credential</p>
+          <p className="font-display text-[18px] font-extrabold uppercase text-ink">{t("Verified credential")}</p>
           <p className="mt-1 text-[14px] text-muted">
-            <span className="font-semibold text-ink">{cert.recipient_name}</span> completed{" "}
-            <span className="font-semibold text-ink">{cert.title}</span>
-            {cert.org_name ? (
-              <>
-                {" "}under <span className="font-semibold text-ink">{cert.org_name}</span> on Abrany
-              </>
-            ) : (
-              " on Abrany"
+            {rich(
+              cert.org_name
+                ? t("{name} completed {title} under {org} on Abrany. Credential {id}.")
+                : t("{name} completed {title} on Abrany. Credential {id}."),
+              {
+                name: <span className="font-semibold text-ink">{cert.recipient_name}</span>,
+                title: <span className="font-semibold text-ink">{cert.title}</span>,
+                org: <span className="font-semibold text-ink">{cert.org_name}</span>,
+                id: <span className="font-semibold text-ink">{cert.id}</span>,
+              },
             )}
-            . Credential <span className="font-semibold text-ink">{cert.id}</span>.
           </p>
         </div>
       </div>
 
-      <Certificate c={c} />
-      <Transcript c={c} rows={rows} exams={exams} />
+      <Certificate c={c} locale={locale} />
+      <Transcript c={c} rows={rows} exams={exams} locale={locale} />
 
       <p className="text-center text-[12.5px] text-muted">
-        <Link href="/" className="font-semibold text-accent">Abrany</Link> — the first personal brain trainer.
+        <Link href="/" className="font-semibold text-accent">Abrany</Link> {t("— the first personal brain trainer.")}
       </p>
     </main>
   );

@@ -6,10 +6,13 @@ import { api, fmtWhen } from "@/lib/client";
 import type { Presentation } from "@/lib/repo";
 import { ArrowRight, PlusIcon, SlidesIcon } from "@/components/icons";
 import DraftAssistant from "@/components/app/DraftAssistant";
+import { useT } from "@/lib/i18n/client";
+import { plural } from "@/lib/i18n";
 
 const PAGE_SIZE = 8;
 
 export default function PresentationsPage() {
+  const t = useT();
   const [decks, setDecks] = useState<Presentation[]>([]);
   const [topic, setTopic] = useState("");
   const [creating, setCreating] = useState(false);
@@ -67,7 +70,7 @@ export default function PresentationsPage() {
       setPage(0); // jump back to the newest deck we just started
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start the deck");
+      setError(err instanceof Error ? err.message : t("Could not start the deck"));
     } finally {
       setCreating(false);
     }
@@ -79,14 +82,14 @@ export default function PresentationsPage() {
         <div className="flex items-center gap-3">
           <span className="h-[2px] w-[26px] bg-accent" />
           <span className="text-[12px] font-medium text-accent" style={{ letterSpacing: "1.68px" }}>
-            PRESENTATIONS
+            {t("PRESENTATIONS")}
           </span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(30px,4vw,42px)] font-extrabold uppercase leading-[0.98] text-ink">
-          Decks on demand
+          {t("Decks on demand")}
         </h1>
         <p className="mt-2 max-w-[480px] text-[14px] text-muted">
-          Your coach builds a full slide deck on any topic — with diagrams — ready to present or export.
+          {t("Your coach builds a full slide deck on any topic — with diagrams — ready to present or export.")}
         </p>
       </header>
 
@@ -95,13 +98,13 @@ export default function PresentationsPage() {
           surfaceId="presentation"
           seed={topic}
           onApply={(v) => setTopic(v.topic ?? topic)}
-          triggerLabel="Not sure what to say? Draft with AI"
+          triggerLabel={t("Not sure what to say? Draft with AI")}
         />
       <form onSubmit={create} className="glass flex flex-col gap-3 rounded-[var(--radius-card-lg)] p-5 sm:flex-row">
         <input
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          placeholder="e.g. How spaced repetition works, for a study group"
+          placeholder={t("e.g. How spaced repetition works, for a study group")}
           className="flex-1 rounded-[14px] border border-line bg-white/70 px-4 py-3 text-[15px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
         />
         <button
@@ -109,7 +112,7 @@ export default function PresentationsPage() {
           disabled={creating || !topic.trim()}
           className="glassx-dark flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[13px] font-semibold text-white disabled:opacity-50"
         >
-          <PlusIcon className="size-3.5" /> {creating ? "Starting…" : "Build deck"}
+          <PlusIcon className="size-3.5" /> {creating ? t("Starting…") : t("Build deck")}
         </button>
       </form>
       </div>
@@ -117,7 +120,7 @@ export default function PresentationsPage() {
 
       <section className="flex flex-col gap-3">
         {decks.length === 0 && (
-          <p className="text-[14px] text-muted">No decks yet — build one above.</p>
+          <p className="text-[14px] text-muted">{t("No decks yet — build one above.")}</p>
         )}
         {visible.map((d) => (
           <DeckRow key={d.id} deck={d} onDeleted={load} />
@@ -130,17 +133,17 @@ export default function PresentationsPage() {
               disabled={page === 0}
               className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink transition-opacity disabled:opacity-40"
             >
-              ← Prev
+              ← {t("Prev")}
             </button>
             <span className="text-[12px] tabular-nums text-muted">
-              Page {page + 1} of {pageCount} · {decks.length} decks
+              {t("Page {page} of {count}", { page: page + 1, count: pageCount })} · {plural(t, decks.length, "{n} deck", "{n} decks")}
             </span>
             <button
               onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
               disabled={page >= pageCount - 1}
               className="glassx rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink transition-opacity disabled:opacity-40"
             >
-              Next →
+              {t("Next")} →
             </button>
           </nav>
         )}
@@ -150,6 +153,7 @@ export default function PresentationsPage() {
 }
 
 function DeckRow({ deck, onDeleted }: { deck: Presentation; onDeleted: () => void }) {
+  const t = useT();
   const generating = deck.status === "generating";
   const errored = deck.status === "error";
 
@@ -167,10 +171,10 @@ function DeckRow({ deck, onDeleted }: { deck: Presentation; onDeleted: () => voi
         <p className="truncate text-[12.5px] text-muted">
           {generating ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-2 animate-pulse rounded-full bg-accent" /> Building your deck…
+              <span className="size-2 animate-pulse rounded-full bg-accent" /> {t("Building your deck…")}
             </span>
           ) : errored ? (
-            <span className="text-accent">Failed — {deck.error || "try again"}</span>
+            <span className="text-accent">{t("Failed — {error}", { error: deck.error || t("try again") })}</span>
           ) : (
             `${fmtWhen(deck.created_at)}`
           )}

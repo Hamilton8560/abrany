@@ -6,6 +6,7 @@ import CoachChat from "@/components/app/CoachChat";
 import MemoryPanel from "@/components/app/MemoryPanel";
 import { api } from "@/lib/client";
 import type { PublicUser } from "@/lib/user";
+import { useT } from "@/lib/i18n/client";
 
 function CoachInner() {
   const params = useSearchParams();
@@ -33,25 +34,27 @@ const PROVIDER_LABEL: Record<string, string> = {
 
 /** "AI COACH · <who powers it>" — no longer hardcoded to one vendor. */
 function useAiLabel(): string {
-  const [label, setLabel] = useState("AI COACH");
+  const t = useT();
+  const [label, setLabel] = useState(t("AI COACH"));
   useEffect(() => {
     api<{ user: PublicUser }>("/api/auth/me")
       .then((d) => {
         const u = d.user;
         if (!u) return;
-        if (u.isOwner) setLabel("AI COACH · BUILT-IN");
-        else if (u.hasKey) setLabel(`AI COACH · ${PROVIDER_LABEL[u.provider] ?? u.provider.toUpperCase()}`);
-        else if (u.orgAi) setLabel("AI COACH · YOUR COMPANY'S AI");
-        else if (u.freeAiAccess) setLabel("AI COACH · SHARED AI");
-        else setLabel("AI COACH · ADD A KEY IN SETTINGS");
+        if (u.isOwner) setLabel(t("AI COACH · BUILT-IN"));
+        else if (u.hasKey) setLabel(t("AI COACH · {provider}", { provider: PROVIDER_LABEL[u.provider] ?? u.provider.toUpperCase() }));
+        else if (u.orgAi) setLabel(t("AI COACH · YOUR COMPANY'S AI"));
+        else if (u.freeAiAccess) setLabel(t("AI COACH · SHARED AI"));
+        else setLabel(t("AI COACH · ADD A KEY IN SETTINGS"));
       })
       .catch(() => {});
-  }, []);
+  }, [t]);
   return label;
 }
 
 export default function CoachPage() {
   const label = useAiLabel();
+  const t = useT();
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-5">
       <header>
@@ -63,7 +66,7 @@ export default function CoachPage() {
         </div>
       </header>
       <MemoryPanel />
-      <Suspense fallback={<p className="text-[14px] text-muted">Loading coach…</p>}>
+      <Suspense fallback={<p className="text-[14px] text-muted">{t("Loading coach…")}</p>}>
         <CoachInner />
       </Suspense>
     </div>

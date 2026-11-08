@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { msg, type TFn } from "@/lib/i18n";
+import { useT } from "@/lib/i18n/client";
 import { Logo } from "@/components/Nav";
 import QueueBadge from "./QueueBadge";
 import {
@@ -35,11 +37,12 @@ type NavGroup = { title: string | null; items: NavItem[] };
  * nav row: it's the brain itself, a gesture. A soft accent pulse hints it's alive.
  */
 function MindPortal() {
+  const t = useT();
   return (
     <Link
       href="/app/mind"
-      aria-label="Open your mind — your knowledge map"
-      title="Your Mind — your knowledge, mapped"
+      aria-label={t("Open your mind — your knowledge map")}
+      title={t("Your Mind — your knowledge, mapped")}
       className="mind-portal grid size-8 shrink-0 place-items-center rounded-[11px] bg-ink text-white transition-transform hover:scale-105"
     >
       <BrainGlyph className="size-4" />
@@ -55,39 +58,39 @@ function MindPortal() {
 const GROUPS: NavGroup[] = [
   {
     title: null, // home stands alone
-    items: [{ href: "/app", label: "Dashboard", short: "Home", Icon: HomeIcon }],
+    items: [{ href: "/app", label: msg("Dashboard"), short: msg("Home"), Icon: HomeIcon }],
   },
   {
-    title: "Learn",
+    title: msg("Learn"),
     items: [
-      { href: "/app/goals", label: "Goals & Plans", short: "Goals", Icon: TargetIcon },
-      { href: "/app/coach", label: "Coach", short: "Coach", Icon: ChatIcon },
-      { href: "/app/guides", label: "Study Guides", short: "Guides", Icon: GuideIcon },
-      { href: "/app/review", label: "Review", short: "Review", Icon: ReviewIcon },
-      { href: "/app/timer", label: "Focus Timer", short: "Timer", Icon: TimerIcon },
+      { href: "/app/goals", label: msg("Goals & Plans"), short: msg("Goals"), Icon: TargetIcon },
+      { href: "/app/coach", label: msg("Coach"), short: msg("Coach"), Icon: ChatIcon },
+      { href: "/app/guides", label: msg("Study Guides"), short: msg("Guides"), Icon: GuideIcon },
+      { href: "/app/review", label: msg("Review"), short: msg("Review"), Icon: ReviewIcon },
+      { href: "/app/timer", label: msg("Focus Timer"), short: msg("Timer"), Icon: TimerIcon },
     ],
   },
   {
-    title: "Create",
+    title: msg("Create"),
     items: [
-      { href: "/app/presentations", label: "Presentations", short: "Slides", Icon: SlidesIcon },
-      { href: "/app/books", label: "Books", short: "Books", Icon: BookIcon },
-      { href: "/app/workshop", label: "Workshop", short: "Workshop", Icon: WrenchIcon, beta: true },
+      { href: "/app/presentations", label: msg("Presentations"), short: msg("Slides"), Icon: SlidesIcon },
+      { href: "/app/books", label: msg("Books"), short: msg("Books"), Icon: BookIcon },
+      { href: "/app/workshop", label: msg("Workshop"), short: msg("Workshop"), Icon: WrenchIcon, beta: true },
     ],
   },
   {
-    title: "Progress",
+    title: msg("Progress"),
     items: [
-      { href: "/app/achievements", label: "Achievements", short: "Awards", Icon: AwardIcon },
-      { href: "/app/log", label: "Training Log", short: "Log", Icon: JournalIcon },
+      { href: "/app/achievements", label: msg("Achievements"), short: msg("Awards"), Icon: AwardIcon },
+      { href: "/app/log", label: msg("Training Log"), short: msg("Log"), Icon: JournalIcon },
     ],
   },
   {
-    title: "Explore",
+    title: msg("Explore"),
     items: [
-      { href: "/app/market", label: "Marketplace", short: "Market", Icon: StoreIcon },
-      { href: "/app/community", label: "Community", short: "Forums", Icon: ForumIcon },
-      { href: "/app/org", label: "My Company", short: "Company", Icon: BuildingIcon },
+      { href: "/app/market", label: msg("Marketplace"), short: msg("Market"), Icon: StoreIcon },
+      { href: "/app/community", label: msg("Community"), short: msg("Forums"), Icon: ForumIcon },
+      { href: "/app/org", label: msg("My Company"), short: msg("Company"), Icon: BuildingIcon },
     ],
   },
 ];
@@ -117,12 +120,26 @@ function useDueCount() {
   return due;
 }
 
+/** The small line under the email saying where this account's AI comes from. */
+function aiSource(user: PublicUser, t: TFn): string {
+  return user.isOwner
+    ? t("Owner · built-in AI")
+    : user.hasKey
+      ? user.provider || t("your key")
+      : user.orgAi
+        ? t("your company's AI")
+        : user.freeAiAccess
+          ? t("free shared AI")
+          : t("add your AI key");
+}
+
 async function logout() {
   await fetch("/api/auth/logout", { method: "POST" });
   window.location.href = "/login";
 }
 
 export default function Sidebar({ user }: { user: PublicUser }) {
+  const t = useT();
   const pathname = usePathname();
   const due = useDueCount();
 
@@ -139,7 +156,7 @@ export default function Sidebar({ user }: { user: PublicUser }) {
             <div key={gi} className="flex flex-col gap-0.5">
               {group.title && (
                 <p className="mt-4 px-3 pb-1 text-[10px] font-bold uppercase tracking-[1.6px] text-muted/60">
-                  {group.title}
+                  {t(group.title)}
                 </p>
               )}
               {group.items.map(({ href, label, Icon, beta }) => {
@@ -155,14 +172,14 @@ export default function Sidebar({ user }: { user: PublicUser }) {
                     }`}
                   >
                     <Icon className={`size-[18px] ${active ? "text-white" : "text-muted group-hover:text-ink"}`} />
-                    <span className="flex-1">{label}</span>
+                    <span className="flex-1">{t(label)}</span>
                     {beta && (
                       <span
                         className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
                           active ? "bg-white/25 text-white" : "bg-accent/12 text-accent"
                         }`}
                       >
-                        Beta
+                        {t("Beta")}
                       </span>
                     )}
                     {href === "/app/review" && due > 0 && (
@@ -192,29 +209,21 @@ export default function Sidebar({ user }: { user: PublicUser }) {
             }`}
           >
             <SettingsIcon className="size-[18px]" />
-            AI & Settings
+            {t("AI & Settings")}
             {!user.canUseAi && <span className="ml-auto size-2 rounded-full bg-accent" />}
           </Link>
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="min-w-0">
               <p className="truncate text-[11.5px] font-medium text-ink">{user.email}</p>
               <p className="text-[10px] text-muted">
-                {user.isOwner
-                  ? "Owner · built-in AI"
-                  : user.hasKey
-                    ? user.provider || "your key"
-                    : user.orgAi
-                      ? "your company's AI"
-                      : user.freeAiAccess
-                        ? "free shared AI"
-                        : "add your AI key"}
+                {aiSource(user, t)}
               </p>
             </div>
             <button
               onClick={logout}
               className="shrink-0 text-[11px] font-semibold text-muted hover:text-accent"
             >
-              Sign out
+              {t("Sign out")}
             </button>
           </div>
         </div>
@@ -225,6 +234,7 @@ export default function Sidebar({ user }: { user: PublicUser }) {
 
 /** Compact top bar + bottom tab bar for mobile (sidebar hidden below lg). */
 export function MobileBar({ user }: { user: PublicUser }) {
+  const t = useT();
   const pathname = usePathname();
   const due = useDueCount();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -264,7 +274,7 @@ export function MobileBar({ user }: { user: PublicUser }) {
                   </span>
                 )}
               </span>
-              {short ?? label}
+              {t(short ?? label)}
             </Link>
           );
         })}
@@ -283,7 +293,7 @@ export function MobileBar({ user }: { user: PublicUser }) {
               </span>
             )}
           </span>
-          More
+          {t("More")}
         </button>
       </nav>
 
@@ -309,9 +319,9 @@ export function MobileBar({ user }: { user: PublicUser }) {
                     }`}
                   >
                     <Icon className={`size-[22px] ${active ? "text-white" : "text-muted"}`} />
-                    <span className="leading-tight">{label}</span>
+                    <span className="leading-tight">{t(label)}</span>
                     {href === "/app/review" && due > 0 && (
-                      <span className="rounded-full bg-accent px-1.5 text-[9px] font-bold text-white">{due} due</span>
+                      <span className="rounded-full bg-accent px-1.5 text-[9px] font-bold text-white">{t("{n} due", { n: due })}</span>
                     )}
                   </Link>
                 );
@@ -324,7 +334,7 @@ export function MobileBar({ user }: { user: PublicUser }) {
                 }`}
               >
                 <SettingsIcon className={`size-[22px] ${pathname.startsWith("/app/settings") ? "text-white" : "text-muted"}`} />
-                <span className="leading-tight">AI &amp; Settings</span>
+                <span className="leading-tight">{t("AI & Settings")}</span>
                 {!user.canUseAi && <span className="size-1.5 rounded-full bg-accent" />}
               </Link>
             </div>
@@ -332,22 +342,14 @@ export function MobileBar({ user }: { user: PublicUser }) {
               <div className="min-w-0">
                 <p className="truncate text-[12px] font-medium text-ink">{user.email}</p>
                 <p className="text-[10.5px] text-muted">
-                  {user.isOwner
-                    ? "Owner · built-in AI"
-                    : user.hasKey
-                      ? user.provider || "your key"
-                      : user.orgAi
-                        ? "your company's AI"
-                        : user.freeAiAccess
-                          ? "free shared AI"
-                          : "add your AI key"}
+                  {aiSource(user, t)}
                 </p>
               </div>
               <button
                 onClick={logout}
                 className="shrink-0 rounded-full glassx px-4 py-2 text-[12px] font-semibold text-muted"
               >
-                Sign out
+                {t("Sign out")}
               </button>
             </div>
           </div>

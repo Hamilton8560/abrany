@@ -1,4 +1,5 @@
 import { BrainGlyph, CheckIcon } from "@/components/icons";
+import { fmtDate as fmtLocaleDate, makeT, type TFn, type UiLocale } from "@/lib/i18n";
 
 export type CertData = {
   id: string;
@@ -16,21 +17,22 @@ export type CertData = {
   orgLogo?: string; // data URL
 };
 
-const fmtDate = (iso: string) =>
-  new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z")).toLocaleDateString("en-US", {
+const fmtDate = (locale: UiLocale, iso: string) =>
+  fmtLocaleDate(locale, new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z")), {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
 
-const timeLabel = (min: number) => (min >= 60 ? `${(min / 60).toFixed(1)} hrs` : `${min} min`);
+const timeLabel = (t: TFn, min: number) => (min >= 60 ? t("{n} hrs", { n: (min / 60).toFixed(1) }) : t("{n} min", { n: min }));
 
 /**
  * On-brand certificate of completion. Sized with container-query units (cqw) so
  * it scales perfectly from a phone to a print sheet. Drop it in a container of
  * any width; everything tracks that width.
  */
-export default function Certificate({ c }: { c: CertData }) {
+export default function Certificate({ c, locale = "en" }: { c: CertData; locale?: UiLocale }) {
+  const t = makeT(locale);
   return (
     <div
       className="relative w-full overflow-hidden rounded-[2cqw] border border-line bg-[#fcfdfe] text-ink shadow-[var(--shadow-card)]"
@@ -51,9 +53,9 @@ export default function Certificate({ c }: { c: CertData }) {
       {/* QR → verify page */}
       {c.qr && (
         <div className="absolute flex flex-col items-center" style={{ right: "6cqw", top: "6cqw", gap: "0.5cqw" }}>
-          <img src={c.qr} alt="Scan to verify" style={{ width: "7cqw", height: "7cqw" }} />
+          <img src={c.qr} alt={t("Scan to verify")} style={{ width: "7cqw", height: "7cqw" }} />
           <span className="font-medium text-muted" style={{ fontSize: "0.72cqw", letterSpacing: "0.14cqw" }}>
-            SCAN TO VERIFY
+            {t("SCAN TO VERIFY")}
           </span>
         </div>
       )}
@@ -69,7 +71,7 @@ export default function Certificate({ c }: { c: CertData }) {
               {c.orgName}
             </span>
             <span className="font-medium text-muted" style={{ fontSize: "0.95cqw", letterSpacing: "0.16cqw" }}>
-              ISSUED IN PARTNERSHIP WITH ABRANY
+              {t("ISSUED IN PARTNERSHIP WITH ABRANY")}
             </span>
           </div>
         ) : (
@@ -81,12 +83,12 @@ export default function Certificate({ c }: { c: CertData }) {
           </div>
         )}
         <p className="font-display font-bold text-accent" style={{ fontSize: "1.15cqw", letterSpacing: "0.34cqw" }}>
-          CERTIFICATE OF COMPLETION
+          {t("CERTIFICATE OF COMPLETION")}
         </p>
         <div className="flex flex-col items-center" style={{ gap: "0.4cqw" }}>
-          <p className="text-muted" style={{ fontSize: "1.35cqw" }}>This certifies that</p>
+          <p className="text-muted" style={{ fontSize: "1.35cqw" }}>{t("This certifies that")}</p>
           <p className="font-display font-extrabold leading-[1]" style={{ fontSize: "5.2cqw" }}>{c.recipientName}</p>
-          <p className="text-muted" style={{ fontSize: "1.35cqw" }}>has successfully completed</p>
+          <p className="text-muted" style={{ fontSize: "1.35cqw" }}>{t("has successfully completed")}</p>
         </div>
         <p className="font-display font-semibold" style={{ fontSize: "2.4cqw" }}>{c.title}</p>
       </div>
@@ -94,9 +96,9 @@ export default function Certificate({ c }: { c: CertData }) {
       {/* metrics */}
       <div className="absolute inset-x-0 flex items-center justify-center" style={{ bottom: "26cqw", gap: "3.8cqw" }}>
         {[
-          [fmtDate(c.issuedAt), "DATE ISSUED"],
-          [`${c.sectionsDone} / ${c.sectionsTotal}`, "SECTIONS COMPLETED"],
-          [timeLabel(c.minutesTotal), "TIME INVESTED"],
+          [fmtDate(locale, c.issuedAt), t("DATE ISSUED")],
+          [`${c.sectionsDone} / ${c.sectionsTotal}`, t("SECTIONS COMPLETED")],
+          [timeLabel(t, c.minutesTotal), t("TIME INVESTED")],
         ].map(([v, l], i) => (
           <div key={i} className="flex items-center" style={{ gap: "3.8cqw" }}>
             {i > 0 && <span className="bg-line" style={{ width: "0.08cqw", height: "3.3cqw" }} />}
@@ -117,7 +119,7 @@ export default function Certificate({ c }: { c: CertData }) {
           <CheckIcon style={{ width: "3.4cqw", height: "3.4cqw" }} />
         </span>
         <span className="font-display font-bold text-accent" style={{ fontSize: "0.92cqw", letterSpacing: "0.18cqw" }}>
-          VERIFIED CREDENTIAL
+          {t("VERIFIED CREDENTIAL")}
         </span>
       </div>
 
@@ -125,12 +127,12 @@ export default function Certificate({ c }: { c: CertData }) {
       <div className="absolute flex flex-col items-center" style={{ right: "9cqw", bottom: "8cqw", gap: "0.5cqw" }}>
         <span className="font-display italic" style={{ fontSize: "2.5cqw" }}>Abrany</span>
         <span className="bg-ink/50" style={{ width: "20cqw", height: "0.12cqw" }} />
-        <span className="text-muted" style={{ fontSize: "1.05cqw" }}>Abrany · AI Training Coach</span>
+        <span className="text-muted" style={{ fontSize: "1.05cqw" }}>{t("Abrany · AI Training Coach")}</span>
       </div>
 
       {/* credential + verify */}
       <p className="absolute inset-x-0 text-center text-muted" style={{ bottom: "2.4cqw", fontSize: "0.95cqw" }}>
-        Credential ID {c.id} &nbsp;·&nbsp; Verify at {c.verifyUrl.replace(/^https?:\/\//, "")}
+        {t("Credential ID {id}", { id: c.id })} &nbsp;·&nbsp; {t("Verify at {url}", { url: c.verifyUrl.replace(/^https?:\/\//, "") })}
       </p>
     </div>
   );

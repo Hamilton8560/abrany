@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Archivo, Inter } from "next/font/google";
 import { TimerProvider } from "@/components/timer/TimerProvider";
 import MiniTimer from "@/components/timer/MiniTimer";
+import { I18nProvider } from "@/lib/i18n/client";
+import { getUiLocale } from "@/lib/i18n/server";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -40,23 +42,27 @@ const TRANSLATE_GUARD = `(function(){if(typeof Node!=='function'||!Node.prototyp
 var r=Node.prototype.removeChild;Node.prototype.removeChild=function(c){if(c&&c.parentNode!==this){return c;}return r.apply(this,arguments);};
 var i=Node.prototype.insertBefore;Node.prototype.insertBefore=function(n,ref){if(ref&&ref.parentNode!==this){return n;}return i.apply(this,arguments);};})();`;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // the signed-in account's language wins over the browser's (see lib/i18n/locale)
+  const locale = await getUiLocale();
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${archivo.variable} ${inter.variable} antialiased`}
       suppressHydrationWarning
     >
       <body suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: TRANSLATE_GUARD }} />
-        <TimerProvider>
-          {children}
-          <MiniTimer />
-        </TimerProvider>
+        <I18nProvider locale={locale}>
+          <TimerProvider>
+            {children}
+            <MiniTimer />
+          </TimerProvider>
+        </I18nProvider>
       </body>
     </html>
   );

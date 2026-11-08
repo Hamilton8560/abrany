@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/client";
 import { BrainGlyph } from "@/components/icons";
+import { msg } from "@/lib/i18n";
+import { useT } from "@/lib/i18n/client";
 
 type Memory = {
   id: number;
@@ -14,10 +16,10 @@ type Memory = {
 };
 
 const CAT_LABEL: Record<Memory["category"], string> = {
-  preference: "Preference",
-  goal: "Goal",
-  struggle: "Struggle",
-  context: "About you",
+  preference: msg("Preference"),
+  goal: msg("Goal"),
+  struggle: msg("Struggle"),
+  context: msg("About you"),
 };
 
 /**
@@ -30,6 +32,7 @@ export default function MemoryPanel() {
   const [text, setText] = useState("");
   const [category, setCategory] = useState<Memory["category"]>("preference");
   const [busy, setBusy] = useState(false);
+  const t = useT();
 
   const load = () =>
     api<{ memories: Memory[] }>("/api/memories")
@@ -75,7 +78,7 @@ export default function MemoryPanel() {
             <BrainGlyph className="size-3.5" />
           </span>
           <span className="text-[13px] font-semibold text-ink">
-            What your coach remembers about you
+            {t("What your coach remembers about you")}
           </span>
           {count > 0 && (
             <span className="rounded-full bg-ink/8 px-2 py-0.5 text-[11px] font-semibold text-muted">{count}</span>
@@ -87,10 +90,9 @@ export default function MemoryPanel() {
       {open && (
         <div className="border-t border-line/70 p-4">
           <p className="mb-3 text-[12px] text-muted">
-            Your coach uses these to personalize every conversation and steer you toward what helps most.
-            It adds them as you talk; you can add or forget any of them.{" "}
+            {t("Your coach uses these to personalize every conversation and steer you toward what helps most. It adds them as you talk; you can add or forget any of them.")}{" "}
             <Link href="/app/mind/about#memory" className="font-medium text-accent hover:underline">
-              How this works →
+              {t("How this works →")}
             </Link>
           </p>
 
@@ -102,23 +104,22 @@ export default function MemoryPanel() {
                   className="flex items-start gap-2.5 rounded-[12px] bg-white/60 px-3.5 py-2.5"
                 >
                   <span className="mt-0.5 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
-                    {CAT_LABEL[m.category]}
+                    {t(CAT_LABEL[m.category])}
                   </span>
                   <span className="min-w-0 flex-1 text-[13px] text-ink">{m.text}</span>
                   <button
                     onClick={() => forget(m)}
-                    title="Forget this"
+                    title={t("Forget this")}
                     className="shrink-0 text-[11px] font-semibold text-muted hover:text-accent"
                   >
-                    Forget
+                    {t("Forget")}
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
             <p className="mb-3 text-[12.5px] text-muted">
-              Nothing yet. Tell your coach about yourself — how you learn, your goals, what trips you up —
-              and it&apos;ll remember. Or add something here.
+              {t("Nothing yet. Tell your coach about yourself — how you learn, your goals, what trips you up — and it'll remember. Or add something here.")}
             </p>
           )}
 
@@ -128,16 +129,16 @@ export default function MemoryPanel() {
               onChange={(e) => setCategory(e.target.value as Memory["category"])}
               className="rounded-full border border-line bg-white/70 px-3 py-2 text-[12.5px] text-ink outline-none focus:border-accent"
             >
-              <option value="preference">Preference</option>
-              <option value="goal">Goal</option>
-              <option value="struggle">Struggle</option>
-              <option value="context">About you</option>
+              <option value="preference">{t("Preference")}</option>
+              <option value="goal">{t("Goal")}</option>
+              <option value="struggle">{t("Struggle")}</option>
+              <option value="context">{t("About you")}</option>
             </select>
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
-              placeholder="e.g. I learn best from worked examples, not theory"
+              placeholder={t("e.g. I learn best from worked examples, not theory")}
               className="min-w-0 flex-1 rounded-full border border-line bg-white/70 px-4 py-2 text-[12.5px] text-ink outline-none focus:border-accent"
             />
             <button
@@ -145,7 +146,7 @@ export default function MemoryPanel() {
               disabled={busy || !text.trim()}
               className="glassx-dark shrink-0 rounded-full px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-50"
             >
-              Remember
+              {t("Remember")}
             </button>
           </div>
         </div>

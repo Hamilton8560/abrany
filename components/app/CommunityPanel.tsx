@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, fmtWhen } from "@/lib/client";
 import { ForumIcon, PlusIcon } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
+import { plural } from "@/lib/i18n";
 
 type Forum = {
   id: number;
@@ -46,21 +48,22 @@ export default function CommunityPanel() {
 /* ── forum directory ───────────────────────────────────────── */
 
 function ForumsView({ onOpen }: { onOpen: (f: Forum) => void }) {
+  const t = useT();
   const [forums, setForums] = useState<Forum[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api<{ forums: Forum[] }>("/api/community/forums")
       .then((d) => setForums(d.forums))
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load forums"));
-  }, []);
+      .catch((e) => setError(e instanceof Error ? e.message : t("Could not load forums")));
+  }, [t]);
 
   if (error) return <p className="text-[13px] text-accent">{error}</p>;
-  if (!forums) return <p className="text-[13px] text-muted">Loading…</p>;
+  if (!forums) return <p className="text-[13px] text-muted">{t("Loading…")}</p>;
 
   const groups: { kind: Forum["kind"]; label: string }[] = [
-    { kind: "age", label: "By age group" },
-    { kind: "interest", label: "By interest" },
+    { kind: "age", label: t("By age group") },
+    { kind: "interest", label: t("By interest") },
   ];
 
   return (
@@ -81,11 +84,11 @@ function ForumsView({ onOpen }: { onOpen: (f: Forum) => void }) {
                       <ForumIcon className="size-5" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-[14px] font-bold text-ink">{f.title}</span>
-                      <span className="block text-[12px] leading-snug text-muted">{f.description}</span>
+                      <span className="block text-[14px] font-bold text-ink">{t(f.title)}</span>
+                      <span className="block text-[12px] leading-snug text-muted">{t(f.description)}</span>
                       <span className="mt-1 block text-[10.5px] font-medium text-muted">
-                        {f.threads} threads · {f.posts} replies
-                        {f.last_activity && <> · active {fmtWhen(f.last_activity)}</>}
+                        {t("{threads} threads · {posts} replies", { threads: f.threads, posts: f.posts })}
+                        {f.last_activity && <> · {t("active {when}", { when: fmtWhen(f.last_activity) })}</>}
                       </span>
                     </span>
                   </button>
@@ -101,6 +104,7 @@ function ForumsView({ onOpen }: { onOpen: (f: Forum) => void }) {
 /* ── one forum: thread list + new thread ───────────────────── */
 
 function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void; onOpen: (id: number) => void }) {
+  const t = useT();
   const [threads, setThreads] = useState<Thread[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
@@ -111,8 +115,8 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
   const refresh = useCallback(() => {
     api<{ threads: Thread[] }>(`/api/community/threads?forum=${forum.slug}`)
       .then((d) => setThreads(d.threads))
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load threads"));
-  }, [forum.slug]);
+      .catch((e) => setError(e instanceof Error ? e.message : t("Could not load threads")));
+  }, [forum.slug, t]);
 
   useEffect(() => {
     refresh();
@@ -132,7 +136,7 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
       refresh();
       onOpen(d.threadId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not post");
+      setError(e instanceof Error ? e.message : t("Could not post"));
     } finally {
       setBusy(false);
     }
@@ -142,19 +146,19 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button onClick={onBack} className="text-[13px] font-medium text-muted hover:text-ink">
-          ← All forums
+          ← {t("All forums")}
         </button>
         <button
           onClick={() => setComposing((v) => !v)}
           className="glassx flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-semibold text-ink"
         >
-          <PlusIcon className="size-4" /> New thread
+          <PlusIcon className="size-4" /> {t("New thread")}
         </button>
       </div>
 
       <div>
-        <h2 className="font-display text-[20px] font-extrabold uppercase text-ink">{forum.title}</h2>
-        <p className="text-[12.5px] text-muted">{forum.description}</p>
+        <h2 className="font-display text-[20px] font-extrabold uppercase text-ink">{t(forum.title)}</h2>
+        <p className="text-[12.5px] text-muted">{t(forum.description)}</p>
       </div>
 
       {composing && (
@@ -162,13 +166,13 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Thread title"
+            placeholder={t("Thread title")}
             className="rounded-full border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
           />
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Say more — what are you learning, what worked, what do you need?"
+            placeholder={t("Say more — what are you learning, what worked, what do you need?")}
             rows={4}
             className="rounded-[16px] border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
           />
@@ -178,7 +182,7 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
               disabled={busy || !title.trim()}
               className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
             >
-              {busy ? "Posting…" : "Post thread"}
+              {busy ? t("Posting…") : t("Post thread")}
             </button>
           </div>
         </div>
@@ -186,20 +190,20 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
 
       {error && <p className="text-[12.5px] text-accent">{error}</p>}
       {!threads ? (
-        <p className="text-[13px] text-muted">Loading…</p>
+        <p className="text-[13px] text-muted">{t("Loading…")}</p>
       ) : threads.length === 0 ? (
-        <p className="py-8 text-center text-[13px] text-muted">No threads yet — start the first one.</p>
+        <p className="py-8 text-center text-[13px] text-muted">{t("No threads yet — start the first one.")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {threads.map((t) => (
-            <li key={t.id}>
+          {threads.map((th) => (
+            <li key={th.id}>
               <button
-                onClick={() => onOpen(t.id)}
+                onClick={() => onOpen(th.id)}
                 className="glass block w-full rounded-[16px] px-4 py-3 text-left transition-all hover:-translate-y-0.5"
               >
-                <p className="text-[13.5px] font-semibold text-ink">{t.title}</p>
+                <p className="text-[13.5px] font-semibold text-ink">{th.title}</p>
                 <p className="mt-0.5 text-[11px] text-muted">
-                  {t.author} · {fmtWhen(t.created_at)} · {t.replies} {t.replies === 1 ? "reply" : "replies"}
+                  {th.author} · {fmtWhen(th.created_at)} · {plural(t, th.replies, "{n} reply", "{n} replies")}
                 </p>
               </button>
             </li>
@@ -213,6 +217,7 @@ function ForumView({ forum, onBack, onOpen }: { forum: Forum; onBack: () => void
 /* ── one thread: posts + reply ─────────────────────────────── */
 
 function ThreadView({ id, onBack }: { id: number; onBack: () => void }) {
+  const t = useT();
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState("");
@@ -221,8 +226,8 @@ function ThreadView({ id, onBack }: { id: number; onBack: () => void }) {
   const refresh = useCallback(() => {
     api<{ thread: ThreadDetail }>(`/api/community/threads/${id}`)
       .then((d) => setThread(d.thread))
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load the thread"));
-  }, [id]);
+      .catch((e) => setError(e instanceof Error ? e.message : t("Could not load the thread")));
+  }, [id, t]);
 
   useEffect(() => {
     refresh();
@@ -239,7 +244,7 @@ function ThreadView({ id, onBack }: { id: number; onBack: () => void }) {
       setThread(d.thread);
       setReply("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reply");
+      setError(e instanceof Error ? e.message : t("Could not reply"));
     } finally {
       setBusy(false);
     }
@@ -247,16 +252,16 @@ function ThreadView({ id, onBack }: { id: number; onBack: () => void }) {
 
   if (error) return (
     <div className="flex flex-col gap-3">
-      <button onClick={onBack} className="self-start text-[13px] font-medium text-muted hover:text-ink">← Back</button>
+      <button onClick={onBack} className="self-start text-[13px] font-medium text-muted hover:text-ink">← {t("Back")}</button>
       <p className="text-[13px] text-accent">{error}</p>
     </div>
   );
-  if (!thread) return <p className="text-[13px] text-muted">Loading…</p>;
+  if (!thread) return <p className="text-[13px] text-muted">{t("Loading…")}</p>;
 
   return (
     <div className="flex flex-col gap-4">
       <button onClick={onBack} className="self-start text-[13px] font-medium text-muted hover:text-ink">
-        ← {thread.forum.title}
+        ← {t(thread.forum.title)}
       </button>
 
       <article className="glass rounded-[var(--radius-card-lg)] p-5">
@@ -280,7 +285,7 @@ function ThreadView({ id, onBack }: { id: number; onBack: () => void }) {
         <textarea
           value={reply}
           onChange={(e) => setReply(e.target.value)}
-          placeholder="Write a reply…"
+          placeholder={t("Write a reply…")}
           rows={3}
           className="rounded-[16px] border border-line bg-white/70 px-4 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
         />
@@ -290,7 +295,7 @@ function ThreadView({ id, onBack }: { id: number; onBack: () => void }) {
             disabled={busy || !reply.trim()}
             className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
           >
-            {busy ? "Replying…" : "Reply"}
+            {busy ? t("Replying…") : t("Reply")}
           </button>
         </div>
       </div>

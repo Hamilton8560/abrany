@@ -10,11 +10,13 @@ import { useContentTranslation, TranslateButton } from "@/components/app/Transla
 import QueueHint from "@/components/app/QueueHint";
 import BookCover from "@/components/app/BookCover";
 import { ArrowRight, CheckIcon } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
 
 type Resp = { book: Book; chapters: Chapter[] };
 
 export default function BookPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const t = useT();
   const router = useRouter();
   const [book, setBook] = useState<Book | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -79,8 +81,8 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
   const current = reading != null ? chapters.find((c) => c.order_index === reading) : null;
   const tr = useContentTranslation("chapter", current?.id ?? 0, current?.title ?? "", current?.content ?? "");
 
-  if (loading) return <p className="text-[14px] text-muted">Loading…</p>;
-  if (!book) return <p className="text-[14px] text-muted">Book not found.</p>;
+  if (loading) return <p className="text-[14px] text-muted">{t("Loading…")}</p>;
+  if (!book) return <p className="text-[14px] text-muted">{t("Book not found.")}</p>;
 
   const readyCount = chapters.filter((c) => c.status === "ready").length;
 
@@ -95,14 +97,14 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
             onClick={() => setReading(null)}
             className="flex items-center gap-2 self-start text-[12.5px] font-medium text-muted hover:text-ink"
           >
-            <ArrowRight className="size-3.5 rotate-180" /> Contents
+            <ArrowRight className="size-3.5 rotate-180" /> {t("Contents")}
           </button>
           {current.status === "ready" && current.content ? <TranslateButton t={tr} /> : null}
         </div>
 
         <header className="text-center">
           <p className="text-[12px] font-semibold uppercase tracking-[3px] text-accent">
-            Chapter {current.order_index + 1}
+            {t("Chapter {n}", { n: current.order_index + 1 })}
           </p>
           <h1 className="mt-2 font-display text-[clamp(26px,4vw,38px)] font-extrabold uppercase leading-[1.05] text-ink">
             {tr.displayTitle}
@@ -119,19 +121,19 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
             <Markdown>{tr.displayContent}</Markdown>
           ) : current.status === "queued" || current.status === "generating" ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-[14px] text-muted">Writing this chapter…</p>
+              <p className="text-[14px] text-muted">{t("Writing this chapter…")}</p>
               <div className="max-w-[400px]">
                 <QueueHint background />
               </div>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4 py-8 text-center">
-              <p className="text-[14px] text-muted">This chapter hasn&apos;t been written yet.</p>
+              <p className="text-[14px] text-muted">{t("This chapter hasn't been written yet.")}</p>
               <button
                 onClick={() => generate(current)}
                 className="glassx-dark rounded-full px-5 py-2.5 text-[13px] font-semibold text-white"
               >
-                Write it
+                {t("Write it")}
               </button>
             </div>
           )}
@@ -141,16 +143,16 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
           <div className="flex flex-col items-center gap-1.5 border-t border-line/60 pt-5">
             <button
               onClick={() => {
-                if (window.confirm("Rewrite this chapter from scratch? The current text will be replaced.")) {
+                if (window.confirm(t("Rewrite this chapter from scratch? The current text will be replaced."))) {
                   generate(current, true);
                   setReading(null);
                 }
               }}
               className="rounded-full px-4 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
             >
-              ↻ Rewrite this chapter
+              ↻ {t("Rewrite this chapter")}
             </button>
-            <p className="text-[11px] text-muted">Ends mid-sentence? Rewrite it — chapters now generate in full.</p>
+            <p className="text-[11px] text-muted">{t("Ends mid-sentence? Rewrite it — chapters now generate in full.")}</p>
           </div>
         )}
 
@@ -160,14 +162,14 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
             disabled={!prev}
             className="glassx flex items-center gap-2 rounded-full px-4 py-2 text-[12.5px] font-semibold text-ink disabled:opacity-40"
           >
-            <ArrowRight className="size-3.5 rotate-180" /> Previous
+            <ArrowRight className="size-3.5 rotate-180" /> {t("Previous")}
           </button>
           <button
             onClick={() => next && setReading(next.order_index)}
             disabled={!next}
             className="glassx-dark flex items-center gap-2 rounded-full px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
-            Next <ArrowRight className="size-3.5" />
+            {t("Next")} <ArrowRight className="size-3.5" />
           </button>
         </div>
       </div>
@@ -179,7 +181,7 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
     <div className="mx-auto flex max-w-[760px] flex-col gap-7">
       <div className="flex items-center gap-2 text-[12px] text-muted">
         <Link href="/app/books" className="hover:text-ink">
-          Books
+          {t("Books")}
         </Link>
         <span>/</span>
         <span className="truncate text-ink">{book.title}</span>
@@ -196,14 +198,14 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
           {book.brief && <p className="mt-2 text-[14px] text-muted">{book.brief}</p>}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <span className="text-[12.5px] text-muted">
-              {chapters.length} chapters · {readyCount} written
+              {t("{n} chapters · {ready} written", { n: chapters.length, ready: readyCount })}
             </span>
             {chapters.some((c) => c.status === "stub" || c.status === "error") && (
               <button
                 onClick={prepareAll}
                 className="glassx-dark rounded-full px-4 py-2 text-[12.5px] font-semibold text-white"
               >
-                Write all chapters
+                {t("Write all chapters")}
               </button>
             )}
             {readyCount > 0 && (
@@ -216,12 +218,12 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
               </a>
             )}
             <button onClick={remove} className="text-[12.5px] font-semibold text-muted hover:text-accent">
-              Delete
+              {t("Delete")}
             </button>
           </div>
           {readyCount > 0 && (
             <p className="mt-2 text-[11.5px] text-muted">
-              EPUB works on Kindle (Send-to-Kindle), Apple Books, Kobo, and most readers.
+              {t("EPUB works on Kindle (Send-to-Kindle), Apple Books, Kobo, and most readers.")}
             </p>
           )}
         </div>
@@ -252,23 +254,23 @@ export default function BookPage({ params }: { params: Promise<{ id: string }> }
                   onClick={() => setReading(c.order_index)}
                   className="glassx-dark shrink-0 rounded-full px-4 py-1.5 text-[12px] font-semibold text-white"
                 >
-                  Read
+                  {t("Read")}
                 </button>
               ) : busy ? (
                 <span className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-muted">
                   <span className="size-2 animate-pulse rounded-full bg-accent" />
-                  {c.status === "queued" ? "Queued" : "Writing…"}
+                  {c.status === "queued" ? t("Queued") : t("Writing…")}
                 </span>
               ) : c.status === "error" ? (
                 <button onClick={() => generate(c)} className="shrink-0 text-[12px] font-semibold text-accent">
-                  Retry
+                  {t("Retry")}
                 </button>
               ) : (
                 <button
                   onClick={() => generate(c)}
                   className="glassx shrink-0 rounded-full px-4 py-1.5 text-[12px] font-semibold text-ink"
                 >
-                  Write
+                  {t("Write")}
                 </button>
               )}
             </li>

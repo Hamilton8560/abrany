@@ -61,7 +61,7 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/goals/[id]">
   const a = assignmentForGoal(Number(id));
   if (a) {
     return NextResponse.json(
-      { error: `This course was assigned to you by ${a.org_name}. Ask your training admin to remove the assignment.` },
+      { error: "This course was assigned to you by your company. Ask your training admin to remove the assignment." },
       { status: 403 },
     );
   }

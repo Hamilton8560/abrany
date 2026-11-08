@@ -26,6 +26,7 @@ async function tick() {
     try {
       await sendWeeklyReportEmail({
         to: u.email,
+        lang: u.language,
         name: displayName(u),
         focusMin: Math.round(stats.focusSec / 60),
         sessionCount: stats.sessionCount,

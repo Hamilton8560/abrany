@@ -1,4 +1,5 @@
 import { BrainGlyph } from "@/components/icons";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Deterministic, on-brand book cover: dark ink canvas, the real glowing brain,
@@ -27,6 +28,7 @@ export default function BookCover({
   author?: string;
   className?: string;
 }) {
+  const t = useT();
   const [c1, c2] = TONES[hash(title) % TONES.length];
   const big = title.length <= 26;
   return (
@@ -58,7 +60,7 @@ export default function BookCover({
           </span>
         </div>
         <span className="rounded-full border border-white/25 px-[3.4cqw] py-[1.2cqw] font-medium text-white/70" style={{ fontSize: "2.9cqw", letterSpacing: "0.35cqw" }}>
-          AI-CRAFTED
+          {t("AI-CRAFTED")}
         </span>
       </div>
       {/* title block, anchored low like a real cover */}

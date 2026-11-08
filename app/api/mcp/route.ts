@@ -52,6 +52,7 @@ const TOOLS = [
       properties: {
         email: { type: "string" },
         role: { type: "string", enum: ["member", "admin"] },
+        language: { type: "string", description: "Language for a new account's app, lessons and emails, e.g. \"es\" for Spanish. Default \"en\"." },
       },
       required: ["email"],
     },
@@ -154,7 +155,12 @@ export async function POST(request: Request) {
             const email = (args.email ?? "").toString().trim().toLowerCase();
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
               return rpcResult(msg.id, toolText({ error: "Enter a valid email" }, true));
-            const r = await addMemberByEmail(org.id, email, args.role === "admin" ? "admin" : "member");
+            const r = await addMemberByEmail(
+              org.id,
+              email,
+              args.role === "admin" ? "admin" : "member",
+              typeof args.language === "string" ? args.language : undefined,
+            );
             // never expose the temp password over MCP — it's emailed to the employee only
             return rpcResult(msg.id, toolText({ status: r.status }));
           }

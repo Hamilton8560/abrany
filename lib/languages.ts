@@ -48,8 +48,27 @@ export function languageByIso3(iso3: string): Language | undefined {
   return BY_ISO3.get(iso3);
 }
 
+export function languageCodeByName(name: string): string | undefined {
+  const n = name.trim().toLowerCase();
+  return LANGUAGES.find((l) => l.name.toLowerCase() === n || l.native.toLowerCase() === n)?.code;
+}
+
+/** Regional style notes, so output reads like a native speaker wrote it for these learners. */
+const STYLE: Record<string, string> = {
+  // Abrany's Spanish learners are mostly staff in El Salvador / Central America
+  es: 'Use natural, neutral Latin American Spanish (as spoken in Central America): address the learner as "tú", and avoid Spain-only words and forms (vosotros, ordenador, móvil, coger, vale). Do not translate word-for-word from English; write the way a native Spanish-speaking trainer would explain it.',
+};
+
 /** System-prompt line that pins all generation to the user's language. */
 export function languageDirective(code: string | null | undefined): string {
   const name = languageName(code);
-  return `Write your entire response in ${name}. Keep everything — headings, lists, examples, and diagram labels — in ${name}, regardless of the language used in the input. Proper nouns and code may stay in their original form.`;
+  const style = (code && STYLE[code]) || "";
+  return [
+    `Write your entire response in ${name}. Every piece of learner-facing text — headings, lists, examples, questions, answer options, feedback, and diagram labels — must be in ${name}, regardless of the language used in the input or in these instructions.`,
+    `Never mix in another language or writing system: no Chinese/Japanese characters and no English sentences or headings (unless ${name} is English).`,
+    "Proper nouns and code may stay in their original form, and any JSON keys or field names required by the output format must stay exactly as specified.",
+    style,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

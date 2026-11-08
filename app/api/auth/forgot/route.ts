@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     const org = orgForUser(user.id)?.org;
     await sendPasswordResetEmail({
       to: user.email,
+      lang: user.language,
       name: displayName(user),
       orgName: org?.name ?? "",
       resetUrl: `${appBaseUrl()}/reset?token=${encodeURIComponent(token)}`,

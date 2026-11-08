@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useT } from "@/lib/i18n/client";
 
 type State = { active: number; queued: number; max: number; pending?: number; running?: number };
 
 /** Live indicator of the shared MiniMax queue: how many AI calls are running/waiting. */
 export default function QueueBadge() {
   const [s, setS] = useState<State | null>(null);
+  const t = useT();
 
   useEffect(() => {
     let alive = true;
@@ -45,9 +47,11 @@ export default function QueueBadge() {
       <span className="text-[11px] font-medium text-muted">
         {s
           ? busy
-            ? `AI ${running} generating${pending ? ` · ${pending} queued` : ""}`
-            : "AI idle"
-          : "AI …"}
+            ? pending
+              ? t("AI {running} generating · {pending} queued", { running, pending })
+              : t("AI {running} generating", { running })
+            : t("AI idle")
+          : t("AI …")}
       </span>
     </div>
   );

@@ -4,7 +4,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { acquireSlot, withQueue, type Priority } from "./queue";
 import { isFreeAiEnabled, getUser, type User } from "./repo";
 import { orgForUser } from "./org";
-import { languageDirective } from "./languages";
+import { languageDirective, languageName } from "./languages";
+import { detectLanguageLeak, leakCorrection, stripLeakedScripts } from "./languageGuard";
 
 /**
  * LLM layer — multi-provider, per-user.
@@ -263,9 +264,41 @@ export async function complete(params: {
   temperature?: number;
   /** Pin the primary server provider for this call (fallback still applies). */
   prefer?: "minimax" | "kimi";
+  /**
+   * Language the output must be in, when it isn't the scope's language (e.g. a
+   * translation into another language). Defaults to the withLlm() language.
+   */
+  expectLang?: string;
 }): Promise<string> {
+  const lang = params.expectLang ?? store.getStore()?.lang;
+  const text = await completeOnce(params, withLanguage(params.system));
+  if (!lang) return text;
+  // Language guard: models sometimes drift into Chinese or English mid-answer.
+  // Retry ONCE with an explicit correction, keep the cleaner attempt, and strip
+  // any leaked foreign-script runs that survive.
+  const prompt = `${params.system}\n${params.messages.map((m) => m.content).join("\n")}`;
+  let best = text;
+  const leak = detectLanguageLeak(text, lang, prompt);
+  if (leak) {
+    console.warn(`[llm] language leak in ${lang} output (${leak.scripts.join(",") || "english"}) — retrying`);
+    try {
+      const retry = await completeOnce(params, `${withLanguage(params.system)}\n\n${leakCorrection(languageName(lang), leak)}`);
+      const leak2 = detectLanguageLeak(retry, lang, prompt);
+      const score = (l: ReturnType<typeof detectLanguageLeak>) => (l ? l.scripts.length + l.englishShare : 0);
+      if (score(leak2) <= score(leak)) best = retry;
+    } catch {
+      /* keep the first attempt */
+    }
+  }
+  return stripLeakedScripts(best, lang, prompt);
+}
+
+/** One pass over the provider chain (failover on error or empty output). */
+async function completeOnce(
+  params: { messages: ChatMessage[]; maxTokens?: number; temperature?: number; prefer?: "minimax" | "kimi" },
+  system: string,
+): Promise<string> {
   const chain = attemptChain(params.prefer);
-  const system = withLanguage(params.system);
   let lastErr: unknown = null;
   for (let i = 0; i < chain.length; i++) {
     try {
@@ -298,6 +331,11 @@ export async function* streamText(params: {
 }): AsyncGenerator<StreamChunk, void, unknown> {
   const chain = attemptChain();
   const system = withLanguage(params.system);
+  // a stream can't be retried, but leaked foreign-script runs can still be
+  // filtered out of each visible chunk before the learner sees them
+  const lang = store.getStore()?.lang;
+  const prompt = `${params.system}\n${params.messages.map((m) => m.content).join("\n")}`;
+  const clean = (t: string) => stripLeakedScripts(t, lang, prompt);
   const release = await acquireSlot(currentPriority());
   try {
     for (let i = 0; i < chain.length; i++) {
@@ -318,7 +356,7 @@ export async function* streamText(params: {
               yield { kind: "thinking", text: d.thinking };
             } else if (d.type === "text_delta" && d.text) {
               yielded = true;
-              yield { kind: "text", text: d.text };
+              yield { kind: "text", text: clean(d.text) };
             }
           }
         } else {
@@ -336,7 +374,7 @@ export async function* streamText(params: {
             }
             if (delta?.content) {
               yielded = true;
-              yield { kind: "text", text: delta.content };
+              yield { kind: "text", text: clean(delta.content) };
             }
           }
         }

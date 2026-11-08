@@ -3,14 +3,18 @@ import { redirect } from "next/navigation";
 import Sidebar, { MobileBar } from "@/components/app/Sidebar";
 import ImpersonationBanner from "@/components/app/ImpersonationBanner";
 import { getAuthState } from "@/lib/auth";
+import { getServerT } from "@/lib/i18n/server";
 import { publicUser } from "@/lib/user";
 import { ensureWeeklyReportScheduler } from "@/lib/weeklyReport";
 import { ensureWorker } from "@/lib/worker";
 
-export const metadata: Metadata = {
-  title: "Abrany — Train",
-  description: "Record your training, set goals, and coach with AI.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getServerT();
+  return {
+    title: t("Abrany — Train"),
+    description: t("Record your training, set goals, and coach with AI."),
+  };
+}
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   ensureWeeklyReportScheduler();

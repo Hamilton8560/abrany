@@ -77,7 +77,7 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [x] Diagram repair pass (`lib/mermaidRepair.ts`): generated mermaid that *almost* parses now renders instead of collapsing into "couldn't render" — same fix serves presentations, books and goals
 - [x] Mermaid module/chunk load failures retry once instead of caching a rejected import forever (one network flake used to kill every diagram until a hard reload)
 - [x] Deck slides split fence-aware: a mermaid block's YAML frontmatter no longer shatters a presentation into extra slides
-- [ ] Localized transactional emails (spec Part B) — not built
+- [x] Localized transactional emails (spec Part B) — Spanish/English by recipient language (2026-11-08)
 - [ ] Program monitor dashboard + partner `/api/v1/programs` — still open from the programs spec
 - [ ] Require a passed practice set before "complete" on company assignments? (David's call, see ADR-0021)
 
@@ -94,3 +94,14 @@ What's shipped and what's next. Tick as they land (Superpowers keeps this curren
 - [ ] Expand one build phase into its own detailed manual
 - [ ] "Ask about this step" → tutor grounded in the manual
 
+
+## Spanish for company staff (2026-11-08)
+
+- [x] UI i18n: dictionary-based `t()` with English keys, Spanish (Latin American) fragments in `lib/i18n/es/`, completeness test
+- [x] Account language wins (account → cookie → Accept-Language); `<html lang>`, dates in es-419
+- [x] Server API errors shown in the user's language
+- [x] Org admins choose an employee's language at sign-up and per member (UI, partner API, MCP)
+- [x] AI language guard: stronger directive, leak detection (foreign scripts / English share), one retry, strip leftovers; streaming coach filtered
+- [x] Emails in the recipient's language
+- [ ] Translate the public landing page (Hero / BrainJourney / Footer)
+- [ ] Dynamic server error strings (template literals) still English

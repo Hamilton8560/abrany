@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import { useT } from "@/lib/i18n/client";
 import type { Rating } from "@/lib/srs";
 
 type Verdict = "correct" | "partial" | "incorrect";
@@ -29,6 +30,7 @@ export default function ReviewQuiz({
   onSuggest: (r: Rating) => void;
   onVerdict?: (v: Verdict) => void;
 }) {
+  const t = useT();
   const [phase, setPhase] = useState<"loading" | "done" | "error">("loading");
   const [grade, setGrade] = useState<Grade | null>(null);
   const [error, setError] = useState("");
@@ -49,22 +51,22 @@ export default function ReviewQuiz({
         onVerdict?.(d.grade.results[0]?.verdict ?? "partial");
       })
       .catch((e) => {
-        setError(e instanceof Error ? e.message : "Coach is unavailable");
+        setError(e instanceof Error ? e.message : t("Coach is unavailable"));
         setPhase("error");
       });
-  }, [lessonId, objective, recall, onSuggest, onVerdict]);
+  }, [lessonId, objective, recall, onSuggest, onVerdict, t]);
 
   if (phase === "loading")
     return (
       <div className="mt-4 rounded-[14px] border border-line bg-white/40 px-4 py-6 text-center text-[13px] text-muted">
-        Your coach is checking your recall… <span className="text-[11px]">(queued through MiniMax)</span>
+        {t("Your coach is checking your recall…")} <span className="text-[11px]">{t("(queued through MiniMax)")}</span>
       </div>
     );
 
   if (phase === "error")
     return (
       <div className="mt-4 rounded-[14px] bg-accent/8 px-4 py-4 text-[13px] text-accent">
-        {error || "Something went wrong."} You can still self-rate below.
+        {error || t("Something went wrong.")} {t("You can still self-rate below.")}
       </div>
     );
 
@@ -73,11 +75,11 @@ export default function ReviewQuiz({
       {phase === "done" && grade && (
         <div className="rounded-[14px] bg-accent/8 px-4 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-            Coach&apos;s take
+            {t("Coach's take")}
           </p>
           <p className="mt-1 text-[13.5px] leading-relaxed text-ink">{grade.summary}</p>
           <p className="mt-1.5 text-[12px] text-muted">
-            Suggested rating below: <b className="capitalize text-ink">{grade.suggested}</b>
+            {t("Suggested rating below:")} <b className="capitalize text-ink">{t(grade.suggested)}</b>
           </p>
         </div>
       )}

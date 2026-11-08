@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/client";
 import type { Message } from "@/lib/repo";
 import type { PublicUser } from "@/lib/user";
-import { languageName } from "@/lib/languages";
+import { msg } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/client";
+import { languageLabel } from "./TranslateControl";
 import { BrainGlyph, SendIcon } from "@/components/icons";
 import Markdown from "./Markdown";
 import Portal from "./Portal";
@@ -15,11 +17,19 @@ type ChatMsg = { role: "user" | "assistant"; content: string; thinking?: string;
 type Mismatch = { code: string; name: string };
 
 const STARTERS = [
-  "I want to learn all of math — where do I even start?",
-  "Help me get conversational in Spanish in 3 months.",
-  "Break down learning to play piano for a total beginner.",
-  "I keep losing focus. Build me a realistic weekly study routine.",
+  msg("I want to learn all of math — where do I even start?"),
+  msg("Help me get conversational in Spanish in 3 months."),
+  msg("Break down learning to play piano for a total beginner."),
+  msg("I keep losing focus. Build me a realistic weekly study routine."),
 ];
+
+/** Fill {placeholders} in a translated sentence with inline JSX (bold names etc.). */
+function rich(s: string, parts: Record<string, ReactNode>): ReactNode[] {
+  return s.split(/(\{\w+\})/).map((seg, i) => {
+    const m = /^\{(\w+)\}$/.exec(seg);
+    return m && m[1] in parts ? <Fragment key={i}>{parts[m[1]]}</Fragment> : seg;
+  });
+}
 
 export default function CoachChat({
   goalId,
@@ -45,6 +55,7 @@ export default function CoachChat({
   // a history load that resolves AFTER the user has started sending must not clobber the
   // live conversation (it used to wipe the streaming bubble on slow first loads)
   const sendEpoch = useRef(0);
+  const { t, locale } = useI18n();
 
   // A lesson pins the conversation to its goal's thread.
   useEffect(() => {
@@ -93,8 +104,8 @@ export default function CoachChat({
       return;
     }
     api<{ guide: { title: string } }>(`/api/study-guides/${studyGuideId}`)
-      .then((d) => setGuideTitle(d.guide?.title ?? "your study guide"))
-      .catch(() => setGuideTitle("your study guide"));
+      .then((d) => setGuideTitle(d.guide?.title ?? t("your study guide")))
+      .catch(() => setGuideTitle(t("your study guide")));
   }, [studyGuideId]);
 
   useEffect(() => {
@@ -140,9 +151,9 @@ export default function CoachChat({
           setPending({ text: content, mismatch: data.languageMismatch as Mismatch });
           return;
         }
-        throw new Error((data as { error?: string }).error || "Coach is unavailable");
+        throw new Error((data as { error?: string }).error || t("Coach is unavailable"));
       }
-      if (!res.body) throw new Error("No response stream");
+      if (!res.body) throw new Error(t("No response stream"));
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
@@ -181,7 +192,7 @@ export default function CoachChat({
       setMessages((m) => {
         const last = m[m.length - 1];
         if (last && last.role === "assistant" && !last.content.trim() && !(last.thinking || "").trim()) {
-          return [...m.slice(0, -1), { ...last, content: "⚠️ No reply came back. Please send that again." }];
+          return [...m.slice(0, -1), { ...last, content: `⚠️ ${t("No reply came back. Please send that again.")}` }];
         }
         return m;
       });
@@ -193,7 +204,7 @@ export default function CoachChat({
           if (last && last.role === "assistant" && !last.content) {
             copy[copy.length - 1] = {
               role: "assistant",
-              content: `⚠️ ${(e as Error).message || "Coach is unavailable right now. Try again in a moment."}`,
+              content: `⚠️ ${(e as Error).message || t("Coach is unavailable right now. Try again in a moment.")}`,
             };
           }
           return copy;
@@ -207,28 +218,30 @@ export default function CoachChat({
 
   const empty = loaded && messages.length === 0;
   const guideStarters = [
-    "Give me a 3-question quiz on this to check my understanding.",
-    "Explain the hardest part of this guide more simply.",
-    "What are the most common mistakes this covers?",
-    "Summarize the must-know points in 5 bullets.",
+    t("Give me a 3-question quiz on this to check my understanding."),
+    t("Explain the hardest part of this guide more simply."),
+    t("What are the most common mistakes this covers?"),
+    t("Summarize the must-know points in 5 bullets."),
   ];
   const lessonStarters = lesson
     ? lesson.kind === "practice" || lesson.kind === "apply"
       ? [
-          "I'm stuck on exercise 1 — give me a hint, not the answer.",
-          "Check my answer to the first exercise: ",
-          "Walk me through the worked example one step at a time.",
-          "Give me one more problem like these, a bit harder.",
+          t("I'm stuck on exercise 1 — give me a hint, not the answer."),
+          t("Check my answer to the first exercise: "),
+          t("Walk me through the worked example one step at a time."),
+          t("Give me one more problem like these, a bit harder."),
         ]
       : [
-          "Explain the main idea of this lesson like I'm new to it.",
-          "Quiz me on this lesson — one question at a time.",
-          "What's the most common mistake here and how do I avoid it?",
-          "How does this connect to what came before in the course?",
+          t("Explain the main idea of this lesson like I'm new to it."),
+          t("Quiz me on this lesson — one question at a time."),
+          t("What's the most common mistake here and how do I avoid it?"),
+          t("How does this connect to what came before in the course?"),
         ]
     : null;
-  const starters = lessonStarters ?? (guideTitle ? guideStarters : STARTERS);
+  const starters = lessonStarters ?? (guideTitle ? guideStarters : STARTERS.map((s) => t(s)));
   const contextLabel = lesson ? lesson.title : guideTitle;
+  const myName = languageLabel(myLang, locale);
+  const theirName = pending ? languageLabel(pending.mismatch.code, locale, pending.mismatch.name) : "";
 
   return (
     <div className="glass flex h-[calc(100dvh-190px)] min-h-[440px] flex-col overflow-hidden rounded-[var(--radius-card-lg)] lg:h-[calc(100dvh-150px)]">
@@ -238,16 +251,16 @@ export default function CoachChat({
             <>
               <span className="size-1.5 shrink-0 rounded-full bg-accent" />
               <span className="min-w-0 flex-1 truncate">
-                {lesson ? "Working on the lesson: " : "Discussing your study guide: "}
+                {lesson ? t("Working on the lesson: ") : t("Discussing your study guide: ")}
                 <span className="font-semibold">{contextLabel}</span>
                 {lesson && (lesson.kind === "practice" || lesson.kind === "apply") ? (
-                  <span className="text-muted"> · hints first, answers when you ask</span>
+                  <span className="text-muted">{t(" · hints first, answers when you ask")}</span>
                 ) : null}
               </span>
             </>
           ) : (
             <span className="min-w-0 flex-1 truncate text-muted">
-              {scopeGoal != null ? "This conversation is about your course." : "General coaching conversation."}
+              {scopeGoal != null ? t("This conversation is about your course.") : t("General coaching conversation.")}
             </span>
           )}
           {messages.length > 0 && (
@@ -255,9 +268,9 @@ export default function CoachChat({
               onClick={newConversation}
               disabled={streaming}
               className="shrink-0 text-[11.5px] font-semibold text-muted hover:text-accent disabled:opacity-50"
-              title="Start fresh — the old conversation is kept but no longer sent to the coach"
+              title={t("Start fresh — the old conversation is kept but no longer sent to the coach")}
             >
-              New conversation
+              {t("New conversation")}
             </button>
           )}
         </div>
@@ -270,14 +283,14 @@ export default function CoachChat({
             </span>
             <div>
               <h2 className="font-display text-[24px] font-extrabold uppercase text-ink">
-                {lesson ? "Your tutor, on this lesson" : guideTitle ? "Discuss your study guide" : "Your training coach"}
+                {lesson ? t("Your tutor, on this lesson") : guideTitle ? t("Discuss your study guide") : t("Your training coach")}
               </h2>
               <p className="mt-2 text-[14px] text-muted">
                 {lesson
-                  ? "I've read this lesson. Ask about anything in it, check an answer, or ask for a hint — I'll nudge before I tell."
+                  ? t("I've read this lesson. Ask about anything in it, check an answer, or ask for a hint — I'll nudge before I tell.")
                   : guideTitle
-                    ? "I've read your study guide. Ask me anything about it, and I'll explain, quiz you, or go deeper."
-                    : "Tell me what you want to learn. I'll keep it realistic and break it into steps you can actually do."}
+                    ? t("I've read your study guide. Ask me anything about it, and I'll explain, quiz you, or go deeper.")
+                    : t("Tell me what you want to learn. I'll keep it realistic and break it into steps you can actually do.")}
               </p>
             </div>
             <div className="grid w-full gap-2.5 sm:grid-cols-2">
@@ -319,13 +332,13 @@ export default function CoachChat({
               }
             }}
             rows={1}
-            placeholder="Ask your coach anything…"
+            placeholder={t("Ask your coach anything…")}
             className="max-h-40 min-h-[46px] flex-1 resize-none rounded-[16px] border border-line bg-white/80 px-4 py-3 text-[14px] text-ink outline-none placeholder:text-muted/60 focus:border-accent/50"
           />
           <button
             type="submit"
             disabled={streaming || !input.trim()}
-            aria-label="Send"
+            aria-label={t("Send")}
             className="glassx-dark grid size-[46px] shrink-0 place-items-center rounded-full text-white disabled:opacity-50"
           >
             <SendIcon className="size-5" />
@@ -343,11 +356,16 @@ export default function CoachChat({
             className="glass w-full max-w-[420px] rounded-[var(--radius-card-lg)] p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-display text-[20px] font-extrabold uppercase text-ink">Switch language?</h3>
+            <h3 className="font-display text-[20px] font-extrabold uppercase text-ink">{t("Switch language?")}</h3>
             <p className="mt-2 text-[14px] leading-relaxed text-muted">
-              You&apos;re writing in <span className="font-semibold text-ink">{pending.mismatch.name}</span>, but
-              your content language is set to <span className="font-semibold text-ink">{languageName(myLang)}</span>.
-              Switch to {pending.mismatch.name} so everything is generated in it?
+              {rich(
+                t("You're writing in {theirs}, but your content language is set to {mine}. Switch to {lang} so everything is generated in it?"),
+                {
+                  theirs: <span className="font-semibold text-ink">{theirName}</span>,
+                  mine: <span className="font-semibold text-ink">{myName}</span>,
+                  lang: theirName,
+                },
+              )}
             </p>
             <div className="mt-5 flex flex-col gap-2">
               <button
@@ -358,7 +376,7 @@ export default function CoachChat({
                 }}
                 className="glassx-dark rounded-full px-5 py-3 text-[13px] font-semibold text-white"
               >
-                {`Switch to ${pending.mismatch.name} & continue`}
+                {t("Switch to {lang} & continue", { lang: theirName })}
               </button>
               <button
                 onClick={() => {
@@ -368,13 +386,13 @@ export default function CoachChat({
                 }}
                 className="glassx rounded-full px-5 py-3 text-[13px] font-semibold text-ink"
               >
-                Keep {languageName(myLang)}
+                {t("Keep {lang}", { lang: myName })}
               </button>
               <button
                 onClick={() => setPending(null)}
                 className="px-5 py-2 text-[12.5px] font-semibold text-muted hover:text-accent"
               >
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </div>
@@ -387,6 +405,7 @@ export default function CoachChat({
 
 function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
   const thinkRef = useRef<HTMLDivElement>(null);
 
   // The tutor may emit <remember>…</remember> tags to save to your profile; never show them.
@@ -430,9 +449,9 @@ function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {
             >
               <BrainGlyph className={`size-3.5 text-accent ${streaming && !hasAnswer ? "anim-bob" : ""}`} />
               <span className="text-[12px] font-semibold text-ink">
-                {streaming && !hasAnswer ? "Thinking…" : "Reasoning"}
+                {streaming && !hasAnswer ? t("Thinking…") : t("Reasoning")}
               </span>
-              <span className="ml-auto text-[11px] font-medium text-muted">{open ? "hide" : showThinking ? "" : "show"}</span>
+              <span className="ml-auto text-[11px] font-medium text-muted">{open ? t("hide") : showThinking ? "" : t("show")}</span>
             </button>
             {showThinking && (
               <div
@@ -448,15 +467,15 @@ function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {
         {/* tool calls (memory writes, etc.) */}
         {(msg.tools?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {msg.tools!.map((t, i) => (
+            {msg.tools!.map((tool, i) => (
               <span
                 key={i}
                 className="inline-flex items-center gap-1.5 rounded-full bg-up/12 px-2.5 py-1 text-[11.5px] font-medium text-[#1f8043]"
-                title={t.detail}
+                title={tool.detail}
               >
                 <BrainGlyph className="size-3" />
-                {t.name === "remember" ? "Remembered" : t.name}
-                {t.detail ? <span className="max-w-[220px] truncate font-normal opacity-80">· {t.detail}</span> : null}
+                {tool.name === "remember" ? t("Remembered") : tool.name}
+                {tool.detail ? <span className="max-w-[220px] truncate font-normal opacity-80">· {tool.detail}</span> : null}
               </span>
             ))}
           </div>
@@ -480,8 +499,8 @@ function Bubble({ msg, streaming }: { msg: ChatMsg; streaming: boolean }) {
 function WaitingNote() {
   const [show, setShow] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setShow(true), 2500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setShow(true), 2500);
+    return () => clearTimeout(timer);
   }, []);
   if (!show) return null;
   return (

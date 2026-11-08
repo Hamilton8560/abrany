@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { setUserLanguage } from "@/lib/repo";
-import { getSessionUser, unauthorized } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { getSessionUser, rememberLocale, unauthorized } from "@/lib/auth";
 import { isSupported } from "@/lib/languages";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Set the current user's content language. Body: { language: code }. */
+/** Set the current user's language — drives both the UI and AI-generated content. Body: { language: code }. */
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorized();
@@ -14,5 +15,6 @@ export async function POST(request: Request) {
   const language = (body.language ?? "").toString();
   if (!isSupported(language)) return NextResponse.json({ error: "Unsupported language" }, { status: 400 });
   setUserLanguage(user.id, language);
+  rememberLocale(await cookies(), language);
   return NextResponse.json({ ok: true, language });
 }

@@ -5,6 +5,7 @@ import { formatMs, useTimer } from "./TimerProvider";
 import TimerRing from "./TimerRing";
 import { BrainGlyph, PauseIcon, PlayIcon } from "../icons";
 import LiquidGlass from "../LiquidGlass";
+import { useT } from "@/lib/i18n/client";
 
 const FOCUS_PRESETS = [15, 25, 45, 60];
 const BREAK_PRESETS = [5, 10, 15];
@@ -36,6 +37,7 @@ function PresetRow({
   onSelect: (min: number) => void;
   disabled: boolean;
 }) {
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-2">
       <span
@@ -57,7 +59,7 @@ function PresetRow({
                 : "glassx text-ink hover:-translate-y-0.5"
             }`}
           >
-            {min} min
+            {t("{n} min", { n: min })}
           </button>
         ))}
       </div>
@@ -66,14 +68,15 @@ function PresetRow({
 }
 
 export default function FocusSession() {
-  const t = useTimer();
+  const timer = useTimer();
+  const t = useT();
 
-  const isBreak = t.phase === "break";
+  const isBreak = timer.phase === "break";
   const color = isBreak ? "var(--color-up)" : "var(--color-accent)";
-  const idle = t.status === "idle";
-  const running = t.status === "running";
-  const paused = t.status === "paused";
-  const done = t.status === "done";
+  const idle = timer.status === "idle";
+  const running = timer.status === "running";
+  const paused = timer.status === "paused";
+  const done = timer.status === "done";
 
   return (
     <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 pb-20 pt-[110px]">
@@ -90,7 +93,7 @@ export default function FocusSession() {
             className="text-[12px] font-medium text-accent"
             style={{ letterSpacing: "1.68px" }}
           >
-            FOCUS TRAINING
+            {t("FOCUS TRAINING")}
           </span>
         </motion.div>
 
@@ -100,11 +103,11 @@ export default function FocusSession() {
         >
           {done
             ? isBreak
-              ? "Break over"
-              : "Session complete"
+              ? t("Break over")
+              : t("Session complete")
             : isBreak && !idle
-              ? "Recharge"
-              : "Deep Focus"}
+              ? t("Recharge")
+              : t("Deep Focus")}
         </motion.h1>
 
         {/* the big ring */}
@@ -119,27 +122,27 @@ export default function FocusSession() {
               <TimerRing
                 size={250}
                 stroke={10}
-                fraction={idle ? 1 : 1 - t.progress}
+                fraction={idle ? 1 : 1 - timer.progress}
                 color={color}
                 track="rgba(27, 36, 54, 0.1)"
               />
               <div className="absolute flex flex-col items-center leading-none">
                 <span className="text-[52px] font-semibold tabular-nums text-ink">
-                  {formatMs(idle ? t.focusMin * 60_000 : t.remaining)}
+                  {formatMs(idle ? timer.focusMin * 60_000 : timer.remaining)}
                 </span>
                 <span
                   className="mt-2 text-[11px] font-semibold uppercase text-muted"
                   style={{ letterSpacing: "1.8px" }}
                 >
                   {paused
-                    ? "Paused"
+                    ? t("Paused")
                     : done
                       ? isBreak
-                        ? "Break done"
-                        : "Focus done"
+                        ? t("Break done")
+                        : t("Focus done")
                       : isBreak && !idle
-                        ? "Break"
-                        : "Focus"}
+                        ? t("Break")
+                        : t("Focus")}
                 </span>
               </div>
             </div>
@@ -151,29 +154,29 @@ export default function FocusSession() {
           {idle && (
             <>
               <PresetRow
-                label="Focus length"
+                label={t("Focus length")}
                 presets={FOCUS_PRESETS}
-                value={t.focusMin}
-                onSelect={t.setFocusMin}
+                value={timer.focusMin}
+                onSelect={timer.setFocusMin}
                 disabled={false}
               />
               <PresetRow
-                label="Break length"
+                label={t("Break length")}
                 presets={BREAK_PRESETS}
-                value={t.breakMin}
-                onSelect={t.setBreakMin}
+                value={timer.breakMin}
+                onSelect={timer.setBreakMin}
                 disabled={false}
               />
               <button
                 type="button"
-                onClick={t.startFocus}
+                onClick={timer.startFocus}
                 className="glassx group mt-1 inline-flex items-center gap-[14px] rounded-full py-[7px] pl-[7px] pr-[24px] shadow-[var(--shadow-cta)] transition-transform duration-300 hover:-translate-y-0.5"
               >
                 <span className="glassx-dark grid size-[42px] place-items-center rounded-full text-white">
                   <BrainGlyph className="size-[18px]" />
                 </span>
                 <span className="text-[15px] font-semibold text-ink">
-                  Start Focus
+                  {t("Start Focus")}
                 </span>
               </button>
             </>
@@ -183,25 +186,25 @@ export default function FocusSession() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={paused ? t.resume : t.pause}
+                onClick={paused ? timer.resume : timer.pause}
                 className="glassx inline-flex items-center gap-2 rounded-full px-6 py-3 text-[14px] font-semibold text-ink shadow-[var(--shadow-cta)] transition-transform duration-200 hover:-translate-y-0.5"
               >
                 {paused ? (
                   <>
-                    <PlayIcon className="h-3 w-[11px]" /> Resume
+                    <PlayIcon className="h-3 w-[11px]" /> {t("Resume")}
                   </>
                 ) : (
                   <>
-                    <PauseIcon className="size-3" /> Pause
+                    <PauseIcon className="size-3" /> {t("Pause")}
                   </>
                 )}
               </button>
               <button
                 type="button"
-                onClick={t.stop}
+                onClick={timer.stop}
                 className="rounded-full px-5 py-3 text-[14px] font-semibold text-muted transition-colors hover:text-ink"
               >
-                End session
+                {t("End session")}
               </button>
             </div>
           )}
@@ -210,23 +213,23 @@ export default function FocusSession() {
             <div className="flex flex-col items-center gap-4">
               <p className="max-w-[320px] text-center text-[14px] leading-[1.6] text-muted">
                 {isBreak
-                  ? "Recharged and ready. Jump back into a focus session."
-                  : `Nice work. Give your mind ${t.breakMin} minutes to consolidate.`}
+                  ? t("Recharged and ready. Jump back into a focus session.")
+                  : t("Nice work. Give your mind {n} minutes to consolidate.", { n: timer.breakMin })}
               </p>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={isBreak ? t.startFocus : t.startBreak}
+                  onClick={isBreak ? timer.startFocus : timer.startBreak}
                   className="rounded-full bg-ink px-7 py-[13px] text-[14px] font-semibold text-white shadow-[var(--shadow-cta)] transition-transform duration-200 hover:-translate-y-0.5"
                 >
-                  {isBreak ? "Start focus" : `Start ${t.breakMin}-min break`}
+                  {isBreak ? t("Start focus") : t("Start {n}-min break", { n: timer.breakMin })}
                 </button>
                 <button
                   type="button"
-                  onClick={t.stop}
+                  onClick={timer.stop}
                   className="rounded-full px-4 py-3 text-[14px] font-semibold text-muted transition-colors hover:text-ink"
                 >
-                  Done for now
+                  {t("Done for now")}
                 </button>
               </div>
             </div>
@@ -237,8 +240,7 @@ export default function FocusSession() {
           variants={rise}
           className="max-w-[340px] text-center text-[12.5px] leading-[1.6] text-muted"
         >
-          Your timer keeps running as you browse — a mini widget follows you on
-          every page and lets you start your break the moment time is up.
+          {t("Your timer keeps running as you browse — a mini widget follows you on every page and lets you start your break the moment time is up.")}
         </motion.p>
       </motion.div>
     </section>

@@ -11,6 +11,7 @@ import {
   getUserByEmail,
   createUser,
   setMustResetPassword,
+  setUserLanguage,
   goalStats,
   displayName,
   type LessonKind,
@@ -19,6 +20,7 @@ import {
 import { hashPassword } from "./password";
 import { sendTempPasswordEmail, sendOrgAddedEmail } from "./email";
 import { appBaseUrl } from "./urls";
+import { isSupported } from "./languages";
 import { enqueueBuildCourse, enqueueLesson } from "./worker";
 import { LATEST_PLAN } from "./repo";
 
@@ -49,6 +51,8 @@ export type OrgMemberRow = {
   email: string;
   name: string;
   display_name: string;
+  /** The member's account language (UI + generated content + emails). */
+  language: string;
   created_at: string;
 };
 
@@ -167,7 +171,7 @@ export function memberRole(orgId: number, userId: number): OrgRole | undefined {
 export function listMembers(orgId: number): OrgMemberRow[] {
   const rows = getDb()
     .prepare(
-      `SELECT m.user_id, m.role, m.created_at, u.email, u.name FROM org_members m
+      `SELECT m.user_id, m.role, m.created_at, u.email, u.name, COALESCE(NULLIF(u.language, ''), 'en') AS language FROM org_members m
        JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.role = 'admin' DESC, u.email`,
     )
     .all(orgId) as (Omit<OrgMemberRow, "display_name">)[];
@@ -190,6 +194,8 @@ export async function addMemberByEmail(
   orgId: number,
   email: string,
   role: OrgRole = "member",
+  /** Language for a NEW account (UI, lessons and the welcome email). Existing accounts keep theirs. */
+  language?: string,
 ): Promise<{ status: "added" | "created" | "already"; tempPassword?: string }> {
   const db = getDb();
   const org = getOrg(orgId)!;
@@ -201,6 +207,7 @@ export async function addMemberByEmail(
     db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?)").run(orgId, existing.id, role);
     db.prepare("DELETE FROM org_invites WHERE org_id = ? AND email = ?").run(orgId, normalized);
     await sendOrgAddedEmail({
+      lang: existing.language,
       to: existing.email,
       name: displayName(existing),
       orgName: org.name,
@@ -213,9 +220,12 @@ export async function addMemberByEmail(
   const tempPassword = randomBytes(6).toString("base64url").slice(0, 8);
   const created = createUser(normalized, hashPassword(tempPassword), false);
   setMustResetPassword(created.id, true);
+  const lang = language && isSupported(language) ? language : "en";
+  setUserLanguage(created.id, lang);
   db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?)").run(orgId, created.id, role);
   db.prepare("DELETE FROM org_invites WHERE org_id = ? AND email = ?").run(orgId, normalized);
   await sendTempPasswordEmail({
+    lang,
     to: created.email,
     name: displayName(created),
     orgName: org.name,
@@ -223,6 +233,13 @@ export async function addMemberByEmail(
     loginUrl: `${appBaseUrl()}/login`,
   });
   return { status: "created", tempPassword };
+}
+
+/** Org admin sets a member's language (only for people in this org). */
+export function setMemberLanguage(orgId: number, userId: number, language: string): boolean {
+  if (!isSupported(language) || !memberRole(orgId, userId)) return false;
+  setUserLanguage(userId, language);
+  return true;
 }
 
 export function removeMember(orgId: number, userId: number): void {

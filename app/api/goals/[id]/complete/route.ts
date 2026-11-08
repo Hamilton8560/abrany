@@ -40,6 +40,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/goals/[id]/
   if (!wasIssued && user.notify_certificates) {
     await sendCertificateEmail({
       to: user.email,
+      lang: user.language,
       name: certificate.recipient_name,
       title: certificate.title,
       overall: certificate.overall,
